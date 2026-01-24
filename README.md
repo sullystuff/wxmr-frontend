@@ -1,36 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# wXMR Bridge Frontend
+
+A modern web interface for bridging XMR to Solana as wXMR.
+
+## Features
+
+- Connect Solana wallet (Phantom, Solflare)
+- Request XMR deposit addresses
+- View deposit status and assigned addresses
+- Withdraw wXMR back to XMR
+- Real-time balance updates
 
 ## Getting Started
 
-First, run the development server:
+1. **Install dependencies:**
+   ```bash
+   npm install
+   ```
+
+2. **Configure environment:**
+   ```bash
+   cp .env.example .env.local
+   ```
+   
+   Edit `.env.local` with your settings:
+   - `NEXT_PUBLIC_SOLANA_RPC_URL` - Solana RPC endpoint
+   - `NEXT_PUBLIC_BRIDGE_PROGRAM_ID` - Deployed bridge program ID
+
+3. **Run development server:**
+   ```bash
+   npm run dev
+   ```
+
+4. Open [http://localhost:3000](http://localhost:3000)
+
+## Usage
+
+### Depositing XMR
+
+1. Connect your Solana wallet
+2. Click "Request Deposit Address"
+3. Send XMR to the provided address
+4. Wait for confirmations (20 blocks)
+5. wXMR will be minted to your wallet
+
+### Withdrawing XMR
+
+1. Connect your Solana wallet
+2. Switch to "Withdraw XMR" tab
+3. Enter amount and your XMR address
+4. Click "Withdraw XMR"
+5. Your wXMR will be burned
+6. XMR will be sent to your address
+
+## Development
 
 ```bash
+# Run dev server
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+
+# Build for production
+npm run build
+
+# Start production server
+npm start
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Tech Stack
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
-
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
-
-## Learn More
-
-To learn more about Next.js, take a look at the following resources:
-
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Next.js 14+ (App Router)
+- TypeScript
+- Tailwind CSS
+- @solana/wallet-adapter
+- @coral-xyz/anchor

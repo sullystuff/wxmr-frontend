@@ -1,0 +1,1193 @@
+{
+  "address": "LTBXbfJNc2WZp2n1oB1VXpdXNa3R5xf18wq2dP8t8mQ",
+  "metadata": {
+    "name": "wxmr_bridge",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "wXMR Bridge - Solana to Monero"
+  },
+  "instructions": [
+    {
+      "name": "assign_deposit_address",
+      "docs": [
+        "Backend assigns a Monero subaddress to the deposit PDA"
+      ],
+      "discriminator": [
+        108,
+        239,
+        151,
+        163,
+        214,
+        28,
+        41,
+        254
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "deposit",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "xmr_address",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "cancel_deposit",
+      "docs": [
+        "User can cancel their own deposit",
+        "- If pending (no address assigned): rent refunded to user",
+        "- If address assigned: rent goes to authority (they wasted a subaddress)"
+      ],
+      "discriminator": [
+        207,
+        37,
+        219,
+        229,
+        183,
+        50,
+        54,
+        245
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "deposit",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "authority",
+          "writable": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "complete_deposit",
+      "docs": [
+        "Backend completes the deposit - mints wXMR and refunds PDA rent to user"
+      ],
+      "discriminator": [
+        169,
+        140,
+        35,
+        214,
+        236,
+        133,
+        191,
+        32
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "deposit",
+          "writable": true
+        },
+        {
+          "name": "wxmr_mint",
+          "writable": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "recipient_token_account",
+          "writable": true
+        },
+        {
+          "name": "recipient",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "complete_withdrawal",
+      "docs": [
+        "Backend completes withdrawal after sending XMR - closes PDA and refunds rent to user",
+        "Can be called from Pending (legacy) or Sending state"
+      ],
+      "discriminator": [
+        107,
+        98,
+        134,
+        131,
+        74,
+        120,
+        174,
+        121
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "withdrawal",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": [
+        {
+          "name": "xmr_tx_hash",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "initialize",
+      "docs": [
+        "Initialize the bridge configuration"
+      ],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "wxmr_mint",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "mark_withdrawal_sending",
+      "docs": [
+        "Backend marks withdrawal as sending BEFORE attempting XMR transfer",
+        "This prevents double-spend: once marked Sending, cannot be reverted",
+        "CRITICAL: Call this before sendXmr(), then complete after XMR is sent"
+      ],
+      "discriminator": [
+        50,
+        143,
+        96,
+        235,
+        25,
+        104,
+        34,
+        115
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "withdrawal",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "reclaim_deposit",
+      "docs": [
+        "Backend reclaims unused deposit PDA after timeout (7 days)",
+        "Rent goes to authority as spam deterrent worked"
+      ],
+      "discriminator": [
+        222,
+        204,
+        95,
+        219,
+        219,
+        250,
+        177,
+        33
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "deposit",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "request_deposit",
+      "docs": [
+        "User requests a deposit - creates a PDA (rent serves as spam deterrent)"
+      ],
+      "discriminator": [
+        243,
+        202,
+        197,
+        215,
+        135,
+        97,
+        213,
+        109
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "deposit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "arg",
+                "path": "nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "nonce",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "request_withdrawal",
+      "docs": [
+        "Request withdrawal - burns wXMR and creates a withdrawal PDA"
+      ],
+      "discriminator": [
+        251,
+        85,
+        121,
+        205,
+        56,
+        201,
+        12,
+        177
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "withdrawal",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  119,
+                  105,
+                  116,
+                  104,
+                  100,
+                  114,
+                  97,
+                  119,
+                  97,
+                  108
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              },
+              {
+                "kind": "arg",
+                "path": "nonce"
+              }
+            ]
+          }
+        },
+        {
+          "name": "wxmr_mint",
+          "writable": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "user_token_account",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "nonce",
+          "type": "u64"
+        },
+        {
+          "name": "amount",
+          "type": "u64"
+        },
+        {
+          "name": "xmr_address",
+          "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "revert_withdrawal",
+      "docs": [
+        "Authority reverts a withdrawal - re-mints tokens to user",
+        "ONLY allowed in Pending state (before XMR send attempted)",
+        "Once marked as Sending, CANNOT be reverted - must complete"
+      ],
+      "discriminator": [
+        161,
+        23,
+        14,
+        3,
+        20,
+        72,
+        4,
+        121
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "withdrawal",
+          "writable": true
+        },
+        {
+          "name": "wxmr_mint",
+          "writable": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "user_token_account",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "reason",
+          "type": "string"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "BridgeConfig",
+      "discriminator": [
+        40,
+        206,
+        51,
+        233,
+        246,
+        40,
+        178,
+        85
+      ]
+    },
+    {
+      "name": "DepositRecord",
+      "discriminator": [
+        83,
+        232,
+        10,
+        31,
+        251,
+        49,
+        189,
+        167
+      ]
+    },
+    {
+      "name": "WithdrawalRecord",
+      "discriminator": [
+        88,
+        59,
+        154,
+        202,
+        216,
+        210,
+        211,
+        237
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "DepositAddressAssignedEvent",
+      "discriminator": [
+        157,
+        192,
+        51,
+        141,
+        167,
+        184,
+        6,
+        248
+      ]
+    },
+    {
+      "name": "DepositCancelledEvent",
+      "discriminator": [
+        188,
+        94,
+        175,
+        234,
+        187,
+        243,
+        161,
+        104
+      ]
+    },
+    {
+      "name": "DepositCompletedEvent",
+      "discriminator": [
+        46,
+        90,
+        41,
+        94,
+        32,
+        4,
+        97,
+        131
+      ]
+    },
+    {
+      "name": "DepositReclaimedEvent",
+      "discriminator": [
+        196,
+        63,
+        128,
+        6,
+        239,
+        240,
+        67,
+        204
+      ]
+    },
+    {
+      "name": "DepositRequestedEvent",
+      "discriminator": [
+        184,
+        215,
+        33,
+        36,
+        120,
+        186,
+        0,
+        210
+      ]
+    },
+    {
+      "name": "WithdrawCompletedEvent",
+      "discriminator": [
+        192,
+        162,
+        40,
+        197,
+        83,
+        94,
+        198,
+        66
+      ]
+    },
+    {
+      "name": "WithdrawRequestedEvent",
+      "discriminator": [
+        21,
+        86,
+        249,
+        76,
+        80,
+        238,
+        207,
+        154
+      ]
+    },
+    {
+      "name": "WithdrawRevertedEvent",
+      "discriminator": [
+        41,
+        94,
+        186,
+        33,
+        56,
+        24,
+        133,
+        80
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "InvalidXmrAddress",
+      "msg": "Invalid XMR address: must be 95 chars (standard/subaddress) or 106 chars (integrated), start with 4/8/9/A/B, and contain only base58 characters"
+    },
+    {
+      "code": 6001,
+      "name": "InvalidAmount",
+      "msg": "Invalid amount"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidMint",
+      "msg": "Invalid mint"
+    },
+    {
+      "code": 6003,
+      "name": "InvalidOwner",
+      "msg": "Invalid token account owner"
+    },
+    {
+      "code": 6004,
+      "name": "InvalidRecipient",
+      "msg": "Invalid recipient"
+    },
+    {
+      "code": 6005,
+      "name": "DepositNotPending",
+      "msg": "Deposit is not in pending status"
+    },
+    {
+      "code": 6006,
+      "name": "DepositNotAwaitingDeposit",
+      "msg": "Deposit is not awaiting deposit"
+    },
+    {
+      "code": 6007,
+      "name": "AddressAlreadyAssigned",
+      "msg": "Deposit address already assigned"
+    },
+    {
+      "code": 6008,
+      "name": "DepositTooSmall",
+      "msg": "Deposit amount too small (minimum 0.01 XMR)"
+    },
+    {
+      "code": 6009,
+      "name": "DepositCannotBeCancelled",
+      "msg": "Deposit cannot be cancelled (address already assigned)"
+    },
+    {
+      "code": 6010,
+      "name": "DepositCannotBeReclaimed",
+      "msg": "Deposit cannot be reclaimed in current status"
+    },
+    {
+      "code": 6011,
+      "name": "DepositNotTimedOut",
+      "msg": "Deposit has not timed out yet (7 days)"
+    },
+    {
+      "code": 6012,
+      "name": "WithdrawalNotPending",
+      "msg": "Withdrawal is not in pending status"
+    },
+    {
+      "code": 6013,
+      "name": "WithdrawalAlreadyProcessed",
+      "msg": "Withdrawal already processed (completed or sending)"
+    },
+    {
+      "code": 6014,
+      "name": "WithdrawalCannotBeReverted",
+      "msg": "Withdrawal cannot be reverted - already marked as sending (XMR may have been sent)"
+    }
+  ],
+  "types": [
+    {
+      "name": "BridgeConfig",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "wxmr_mint",
+            "type": "pubkey"
+          },
+          {
+            "name": "total_deposits",
+            "type": "u64"
+          },
+          {
+            "name": "total_withdrawals",
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DepositAddressAssignedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "deposit_pda",
+            "type": "pubkey"
+          },
+          {
+            "name": "xmr_address",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DepositCancelledEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "deposit_pda",
+            "type": "pubkey"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DepositCompletedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "deposit_pda",
+            "type": "pubkey"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DepositReclaimedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "deposit_pda",
+            "type": "pubkey"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DepositRecord",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce",
+            "type": "u64"
+          },
+          {
+            "name": "xmr_deposit_address",
+            "type": "string"
+          },
+          {
+            "name": "amount_deposited",
+            "type": "u64"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "DepositStatus"
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DepositRequestedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "deposit_pda",
+            "type": "pubkey"
+          },
+          {
+            "name": "recipient",
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DepositStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Pending"
+          },
+          {
+            "name": "AwaitingDeposit"
+          },
+          {
+            "name": "Completed"
+          },
+          {
+            "name": "Cancelled"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WithdrawCompletedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "withdrawal_pda",
+            "type": "pubkey"
+          },
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "xmr_tx_hash",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WithdrawRequestedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "withdrawal_pda",
+            "type": "pubkey"
+          },
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "xmr_address",
+            "type": "string"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WithdrawRevertedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "withdrawal_pda",
+            "type": "pubkey"
+          },
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "reason",
+            "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WithdrawalRecord",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce",
+            "type": "u64"
+          },
+          {
+            "name": "amount",
+            "type": "u64"
+          },
+          {
+            "name": "xmr_address",
+            "type": "string"
+          },
+          {
+            "name": "status",
+            "type": {
+              "defined": {
+                "name": "WithdrawalStatus"
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          },
+          {
+            "name": "created_at",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "WithdrawalStatus",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Pending"
+          },
+          {
+            "name": "Sending"
+          },
+          {
+            "name": "Completed"
+          }
+        ]
+      }
+    }
+  ]
+}
