@@ -49,7 +49,6 @@ export interface BridgeConfig {
   wxmrMint: string;
   totalDeposits: bigint;
   totalWithdrawals: bigint;
-  depositNonce: bigint;
 }
 
 export function useWxmrBridge() {
@@ -71,7 +70,7 @@ export function useWxmrBridge() {
   // Get bridge config PDA
   const getBridgeConfigPDA = useCallback(() => {
     const [pda] = PublicKey.findProgramAddressSync(
-      [Buffer.from('bridge_config')],
+      [Buffer.from('config')],  // Must match program: seeds = [b"config"]
       PROGRAM_ID
     );
     return pda;
@@ -116,7 +115,6 @@ export function useWxmrBridge() {
         wxmrMint: config.wxmrMint.toBase58(),
         totalDeposits: BigInt(config.totalDeposits.toString()),
         totalWithdrawals: BigInt(config.totalWithdrawals.toString()),
-        depositNonce: BigInt(config.depositNonce.toString()),
       };
     } catch (error) {
       console.error('Error fetching bridge config:', error);
@@ -129,18 +127,15 @@ export function useWxmrBridge() {
     if (!program || !wallet.publicKey) return null;
 
     try {
-      // Get current nonce from config
-      const config = await fetchBridgeConfig();
-      if (!config) throw new Error('Bridge not initialized');
-
-      const nonce = config.depositNonce;
+      // Generate unique nonce (timestamp-based, like withdrawals)
+      const nonce = BigInt(Date.now());
       const depositPda = getDepositPDA(wallet.publicKey, nonce);
 
       const signature = await program.methods
-        .requestDeposit()
+        .requestDeposit(new BN(nonce.toString()))
         .accountsPartial({
           config: getBridgeConfigPDA(),
-          recipient: wallet.publicKey,
+          user: wallet.publicKey,
         })
         .preInstructions(getPriorityFeeInstructions())
         .rpc();
@@ -154,14 +149,14 @@ export function useWxmrBridge() {
       console.error('Error requesting deposit:', error);
       throw error;
     }
-  }, [program, wallet.publicKey, fetchBridgeConfig, getDepositPDA, getBridgeConfigPDA]);
+  }, [program, wallet.publicKey, getDepositPDA, getBridgeConfigPDA]);
 
   // Fetch deposit info
   const fetchDeposit = useCallback(async (depositPda: string): Promise<DepositInfo | null> => {
     if (!program) return null;
 
     try {
-      const deposit = await (program.account as any).deposit.fetch(new PublicKey(depositPda));
+      const deposit = await (program.account as any).depositRecord.fetch(new PublicKey(depositPda));
       
       let status: DepositInfo['status'] = 'pending';
       if ('pending' in deposit.status) status = 'pending';
@@ -173,10 +168,11 @@ export function useWxmrBridge() {
         depositPda,
         recipient: deposit.recipient.toBase58(),
         nonce: BigInt(deposit.nonce.toString()),
-        xmrDepositAddress: deposit.xmrDepositAddress,
-        amountDeposited: BigInt(deposit.amountDeposited.toString()),
+        // Handle both camelCase and snake_case from IDL
+        xmrDepositAddress: deposit.xmrDepositAddress || deposit.xmr_deposit_address || '',
+        amountDeposited: BigInt((deposit.amountDeposited || deposit.amount_deposited || 0).toString()),
         status,
-        createdAt: deposit.createdAt.toNumber(),
+        createdAt: (deposit.createdAt || deposit.created_at).toNumber(),
       };
     } catch (error) {
       console.error('Error fetching deposit:', error);
@@ -189,7 +185,7 @@ export function useWxmrBridge() {
     if (!program || !wallet.publicKey) return [];
 
     try {
-      const deposits = await (program.account as any).deposit.all([
+      const deposits = await (program.account as any).depositRecord.all([
         {
           memcmp: {
             offset: 8, // discriminator
@@ -209,10 +205,11 @@ export function useWxmrBridge() {
           depositPda: d.publicKey.toBase58(),
           recipient: d.account.recipient.toBase58(),
           nonce: BigInt(d.account.nonce.toString()),
-          xmrDepositAddress: d.account.xmrDepositAddress,
-          amountDeposited: BigInt(d.account.amountDeposited.toString()),
+          // Handle both camelCase and snake_case from IDL
+          xmrDepositAddress: d.account.xmrDepositAddress || d.account.xmr_deposit_address || '',
+          amountDeposited: BigInt((d.account.amountDeposited || d.account.amount_deposited || 0).toString()),
           status,
-          createdAt: d.account.createdAt.toNumber(),
+          createdAt: (d.account.createdAt || d.account.created_at).toNumber(),
         };
       });
     } catch (error) {
@@ -267,7 +264,7 @@ export function useWxmrBridge() {
     if (!program) return null;
 
     try {
-      const withdrawal = await (program.account as any).withdrawal.fetch(new PublicKey(withdrawalPda));
+      const withdrawal = await (program.account as any).withdrawalRecord.fetch(new PublicKey(withdrawalPda));
       
       let status: WithdrawalInfo['status'] = 'pending';
       if ('pending' in withdrawal.status) status = 'pending';
@@ -295,7 +292,7 @@ export function useWxmrBridge() {
     if (!program || !wallet.publicKey) return [];
 
     try {
-      const withdrawals = await (program.account as any).withdrawal.all([
+      const withdrawals = await (program.account as any).withdrawalRecord.all([
         {
           memcmp: {
             offset: 8, // discriminator
