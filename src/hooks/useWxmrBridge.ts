@@ -10,7 +10,7 @@ import IDL from '@/idl/wxmr_bridge.json';
 
 // Program ID - should match deployed program
 const PROGRAM_ID = new PublicKey(
-  process.env.NEXT_PUBLIC_BRIDGE_PROGRAM_ID || 'LTBXbfJNc2WZp2n1oB1VXpdXNa3R5xf18wq2dP8t8mQ'
+  process.env.NEXT_PUBLIC_BRIDGE_PROGRAM_ID || 'EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8'
 );
 
 // Priority fee configuration

@@ -508,10 +508,10 @@ export default function Home() {
                 <p className="text-xs text-[var(--muted)] mb-1">Bridge Program</p>
                 <div className="flex items-center gap-2">
                   <code className="text-sm font-mono text-[var(--foreground)] bg-[var(--background)] px-3 py-2 rounded-lg border border-[var(--border)] flex-1 break-all">
-                    {process.env.NEXT_PUBLIC_BRIDGE_PROGRAM_ID || 'LTBXbfJNc2WZp2n1oB1VXpdXNa3R5xf18wq2dP8t8mQ'}
+                    {process.env.NEXT_PUBLIC_BRIDGE_PROGRAM_ID || 'EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8'}
                   </code>
                   <a
-                    href={`https://solscan.io/account/${process.env.NEXT_PUBLIC_BRIDGE_PROGRAM_ID || 'LTBXbfJNc2WZp2n1oB1VXpdXNa3R5xf18wq2dP8t8mQ'}`}
+                    href={`https://solscan.io/account/${process.env.NEXT_PUBLIC_BRIDGE_PROGRAM_ID || 'EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8'}`}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-2 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all"

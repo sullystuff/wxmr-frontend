@@ -5,7 +5,7 @@
  * IDL can be found at `target/idl/wxmr_bridge.json`.
  */
 export type WxmrBridge = {
-  "address": "LTBXbfJNc2WZp2n1oB1VXpdXNa3R5xf18wq2dP8t8mQ",
+  "address": "EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8",
   "metadata": {
     "name": "wxmrBridge",
     "version": "0.1.0",
@@ -121,7 +121,8 @@ export type WxmrBridge = {
     {
       "name": "completeDeposit",
       "docs": [
-        "Backend completes the deposit - mints wXMR and refunds PDA rent to user"
+        "Backend completes the deposit - mints wXMR and refunds PDA rent to user",
+        "If recipient's token account doesn't exist, it's created from deposit PDA rent"
       ],
       "discriminator": [
         169,
@@ -155,6 +156,9 @@ export type WxmrBridge = {
         },
         {
           "name": "deposit",
+          "docs": [
+            "Deposit PDA - NOT using close constraint, we manually handle lamport distribution"
+          ],
           "writable": true
         },
         {
@@ -166,6 +170,9 @@ export type WxmrBridge = {
         },
         {
           "name": "recipientTokenAccount",
+          "docs": [
+            "Must be the correct ATA address for recipient + wxmr_mint"
+          ],
           "writable": true
         },
         {
@@ -183,6 +190,14 @@ export type WxmrBridge = {
         {
           "name": "tokenProgram",
           "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associatedTokenProgram",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
         }
       ],
       "args": [
@@ -238,7 +253,10 @@ export type WxmrBridge = {
         },
         {
           "name": "authority",
-          "signer": true
+          "signer": true,
+          "relations": [
+            "config"
+          ]
         }
       ],
       "args": [
@@ -341,7 +359,10 @@ export type WxmrBridge = {
         },
         {
           "name": "authority",
-          "signer": true
+          "signer": true,
+          "relations": [
+            "config"
+          ]
         }
       ],
       "args": []
@@ -399,6 +420,8 @@ export type WxmrBridge = {
     {
       "name": "requestDeposit",
       "docs": [
+        "Create token metadata for wXMR mint (authority only, one-time)",
+        "This uses CPI to Metaplex Token Metadata program, with config PDA signing as mint authority",
         "User requests a deposit - creates a PDA (rent serves as spam deterrent)"
       ],
       "discriminator": [
@@ -638,7 +661,10 @@ export type WxmrBridge = {
         },
         {
           "name": "authority",
-          "signer": true
+          "signer": true,
+          "relations": [
+            "config"
+          ]
         },
         {
           "name": "tokenProgram",
@@ -828,53 +854,68 @@ export type WxmrBridge = {
     },
     {
       "code": 6005,
+      "name": "invalidTokenAccount",
+      "msg": "Invalid token account - must be the correct ATA for recipient"
+    },
+    {
+      "code": 6006,
       "name": "depositNotPending",
       "msg": "Deposit is not in pending status"
     },
     {
-      "code": 6006,
+      "code": 6007,
       "name": "depositNotAwaitingDeposit",
       "msg": "Deposit is not awaiting deposit"
     },
     {
-      "code": 6007,
+      "code": 6008,
       "name": "addressAlreadyAssigned",
       "msg": "Deposit address already assigned"
     },
     {
-      "code": 6008,
+      "code": 6009,
       "name": "depositTooSmall",
       "msg": "Deposit amount too small (minimum 0.01 XMR)"
     },
     {
-      "code": 6009,
+      "code": 6010,
       "name": "depositCannotBeCancelled",
       "msg": "Deposit cannot be cancelled (address already assigned)"
     },
     {
-      "code": 6010,
+      "code": 6011,
       "name": "depositCannotBeReclaimed",
       "msg": "Deposit cannot be reclaimed in current status"
     },
     {
-      "code": 6011,
+      "code": 6012,
       "name": "depositNotTimedOut",
       "msg": "Deposit has not timed out yet (7 days)"
     },
     {
-      "code": 6012,
+      "code": 6013,
       "name": "withdrawalNotPending",
       "msg": "Withdrawal is not in pending status"
     },
     {
-      "code": 6013,
+      "code": 6014,
       "name": "withdrawalAlreadyProcessed",
       "msg": "Withdrawal already processed (completed or sending)"
     },
     {
-      "code": 6014,
+      "code": 6015,
       "name": "withdrawalCannotBeReverted",
       "msg": "Withdrawal cannot be reverted - already marked as sending (XMR may have been sent)"
+    },
+    {
+      "code": 6016,
+      "name": "withdrawalTooSmall",
+      "msg": "Withdrawal amount too small (minimum 0.001 XMR)"
+    },
+    {
+      "code": 6017,
+      "name": "statisticsOverflow",
+      "msg": "Overflow in statistics calculation"
     }
   ],
   "types": [
