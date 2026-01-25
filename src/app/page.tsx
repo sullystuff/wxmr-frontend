@@ -806,7 +806,7 @@ export default function Home() {
         {showCloseConfirm && (
           <ConfirmModal
             title="Close Deposit Account?"
-            message="This will close your deposit account. You'll lose the ~0.002 SOL rent deposit, but you can create a new account with a fresh XMR address. Any pending deposits will still be processed."
+            message="WARNING: Any XMR sent to this address that hasn't been minted yet will be LOST. Only close if you're sure no deposits are pending. You can create a new account with a fresh XMR address."
             confirmText="Close Account"
             onConfirm={handleCloseDepositAccount}
             onCancel={() => setShowCloseConfirm(false)}
