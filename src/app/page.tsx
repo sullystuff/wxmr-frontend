@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { useWxmrBridge, DepositInfo, WithdrawalInfo, BridgeConfig } from '@/hooks/useWxmrBridge';
+import { QRCodeSVG } from 'qrcode.react';
 
 // Monero Logo SVG component
 function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
@@ -51,6 +52,68 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+// QR Code Modal component
+function QRCodeModal({ address, onClose }: { address: string; onClose: () => void }) {
+  // Close on escape key
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
+  return (
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-bold flex items-center gap-2">
+            <MoneroLogo className="w-5 h-5" />
+            Scan to Deposit XMR
+          </h3>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-[var(--background)] rounded-lg transition-colors"
+            aria-label="Close"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        <div className="bg-white rounded-xl p-4 flex justify-center">
+          <QRCodeSVG 
+            value={address} 
+            size={256} 
+            level="M"
+            includeMargin={true}
+            bgColor="#ffffff"
+            fgColor="#000000"
+          />
+        </div>
+        <div className="mt-4">
+          <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">Address</p>
+          <code className="text-xs bg-[var(--background)] p-3 rounded-lg block break-all font-mono border border-[var(--border)] text-[#ff6600]">
+            {address}
+          </code>
+        </div>
+        <button
+          onClick={onClose}
+          className="mt-4 w-full py-2.5 bg-[var(--background)] hover:bg-[var(--card-hover)] border border-[var(--border)] rounded-lg text-sm font-medium transition-colors"
+        >
+          Close
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const {
     isConnected,
@@ -75,6 +138,9 @@ export default function Home() {
   // Withdrawal form state
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [xmrAddress, setXmrAddress] = useState('');
+
+  // QR code modal state
+  const [qrAddress, setQrAddress] = useState<string | null>(null);
 
   // Load data when connected
   const loadData = useCallback(async () => {
@@ -330,9 +396,20 @@ export default function Home() {
                           {deposit.xmrDepositAddress ? (
                             <div className="mt-2">
                               <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">Send XMR to:</p>
-                              <code className="text-xs bg-[var(--card)] p-3 rounded-lg block break-all font-mono border border-[var(--border)] text-[#ff6600]">
-                                {deposit.xmrDepositAddress}
-                              </code>
+                              <div className="flex gap-2">
+                                <code className="text-xs bg-[var(--card)] p-3 rounded-lg flex-1 break-all font-mono border border-[var(--border)] text-[#ff6600]">
+                                  {deposit.xmrDepositAddress}
+                                </code>
+                                <button
+                                  onClick={() => setQrAddress(deposit.xmrDepositAddress!)}
+                                  className="p-3 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all flex-shrink-0"
+                                  title="Show QR Code"
+                                >
+                                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                                  </svg>
+                                </button>
+                              </div>
                             </div>
                           ) : (
                             <p className="text-sm text-[var(--muted)] mt-2 flex items-center gap-2">
@@ -475,6 +552,11 @@ export default function Home() {
               </div>
             </div>
           </>
+        )}
+
+        {/* QR Code Modal */}
+        {qrAddress && (
+          <QRCodeModal address={qrAddress} onClose={() => setQrAddress(null)} />
         )}
 
         {/* Global Footer */}
