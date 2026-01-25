@@ -5,14 +5,12 @@ import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { useWxmrBridge, DepositInfo, WithdrawalInfo, BridgeConfig } from '@/hooks/useWxmrBridge';
 import { QRCodeSVG } from 'qrcode.react';
 
-// Monero Logo SVG component
+// Monero Logo SVG component (official Simple Icons design)
 function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="128" cy="128" r="128" fill="#FF6600"/>
-      <path d="M128 25.6v127.36l-47.36 47.36V89.6L128 25.6zM128 152.96V25.6l47.36 63.36v110.72l-47.36-46.72z" fill="#FFF"/>
-      <path d="M41.6 200.32h30.72v-62.72L128 193.28l55.68-55.68v62.72h30.72v-56.64c0-4.48-1.92-8.96-5.12-12.16l-69.12-69.12c-6.4-6.4-16.64-6.4-23.04 0l-69.12 69.12c-3.2 3.2-5.12 7.68-5.12 12.16v56.64h-2.88z" fill="#FFF"/>
-      <path d="M57.6 200.32v40.32h140.8v-40.32h-30.72v9.6H88.32v-9.6H57.6z" fill="#4C4C4C"/>
+    <svg className={className} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="12" cy="12" r="12" fill="#FF6600"/>
+      <path d="M12 4C7.582 4 4 7.582 4 12.015c0 .89.152 1.738.412 2.54h2.385V7.82L12 13.03l5.203-5.21v6.735h2.385c.26-.802.412-1.65.412-2.54C20 7.583 16.418 4 12 4zm-1.192 11.538l-2.278-2.28v4.234H5.172C6.58 19.793 9.119 21.333 12 21.333s5.442-1.54 6.83-3.842h-3.36v-4.233l-2.258 2.28-1.192 1.193-1.21-1.193h-.002z" fill="#FFF"/>
     </svg>
   );
 }
@@ -26,6 +24,29 @@ function formatXmr(piconero: bigint): string {
 // Format timestamp
 function formatTime(timestamp: number): string {
   return new Date(timestamp * 1000).toLocaleString();
+}
+
+// Calculate time remaining until expiration (7 days from creation)
+function getExpirationInfo(createdAt: number): { text: string; isExpired: boolean; isUrgent: boolean } {
+  const SEVEN_DAYS_SECONDS = 7 * 24 * 60 * 60;
+  const expiresAt = createdAt + SEVEN_DAYS_SECONDS;
+  const now = Math.floor(Date.now() / 1000);
+  const remaining = expiresAt - now;
+
+  if (remaining <= 0) {
+    return { text: 'Expired', isExpired: true, isUrgent: false };
+  }
+
+  const days = Math.floor(remaining / (24 * 60 * 60));
+  const hours = Math.floor((remaining % (24 * 60 * 60)) / (60 * 60));
+
+  if (days > 1) {
+    return { text: `${days}d ${hours}h remaining`, isExpired: false, isUrgent: false };
+  } else if (days === 1) {
+    return { text: `${days}d ${hours}h remaining`, isExpired: false, isUrgent: true };
+  } else {
+    return { text: `${hours}h remaining`, isExpired: false, isUrgent: true };
+  }
 }
 
 // Truncate address for display
@@ -530,7 +551,23 @@ export default function Home() {
                           className="bg-[var(--background)] rounded-lg p-4 border border-[var(--border)] hover:border-[#ff660033] transition-colors"
                         >
                           <div className="flex justify-between items-start mb-3">
-                            <StatusBadge status={deposit.status} />
+                            <div className="flex items-center gap-2">
+                              <StatusBadge status={deposit.status} />
+                              {(deposit.status === 'pending' || deposit.status === 'awaitingDeposit') && (() => {
+                                const expInfo = getExpirationInfo(deposit.createdAt);
+                                return (
+                                  <span className={`text-xs px-2 py-0.5 rounded ${
+                                    expInfo.isExpired 
+                                      ? 'bg-red-500/20 text-red-400' 
+                                      : expInfo.isUrgent 
+                                        ? 'bg-yellow-500/20 text-yellow-400' 
+                                        : 'bg-[var(--background)] text-[var(--muted)]'
+                                  }`}>
+                                    {expInfo.text}
+                                  </span>
+                                );
+                              })()}
+                            </div>
                             <span className="text-xs text-[var(--muted)]">
                               {formatTime(deposit.createdAt)}
                             </span>
