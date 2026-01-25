@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { useWxmrBridge, DepositInfo, WithdrawalInfo, BridgeConfig } from '@/hooks/useWxmrBridge';
 import { QRCodeSVG } from 'qrcode.react';
@@ -114,6 +114,145 @@ function QRCodeModal({ address, onClose }: { address: string; onClose: () => voi
   );
 }
 
+// QR Scanner Modal component
+function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void; onClose: () => void }) {
+  const scannerRef = useRef<HTMLDivElement>(null);
+  const html5QrCodeRef = useRef<any>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [isStarting, setIsStarting] = useState(true);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const startScanner = async () => {
+      try {
+        const { Html5Qrcode } = await import('html5-qrcode');
+        
+        if (!mounted || !scannerRef.current) return;
+
+        const html5QrCode = new Html5Qrcode('qr-scanner-region');
+        html5QrCodeRef.current = html5QrCode;
+
+        await html5QrCode.start(
+          { facingMode: 'environment' },
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+          },
+          (decodedText) => {
+            // Extract address from monero: URI if present
+            let address = decodedText;
+            if (decodedText.toLowerCase().startsWith('monero:')) {
+              address = decodedText.slice(7).split('?')[0];
+            }
+            onScan(address);
+            html5QrCode.stop().catch(console.error);
+            onClose();
+          },
+          () => {} // Ignore scan failures
+        );
+
+        if (mounted) {
+          setIsStarting(false);
+        }
+      } catch (err: any) {
+        if (mounted) {
+          setIsStarting(false);
+          if (err.name === 'NotAllowedError') {
+            setError('Camera access denied. Please allow camera access to scan QR codes.');
+          } else if (err.name === 'NotFoundError') {
+            setError('No camera found on this device.');
+          } else {
+            setError(err.message || 'Failed to start camera');
+          }
+        }
+      }
+    };
+
+    startScanner();
+
+    return () => {
+      mounted = false;
+      if (html5QrCodeRef.current) {
+        html5QrCodeRef.current.stop().catch(() => {});
+      }
+    };
+  }, [onScan, onClose]);
+
+  // Close on escape key
+  useEffect(() => {
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleEscape);
+    return () => window.removeEventListener('keydown', handleEscape);
+  }, [onClose]);
+
+  return (
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-bold flex items-center gap-2">
+            <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+            </svg>
+            Scan XMR Address
+          </h3>
+          <button
+            onClick={onClose}
+            className="p-2 hover:bg-[var(--background)] rounded-lg transition-colors"
+            aria-label="Close"
+          >
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            </svg>
+          </button>
+        </div>
+        
+        {error ? (
+          <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-lg text-sm">
+            {error}
+          </div>
+        ) : (
+          <>
+            {isStarting && (
+              <div className="flex items-center justify-center py-8">
+                <svg className="animate-spin w-8 h-8 text-[#ff6600]" fill="none" viewBox="0 0 24 24">
+                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+              </div>
+            )}
+            <div 
+              id="qr-scanner-region" 
+              ref={scannerRef}
+              className="rounded-xl overflow-hidden"
+              style={{ display: isStarting ? 'none' : 'block' }}
+            />
+          </>
+        )}
+        
+        <p className="text-xs text-[var(--muted)] mt-4 text-center">
+          Point your camera at a Monero address QR code
+        </p>
+        
+        <button
+          onClick={onClose}
+          className="mt-4 w-full py-2.5 bg-[var(--background)] hover:bg-[var(--card-hover)] border border-[var(--border)] rounded-lg text-sm font-medium transition-colors"
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function Home() {
   const {
     isConnected,
@@ -141,6 +280,9 @@ export default function Home() {
 
   // QR code modal state
   const [qrAddress, setQrAddress] = useState<string | null>(null);
+
+  // QR scanner modal state
+  const [showScanner, setShowScanner] = useState(false);
 
   // Load data when connected
   const loadData = useCallback(async () => {
@@ -471,13 +613,25 @@ export default function Home() {
                     </div>
                     <div>
                       <label className="block text-sm font-semibold mb-2 uppercase tracking-wide text-[var(--muted)]">XMR Address</label>
-                      <input
-                        type="text"
-                        value={xmrAddress}
-                        onChange={(e) => setXmrAddress(e.target.value)}
-                        placeholder="4... or 8..."
-                        className="xmr-input w-full px-4 py-3 text-white font-mono text-sm"
-                      />
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={xmrAddress}
+                          onChange={(e) => setXmrAddress(e.target.value)}
+                          placeholder="4... or 8..."
+                          className="xmr-input flex-1 px-4 py-3 text-white font-mono text-sm"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowScanner(true)}
+                          className="px-4 py-3 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all flex-shrink-0"
+                          title="Scan QR Code"
+                        >
+                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                          </svg>
+                        </button>
+                      </div>
                     </div>
                     <button
                       onClick={handleWithdraw}
@@ -557,6 +711,14 @@ export default function Home() {
         {/* QR Code Modal */}
         {qrAddress && (
           <QRCodeModal address={qrAddress} onClose={() => setQrAddress(null)} />
+        )}
+
+        {/* QR Scanner Modal */}
+        {showScanner && (
+          <QRScannerModal 
+            onScan={(address) => setXmrAddress(address)} 
+            onClose={() => setShowScanner(false)} 
+          />
         )}
 
         {/* Global Footer */}
