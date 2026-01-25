@@ -723,6 +723,34 @@ export default function Home() {
 
         {/* Global Footer */}
         <footer className="mt-16 pt-8 border-t border-[var(--border)]">
+          {/* XMR Viewing Key - for verifying bridge reserves */}
+          <div className="xmr-card p-6 mb-6 xmr-glow">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)] mb-4 flex items-center gap-2">
+              <svg className="w-4 h-4 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
+              </svg>
+              XMR Viewing Key (Verify Reserves)
+            </h3>
+            <p className="text-xs text-[var(--muted)] mb-4">
+              Use these credentials to verify the bridge&apos;s XMR reserves in any Monero wallet that supports view-only mode.
+            </p>
+            <div className="space-y-3">
+              <div>
+                <p className="text-xs text-[var(--muted)] mb-1">XMR Address</p>
+                <code className="text-xs font-mono text-[#ff6600] bg-[var(--background)] px-3 py-2 rounded-lg border border-[var(--border)] block break-all">
+                  45ZYpKmPaPmh3bnRP1XpMz8cASJQf1cfUgq32H8trCYA4RodzXhsmt2VYkQX9QQ65CetiGja65tH2JmKC3gEZtZjB7AzMpd
+                </code>
+              </div>
+              <div>
+                <p className="text-xs text-[var(--muted)] mb-1">View Key</p>
+                <code className="text-xs font-mono text-[var(--foreground)] bg-[var(--background)] px-3 py-2 rounded-lg border border-[var(--border)] block break-all">
+                  e4e02de197582ff2e93f9eaefc96e122a13ffa838736ef38f4a8ea27a0dc4909
+                </code>
+              </div>
+            </div>
+          </div>
+
           {/* wXMR Token Info */}
           <div className="xmr-card p-6 mb-6">
             <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)] mb-4">wXMR Token</h3>
@@ -731,31 +759,29 @@ export default function Home() {
                 <p className="text-xs text-[var(--muted)] mb-1">Mint Address</p>
                 <div className="flex items-center gap-2">
                   <code className="text-sm font-mono text-[#ff6600] bg-[var(--background)] px-3 py-2 rounded-lg border border-[var(--border)] flex-1 break-all">
-                    {process.env.NEXT_PUBLIC_WXMR_MINT || 'Not configured'}
+                    WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp
                   </code>
-                  {process.env.NEXT_PUBLIC_WXMR_MINT && (
-                    <a
-                      href={`https://solscan.io/token/${process.env.NEXT_PUBLIC_WXMR_MINT}`}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="p-2 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all"
-                      title="View on Solscan"
-                    >
-                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                      </svg>
-                    </a>
-                  )}
+                  <a
+                    href="https://solscan.io/token/WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-2 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all"
+                    title="View on Solscan"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                    </svg>
+                  </a>
                 </div>
               </div>
               <div>
                 <p className="text-xs text-[var(--muted)] mb-1">Bridge Program</p>
                 <div className="flex items-center gap-2">
                   <code className="text-sm font-mono text-[var(--foreground)] bg-[var(--background)] px-3 py-2 rounded-lg border border-[var(--border)] flex-1 break-all">
-                    {process.env.NEXT_PUBLIC_BRIDGE_PROGRAM_ID || 'EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8'}
+                    EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8
                   </code>
                   <a
-                    href={`https://solscan.io/account/${process.env.NEXT_PUBLIC_BRIDGE_PROGRAM_ID || 'EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8'}`}
+                    href="https://solscan.io/account/EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8"
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-2 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all"
@@ -772,17 +798,7 @@ export default function Home() {
 
           {/* Links */}
           <div className="flex flex-wrap justify-center gap-6 mb-8">
-            <a
-              href="/viewing-keys"
-              className="flex items-center gap-2 text-sm text-[var(--muted)] hover:text-[#ff6600] transition-colors"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-              XMR Viewing Keys
-            </a>
-            <a
+<a
               href="https://getmonero.org"
               target="_blank"
               rel="noopener noreferrer"
