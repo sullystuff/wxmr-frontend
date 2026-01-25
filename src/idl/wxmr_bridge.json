@@ -10,7 +10,7 @@
     {
       "name": "assign_deposit_address",
       "docs": [
-        "Backend assigns a Monero subaddress to the deposit PDA"
+        "Backend assigns a Monero subaddress to the deposit account (one-time)"
       ],
       "discriminator": [
         108,
@@ -61,21 +61,21 @@
       ]
     },
     {
-      "name": "cancel_deposit",
+      "name": "close_deposit_account",
       "docs": [
-        "User can cancel their own deposit",
-        "- If pending (no address assigned): rent refunded to user",
-        "- If address assigned: rent goes to authority (they wasted a subaddress)"
+        "User closes their deposit account to get a new XMR address",
+        "Rent goes to authority (the subaddress is now abandoned/wasted)",
+        "User must create a new deposit account to get a fresh address"
       ],
       "discriminator": [
-        207,
-        37,
-        219,
-        229,
-        183,
+        152,
+        6,
+        13,
+        164,
         50,
-        54,
-        245
+        219,
+        225,
+        43
       ],
       "accounts": [
         {
@@ -107,99 +107,13 @@
         },
         {
           "name": "authority",
-          "writable": true
+          "writable": true,
+          "relations": [
+            "config"
+          ]
         }
       ],
       "args": []
-    },
-    {
-      "name": "complete_deposit",
-      "docs": [
-        "Backend completes the deposit - mints wXMR and refunds PDA rent to user",
-        "If recipient's token account doesn't exist, it's created from deposit PDA rent"
-      ],
-      "discriminator": [
-        169,
-        140,
-        35,
-        214,
-        236,
-        133,
-        191,
-        32
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "deposit",
-          "docs": [
-            "Deposit PDA - NOT using close constraint, we manually handle lamport distribution"
-          ],
-          "writable": true
-        },
-        {
-          "name": "wxmr_mint",
-          "writable": true,
-          "relations": [
-            "config"
-          ]
-        },
-        {
-          "name": "recipient_token_account",
-          "docs": [
-            "Must be the correct ATA address for recipient + wxmr_mint"
-          ],
-          "writable": true
-        },
-        {
-          "name": "recipient",
-          "writable": true
-        },
-        {
-          "name": "authority",
-          "writable": true,
-          "signer": true,
-          "relations": [
-            "config"
-          ]
-        },
-        {
-          "name": "token_program",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        },
-        {
-          "name": "associated_token_program",
-          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
-        },
-        {
-          "name": "system_program",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "amount",
-          "type": "u64"
-        }
-      ]
     },
     {
       "name": "complete_withdrawal",
@@ -259,6 +173,79 @@
           "type": "string"
         }
       ]
+    },
+    {
+      "name": "create_deposit_account",
+      "docs": [
+        "Create token metadata for wXMR mint (authority only, one-time)",
+        "This uses CPI to Metaplex Token Metadata program, with config PDA signing as mint authority",
+        "User creates their permanent deposit account (one per wallet)",
+        "Rent serves as spam deterrent - user pays ~0.002 SOL to create"
+      ],
+      "discriminator": [
+        25,
+        217,
+        82,
+        207,
+        22,
+        150,
+        122,
+        181
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "deposit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
     },
     {
       "name": "initialize",
@@ -362,24 +349,26 @@
       "args": []
     },
     {
-      "name": "reclaim_deposit",
+      "name": "mint_deposit",
       "docs": [
-        "Backend reclaims unused deposit PDA after timeout (7 days)",
-        "Rent goes to authority as spam deterrent worked"
+        "Backend mints wXMR for detected XMR deposits",
+        "Deposit account stays open - user can deposit multiple times",
+        "If recipient's token account doesn't exist, it's created (authority pays)"
       ],
       "discriminator": [
-        222,
-        204,
-        95,
-        219,
-        219,
-        250,
-        177,
-        33
+        171,
+        65,
+        49,
+        61,
+        7,
+        88,
+        11,
+        9
       ],
       "accounts": [
         {
           "name": "config",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -398,6 +387,24 @@
         },
         {
           "name": "deposit",
+          "docs": [
+            "Deposit account - stays open, no close constraint"
+          ],
+          "writable": true
+        },
+        {
+          "name": "wxmr_mint",
+          "writable": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "owner_token_account",
+          "writable": true
+        },
+        {
+          "name": "owner",
           "writable": true
         },
         {
@@ -407,78 +414,14 @@
           "relations": [
             "config"
           ]
-        }
-      ],
-      "args": []
-    },
-    {
-      "name": "request_deposit",
-      "docs": [
-        "Create token metadata for wXMR mint (authority only, one-time)",
-        "This uses CPI to Metaplex Token Metadata program, with config PDA signing as mint authority",
-        "User requests a deposit - creates a PDA (rent serves as spam deterrent)"
-      ],
-      "discriminator": [
-        243,
-        202,
-        197,
-        215,
-        135,
-        97,
-        213,
-        109
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
         },
         {
-          "name": "deposit",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  101,
-                  112,
-                  111,
-                  115,
-                  105,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "user"
-              },
-              {
-                "kind": "arg",
-                "path": "nonce"
-              }
-            ]
-          }
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         },
         {
-          "name": "user",
-          "writable": true,
-          "signer": true
+          "name": "associated_token_program",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
         },
         {
           "name": "system_program",
@@ -487,7 +430,7 @@
       ],
       "args": [
         {
-          "name": "nonce",
+          "name": "amount",
           "type": "u64"
         }
       ]
@@ -716,6 +659,32 @@
   ],
   "events": [
     {
+      "name": "DepositAccountClosedEvent",
+      "discriminator": [
+        61,
+        150,
+        159,
+        160,
+        136,
+        66,
+        119,
+        96
+      ]
+    },
+    {
+      "name": "DepositAccountCreatedEvent",
+      "discriminator": [
+        179,
+        110,
+        80,
+        76,
+        96,
+        188,
+        243,
+        68
+      ]
+    },
+    {
       "name": "DepositAddressAssignedEvent",
       "discriminator": [
         157,
@@ -729,55 +698,16 @@
       ]
     },
     {
-      "name": "DepositCancelledEvent",
+      "name": "DepositMintedEvent",
       "discriminator": [
-        188,
-        94,
-        175,
-        234,
         187,
-        243,
+        199,
         161,
-        104
-      ]
-    },
-    {
-      "name": "DepositCompletedEvent",
-      "discriminator": [
-        46,
-        90,
-        41,
-        94,
-        32,
-        4,
-        97,
-        131
-      ]
-    },
-    {
-      "name": "DepositReclaimedEvent",
-      "discriminator": [
-        196,
-        63,
-        128,
-        6,
-        239,
-        240,
-        67,
-        204
-      ]
-    },
-    {
-      "name": "DepositRequestedEvent",
-      "discriminator": [
-        184,
-        215,
-        33,
-        36,
-        120,
-        186,
-        0,
-        210
+        126,
+        73,
+        247,
+        28,
+        44
       ]
     },
     {
@@ -839,7 +769,7 @@
     {
       "code": 6003,
       "name": "InvalidOwner",
-      "msg": "Invalid token account owner"
+      "msg": "Invalid owner"
     },
     {
       "code": 6004,
@@ -849,17 +779,17 @@
     {
       "code": 6005,
       "name": "InvalidTokenAccount",
-      "msg": "Invalid token account - must be the correct ATA for recipient"
+      "msg": "Invalid token account - must be the correct ATA"
     },
     {
       "code": 6006,
       "name": "DepositNotPending",
-      "msg": "Deposit is not in pending status"
+      "msg": "Deposit account is not in pending status"
     },
     {
       "code": 6007,
-      "name": "DepositNotAwaitingDeposit",
-      "msg": "Deposit is not awaiting deposit"
+      "name": "DepositNotActive",
+      "msg": "Deposit account is not active"
     },
     {
       "code": 6008,
@@ -869,45 +799,30 @@
     {
       "code": 6009,
       "name": "DepositTooSmall",
-      "msg": "Deposit amount too small (minimum 0.01 XMR)"
+      "msg": "Deposit amount too small (minimum 0.001 XMR)"
     },
     {
       "code": 6010,
-      "name": "DepositCannotBeCancelled",
-      "msg": "Deposit cannot be cancelled (address already assigned)"
-    },
-    {
-      "code": 6011,
-      "name": "DepositCannotBeReclaimed",
-      "msg": "Deposit cannot be reclaimed in current status"
-    },
-    {
-      "code": 6012,
-      "name": "DepositNotTimedOut",
-      "msg": "Deposit has not timed out yet (7 days)"
-    },
-    {
-      "code": 6013,
       "name": "WithdrawalNotPending",
       "msg": "Withdrawal is not in pending status"
     },
     {
-      "code": 6014,
+      "code": 6011,
       "name": "WithdrawalAlreadyProcessed",
       "msg": "Withdrawal already processed (completed or sending)"
     },
     {
-      "code": 6015,
+      "code": 6012,
       "name": "WithdrawalCannotBeReverted",
       "msg": "Withdrawal cannot be reverted - already marked as sending (XMR may have been sent)"
     },
     {
-      "code": 6016,
+      "code": 6013,
       "name": "WithdrawalTooSmall",
       "msg": "Withdrawal amount too small (minimum 0.001 XMR)"
     },
     {
-      "code": 6017,
+      "code": 6014,
       "name": "StatisticsOverflow",
       "msg": "Overflow in statistics calculation"
     }
@@ -942,6 +857,46 @@
       }
     },
     {
+      "name": "DepositAccountClosedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "deposit_pda",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "total_deposited",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "DepositAccountCreatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "deposit_pda",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "DepositAddressAssignedEvent",
       "type": {
         "kind": "struct",
@@ -958,7 +913,7 @@
       }
     },
     {
-      "name": "DepositCancelledEvent",
+      "name": "DepositMintedEvent",
       "type": {
         "kind": "struct",
         "fields": [
@@ -967,44 +922,16 @@
             "type": "pubkey"
           },
           {
-            "name": "recipient",
-            "type": "pubkey"
-          }
-        ]
-      }
-    },
-    {
-      "name": "DepositCompletedEvent",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "deposit_pda",
-            "type": "pubkey"
-          },
-          {
-            "name": "recipient",
+            "name": "owner",
             "type": "pubkey"
           },
           {
             "name": "amount",
             "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "DepositReclaimedEvent",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "deposit_pda",
-            "type": "pubkey"
           },
           {
-            "name": "recipient",
-            "type": "pubkey"
+            "name": "total_deposited",
+            "type": "u64"
           }
         ]
       }
@@ -1015,19 +942,15 @@
         "kind": "struct",
         "fields": [
           {
-            "name": "recipient",
+            "name": "owner",
             "type": "pubkey"
-          },
-          {
-            "name": "nonce",
-            "type": "u64"
           },
           {
             "name": "xmr_deposit_address",
             "type": "string"
           },
           {
-            "name": "amount_deposited",
+            "name": "total_deposited",
             "type": "u64"
           },
           {
@@ -1050,30 +973,6 @@
       }
     },
     {
-      "name": "DepositRequestedEvent",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "deposit_pda",
-            "type": "pubkey"
-          },
-          {
-            "name": "recipient",
-            "type": "pubkey"
-          },
-          {
-            "name": "nonce",
-            "type": "u64"
-          },
-          {
-            "name": "timestamp",
-            "type": "i64"
-          }
-        ]
-      }
-    },
-    {
       "name": "DepositStatus",
       "type": {
         "kind": "enum",
@@ -1082,13 +981,10 @@
             "name": "Pending"
           },
           {
-            "name": "AwaitingDeposit"
+            "name": "Active"
           },
           {
-            "name": "Completed"
-          },
-          {
-            "name": "Cancelled"
+            "name": "Closed"
           }
         ]
       }

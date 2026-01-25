@@ -16,7 +16,7 @@ export type WxmrBridge = {
     {
       "name": "assignDepositAddress",
       "docs": [
-        "Backend assigns a Monero subaddress to the deposit PDA"
+        "Backend assigns a Monero subaddress to the deposit account (one-time)"
       ],
       "discriminator": [
         108,
@@ -67,21 +67,21 @@ export type WxmrBridge = {
       ]
     },
     {
-      "name": "cancelDeposit",
+      "name": "closeDepositAccount",
       "docs": [
-        "User can cancel their own deposit",
-        "- If pending (no address assigned): rent refunded to user",
-        "- If address assigned: rent goes to authority (they wasted a subaddress)"
+        "User closes their deposit account to get a new XMR address",
+        "Rent goes to authority (the subaddress is now abandoned/wasted)",
+        "User must create a new deposit account to get a fresh address"
       ],
       "discriminator": [
-        207,
-        37,
-        219,
-        229,
-        183,
+        152,
+        6,
+        13,
+        164,
         50,
-        54,
-        245
+        219,
+        225,
+        43
       ],
       "accounts": [
         {
@@ -113,99 +113,13 @@ export type WxmrBridge = {
         },
         {
           "name": "authority",
-          "writable": true
+          "writable": true,
+          "relations": [
+            "config"
+          ]
         }
       ],
       "args": []
-    },
-    {
-      "name": "completeDeposit",
-      "docs": [
-        "Backend completes the deposit - mints wXMR and refunds PDA rent to user",
-        "If recipient's token account doesn't exist, it's created from deposit PDA rent"
-      ],
-      "discriminator": [
-        169,
-        140,
-        35,
-        214,
-        236,
-        133,
-        191,
-        32
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "deposit",
-          "docs": [
-            "Deposit PDA - NOT using close constraint, we manually handle lamport distribution"
-          ],
-          "writable": true
-        },
-        {
-          "name": "wxmrMint",
-          "writable": true,
-          "relations": [
-            "config"
-          ]
-        },
-        {
-          "name": "recipientTokenAccount",
-          "docs": [
-            "Must be the correct ATA address for recipient + wxmr_mint"
-          ],
-          "writable": true
-        },
-        {
-          "name": "recipient",
-          "writable": true
-        },
-        {
-          "name": "authority",
-          "writable": true,
-          "signer": true,
-          "relations": [
-            "config"
-          ]
-        },
-        {
-          "name": "tokenProgram",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        },
-        {
-          "name": "associatedTokenProgram",
-          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
-        },
-        {
-          "name": "systemProgram",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "amount",
-          "type": "u64"
-        }
-      ]
     },
     {
       "name": "completeWithdrawal",
@@ -265,6 +179,79 @@ export type WxmrBridge = {
           "type": "string"
         }
       ]
+    },
+    {
+      "name": "createDepositAccount",
+      "docs": [
+        "Create token metadata for wXMR mint (authority only, one-time)",
+        "This uses CPI to Metaplex Token Metadata program, with config PDA signing as mint authority",
+        "User creates their permanent deposit account (one per wallet)",
+        "Rent serves as spam deterrent - user pays ~0.002 SOL to create"
+      ],
+      "discriminator": [
+        25,
+        217,
+        82,
+        207,
+        22,
+        150,
+        122,
+        181
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "deposit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
     },
     {
       "name": "initialize",
@@ -368,24 +355,26 @@ export type WxmrBridge = {
       "args": []
     },
     {
-      "name": "reclaimDeposit",
+      "name": "mintDeposit",
       "docs": [
-        "Backend reclaims unused deposit PDA after timeout (7 days)",
-        "Rent goes to authority as spam deterrent worked"
+        "Backend mints wXMR for detected XMR deposits",
+        "Deposit account stays open - user can deposit multiple times",
+        "If recipient's token account doesn't exist, it's created (authority pays)"
       ],
       "discriminator": [
-        222,
-        204,
-        95,
-        219,
-        219,
-        250,
-        177,
-        33
+        171,
+        65,
+        49,
+        61,
+        7,
+        88,
+        11,
+        9
       ],
       "accounts": [
         {
           "name": "config",
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -404,6 +393,24 @@ export type WxmrBridge = {
         },
         {
           "name": "deposit",
+          "docs": [
+            "Deposit account - stays open, no close constraint"
+          ],
+          "writable": true
+        },
+        {
+          "name": "wxmrMint",
+          "writable": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "ownerTokenAccount",
+          "writable": true
+        },
+        {
+          "name": "owner",
           "writable": true
         },
         {
@@ -413,78 +420,14 @@ export type WxmrBridge = {
           "relations": [
             "config"
           ]
-        }
-      ],
-      "args": []
-    },
-    {
-      "name": "requestDeposit",
-      "docs": [
-        "Create token metadata for wXMR mint (authority only, one-time)",
-        "This uses CPI to Metaplex Token Metadata program, with config PDA signing as mint authority",
-        "User requests a deposit - creates a PDA (rent serves as spam deterrent)"
-      ],
-      "discriminator": [
-        243,
-        202,
-        197,
-        215,
-        135,
-        97,
-        213,
-        109
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
         },
         {
-          "name": "deposit",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  100,
-                  101,
-                  112,
-                  111,
-                  115,
-                  105,
-                  116
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "user"
-              },
-              {
-                "kind": "arg",
-                "path": "nonce"
-              }
-            ]
-          }
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
         },
         {
-          "name": "user",
-          "writable": true,
-          "signer": true
+          "name": "associatedTokenProgram",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
         },
         {
           "name": "systemProgram",
@@ -493,7 +436,7 @@ export type WxmrBridge = {
       ],
       "args": [
         {
-          "name": "nonce",
+          "name": "amount",
           "type": "u64"
         }
       ]
@@ -722,6 +665,32 @@ export type WxmrBridge = {
   ],
   "events": [
     {
+      "name": "depositAccountClosedEvent",
+      "discriminator": [
+        61,
+        150,
+        159,
+        160,
+        136,
+        66,
+        119,
+        96
+      ]
+    },
+    {
+      "name": "depositAccountCreatedEvent",
+      "discriminator": [
+        179,
+        110,
+        80,
+        76,
+        96,
+        188,
+        243,
+        68
+      ]
+    },
+    {
       "name": "depositAddressAssignedEvent",
       "discriminator": [
         157,
@@ -735,55 +704,16 @@ export type WxmrBridge = {
       ]
     },
     {
-      "name": "depositCancelledEvent",
+      "name": "depositMintedEvent",
       "discriminator": [
-        188,
-        94,
-        175,
-        234,
         187,
-        243,
+        199,
         161,
-        104
-      ]
-    },
-    {
-      "name": "depositCompletedEvent",
-      "discriminator": [
-        46,
-        90,
-        41,
-        94,
-        32,
-        4,
-        97,
-        131
-      ]
-    },
-    {
-      "name": "depositReclaimedEvent",
-      "discriminator": [
-        196,
-        63,
-        128,
-        6,
-        239,
-        240,
-        67,
-        204
-      ]
-    },
-    {
-      "name": "depositRequestedEvent",
-      "discriminator": [
-        184,
-        215,
-        33,
-        36,
-        120,
-        186,
-        0,
-        210
+        126,
+        73,
+        247,
+        28,
+        44
       ]
     },
     {
@@ -845,7 +775,7 @@ export type WxmrBridge = {
     {
       "code": 6003,
       "name": "invalidOwner",
-      "msg": "Invalid token account owner"
+      "msg": "Invalid owner"
     },
     {
       "code": 6004,
@@ -855,17 +785,17 @@ export type WxmrBridge = {
     {
       "code": 6005,
       "name": "invalidTokenAccount",
-      "msg": "Invalid token account - must be the correct ATA for recipient"
+      "msg": "Invalid token account - must be the correct ATA"
     },
     {
       "code": 6006,
       "name": "depositNotPending",
-      "msg": "Deposit is not in pending status"
+      "msg": "Deposit account is not in pending status"
     },
     {
       "code": 6007,
-      "name": "depositNotAwaitingDeposit",
-      "msg": "Deposit is not awaiting deposit"
+      "name": "depositNotActive",
+      "msg": "Deposit account is not active"
     },
     {
       "code": 6008,
@@ -875,45 +805,30 @@ export type WxmrBridge = {
     {
       "code": 6009,
       "name": "depositTooSmall",
-      "msg": "Deposit amount too small (minimum 0.01 XMR)"
+      "msg": "Deposit amount too small (minimum 0.001 XMR)"
     },
     {
       "code": 6010,
-      "name": "depositCannotBeCancelled",
-      "msg": "Deposit cannot be cancelled (address already assigned)"
-    },
-    {
-      "code": 6011,
-      "name": "depositCannotBeReclaimed",
-      "msg": "Deposit cannot be reclaimed in current status"
-    },
-    {
-      "code": 6012,
-      "name": "depositNotTimedOut",
-      "msg": "Deposit has not timed out yet (7 days)"
-    },
-    {
-      "code": 6013,
       "name": "withdrawalNotPending",
       "msg": "Withdrawal is not in pending status"
     },
     {
-      "code": 6014,
+      "code": 6011,
       "name": "withdrawalAlreadyProcessed",
       "msg": "Withdrawal already processed (completed or sending)"
     },
     {
-      "code": 6015,
+      "code": 6012,
       "name": "withdrawalCannotBeReverted",
       "msg": "Withdrawal cannot be reverted - already marked as sending (XMR may have been sent)"
     },
     {
-      "code": 6016,
+      "code": 6013,
       "name": "withdrawalTooSmall",
       "msg": "Withdrawal amount too small (minimum 0.001 XMR)"
     },
     {
-      "code": 6017,
+      "code": 6014,
       "name": "statisticsOverflow",
       "msg": "Overflow in statistics calculation"
     }
@@ -948,6 +863,46 @@ export type WxmrBridge = {
       }
     },
     {
+      "name": "depositAccountClosedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "depositPda",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "totalDeposited",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "depositAccountCreatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "depositPda",
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "type": "pubkey"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
       "name": "depositAddressAssignedEvent",
       "type": {
         "kind": "struct",
@@ -964,7 +919,7 @@ export type WxmrBridge = {
       }
     },
     {
-      "name": "depositCancelledEvent",
+      "name": "depositMintedEvent",
       "type": {
         "kind": "struct",
         "fields": [
@@ -973,44 +928,16 @@ export type WxmrBridge = {
             "type": "pubkey"
           },
           {
-            "name": "recipient",
-            "type": "pubkey"
-          }
-        ]
-      }
-    },
-    {
-      "name": "depositCompletedEvent",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "depositPda",
-            "type": "pubkey"
-          },
-          {
-            "name": "recipient",
+            "name": "owner",
             "type": "pubkey"
           },
           {
             "name": "amount",
             "type": "u64"
-          }
-        ]
-      }
-    },
-    {
-      "name": "depositReclaimedEvent",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "depositPda",
-            "type": "pubkey"
           },
           {
-            "name": "recipient",
-            "type": "pubkey"
+            "name": "totalDeposited",
+            "type": "u64"
           }
         ]
       }
@@ -1021,19 +948,15 @@ export type WxmrBridge = {
         "kind": "struct",
         "fields": [
           {
-            "name": "recipient",
+            "name": "owner",
             "type": "pubkey"
-          },
-          {
-            "name": "nonce",
-            "type": "u64"
           },
           {
             "name": "xmrDepositAddress",
             "type": "string"
           },
           {
-            "name": "amountDeposited",
+            "name": "totalDeposited",
             "type": "u64"
           },
           {
@@ -1056,30 +979,6 @@ export type WxmrBridge = {
       }
     },
     {
-      "name": "depositRequestedEvent",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "depositPda",
-            "type": "pubkey"
-          },
-          {
-            "name": "recipient",
-            "type": "pubkey"
-          },
-          {
-            "name": "nonce",
-            "type": "u64"
-          },
-          {
-            "name": "timestamp",
-            "type": "i64"
-          }
-        ]
-      }
-    },
-    {
       "name": "depositStatus",
       "type": {
         "kind": "enum",
@@ -1088,13 +987,10 @@ export type WxmrBridge = {
             "name": "pending"
           },
           {
-            "name": "awaitingDeposit"
+            "name": "active"
           },
           {
-            "name": "completed"
-          },
-          {
-            "name": "cancelled"
+            "name": "closed"
           }
         ]
       }

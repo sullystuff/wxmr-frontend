@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import { PublicKey, ComputeBudgetProgram } from '@solana/web3.js';
+import { PublicKey, ComputeBudgetProgram, SystemProgram } from '@solana/web3.js';
 import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
 import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import type { WxmrBridge } from '@/idl/wxmr_bridge';
@@ -15,7 +15,7 @@ const PROGRAM_ID = new PublicKey(
 
 // Priority fee configuration
 const PRIORITY_FEE_MICROLAMPORTS = 50000;
-const COMPUTE_UNIT_LIMIT = 300000;
+const COMPUTE_UNIT_LIMIT = 100000;
 
 function getPriorityFeeInstructions() {
   return [
@@ -24,13 +24,13 @@ function getPriorityFeeInstructions() {
   ];
 }
 
-export interface DepositInfo {
+// Deposit account info (permanent, one per user)
+export interface DepositAccountInfo {
   depositPda: string;
-  recipient: string;
-  nonce: bigint;
+  owner: string;
   xmrDepositAddress: string;
-  amountDeposited: bigint;
-  status: 'pending' | 'awaitingDeposit' | 'completed' | 'cancelled';
+  totalDeposited: bigint;
+  status: 'pending' | 'active' | 'closed';
   createdAt: number;
 }
 
@@ -70,20 +70,16 @@ export function useWxmrBridge() {
   // Get bridge config PDA
   const getBridgeConfigPDA = useCallback(() => {
     const [pda] = PublicKey.findProgramAddressSync(
-      [Buffer.from('config')],  // Must match program: seeds = [b"config"]
+      [Buffer.from('config')],
       PROGRAM_ID
     );
     return pda;
   }, []);
 
-  // Get deposit PDA for a specific nonce
-  const getDepositPDA = useCallback((recipient: PublicKey, nonce: bigint) => {
+  // Get deposit PDA for a user (permanent, one per wallet - no nonce!)
+  const getDepositPDA = useCallback((owner: PublicKey) => {
     const [pda] = PublicKey.findProgramAddressSync(
-      [
-        Buffer.from('deposit'),
-        recipient.toBuffer(),
-        new BN(nonce.toString()).toArrayLike(Buffer, 'le', 8),
-      ],
+      [Buffer.from('deposit'), owner.toBuffer()],
       PROGRAM_ID
     );
     return pda;
@@ -122,20 +118,19 @@ export function useWxmrBridge() {
     }
   }, [program, getBridgeConfigPDA]);
 
-  // Request a new deposit
-  const requestDeposit = useCallback(async (): Promise<{ signature: string; depositPda: string; nonce: bigint } | null> => {
+  // Create deposit account (one per wallet - permanent)
+  const createDepositAccount = useCallback(async (): Promise<{ signature: string; depositPda: string } | null> => {
     if (!program || !wallet.publicKey) return null;
 
     try {
-      // Generate unique nonce (timestamp-based, like withdrawals)
-      const nonce = BigInt(Date.now());
-      const depositPda = getDepositPDA(wallet.publicKey, nonce);
+      const depositPda = getDepositPDA(wallet.publicKey);
 
       const signature = await program.methods
-        .requestDeposit(new BN(nonce.toString()))
+        .createDepositAccount()
         .accountsPartial({
           config: getBridgeConfigPDA(),
           user: wallet.publicKey,
+          systemProgram: SystemProgram.programId,
         })
         .preInstructions(getPriorityFeeInstructions())
         .rpc();
@@ -143,80 +138,67 @@ export function useWxmrBridge() {
       return {
         signature,
         depositPda: depositPda.toBase58(),
-        nonce,
       };
     } catch (error) {
-      console.error('Error requesting deposit:', error);
+      console.error('Error creating deposit account:', error);
       throw error;
     }
   }, [program, wallet.publicKey, getDepositPDA, getBridgeConfigPDA]);
 
-  // Fetch deposit info
-  const fetchDeposit = useCallback(async (depositPda: string): Promise<DepositInfo | null> => {
-    if (!program) return null;
+  // Close deposit account (to get a new XMR address)
+  const closeDepositAccount = useCallback(async (): Promise<string | null> => {
+    if (!program || !wallet.publicKey) return null;
 
     try {
-      const deposit = await (program.account as any).depositRecord.fetch(new PublicKey(depositPda));
+      const config = await fetchBridgeConfig();
+      if (!config) throw new Error('Bridge not initialized');
+
+      const depositPda = getDepositPDA(wallet.publicKey);
+
+      const signature = await program.methods
+        .closeDepositAccount()
+        .accountsPartial({
+          config: getBridgeConfigPDA(),
+          deposit: depositPda,
+          user: wallet.publicKey,
+          authority: new PublicKey(config.authority),
+        })
+        .preInstructions(getPriorityFeeInstructions())
+        .rpc();
+
+      return signature;
+    } catch (error) {
+      console.error('Error closing deposit account:', error);
+      throw error;
+    }
+  }, [program, wallet.publicKey, getDepositPDA, getBridgeConfigPDA, fetchBridgeConfig]);
+
+  // Fetch user's deposit account (or null if none exists)
+  const fetchMyDepositAccount = useCallback(async (): Promise<DepositAccountInfo | null> => {
+    if (!program || !wallet.publicKey) return null;
+
+    try {
+      const depositPda = getDepositPDA(wallet.publicKey);
+      const deposit = await (program.account as any).depositRecord.fetch(depositPda);
       
-      let status: DepositInfo['status'] = 'pending';
+      let status: DepositAccountInfo['status'] = 'pending';
       if ('pending' in deposit.status) status = 'pending';
-      else if ('awaitingDeposit' in deposit.status) status = 'awaitingDeposit';
-      else if ('completed' in deposit.status) status = 'completed';
-      else if ('cancelled' in deposit.status) status = 'cancelled';
+      else if ('active' in deposit.status) status = 'active';
+      else if ('closed' in deposit.status) status = 'closed';
 
       return {
-        depositPda,
-        recipient: deposit.recipient.toBase58(),
-        nonce: BigInt(deposit.nonce.toString()),
-        // Handle both camelCase and snake_case from IDL
-        xmrDepositAddress: deposit.xmrDepositAddress || deposit.xmr_deposit_address || '',
-        amountDeposited: BigInt((deposit.amountDeposited || deposit.amount_deposited || 0).toString()),
+        depositPda: depositPda.toBase58(),
+        owner: deposit.owner.toBase58(),
+        xmrDepositAddress: deposit.xmrDepositAddress || '',
+        totalDeposited: BigInt((deposit.totalDeposited || 0).toString()),
         status,
-        createdAt: (deposit.createdAt || deposit.created_at).toNumber(),
+        createdAt: deposit.createdAt.toNumber(),
       };
     } catch (error) {
-      console.error('Error fetching deposit:', error);
+      // Account doesn't exist - user hasn't created one yet
       return null;
     }
-  }, [program]);
-
-  // Fetch all deposits for current user
-  const fetchMyDeposits = useCallback(async (): Promise<DepositInfo[]> => {
-    if (!program || !wallet.publicKey) return [];
-
-    try {
-      const deposits = await (program.account as any).depositRecord.all([
-        {
-          memcmp: {
-            offset: 8, // discriminator
-            bytes: wallet.publicKey.toBase58(),
-          },
-        },
-      ]);
-
-      return deposits.map((d: any) => {
-        let status: DepositInfo['status'] = 'pending';
-        if ('pending' in d.account.status) status = 'pending';
-        else if ('awaitingDeposit' in d.account.status) status = 'awaitingDeposit';
-        else if ('completed' in d.account.status) status = 'completed';
-        else if ('cancelled' in d.account.status) status = 'cancelled';
-
-        return {
-          depositPda: d.publicKey.toBase58(),
-          recipient: d.account.recipient.toBase58(),
-          nonce: BigInt(d.account.nonce.toString()),
-          // Handle both camelCase and snake_case from IDL
-          xmrDepositAddress: d.account.xmrDepositAddress || d.account.xmr_deposit_address || '',
-          amountDeposited: BigInt((d.account.amountDeposited || d.account.amount_deposited || 0).toString()),
-          status,
-          createdAt: (d.account.createdAt || d.account.created_at).toNumber(),
-        };
-      });
-    } catch (error) {
-      console.error('Error fetching deposits:', error);
-      return [];
-    }
-  }, [program, wallet.publicKey]);
+  }, [program, wallet.publicKey, getDepositPDA]);
 
   // Request a withdrawal (burns wXMR)
   const requestWithdrawal = useCallback(async (
@@ -346,9 +328,9 @@ export function useWxmrBridge() {
     program,
     isConnected: !!wallet.publicKey,
     publicKey: wallet.publicKey,
-    requestDeposit,
-    fetchDeposit,
-    fetchMyDeposits,
+    createDepositAccount,
+    closeDepositAccount,
+    fetchMyDepositAccount,
     requestWithdrawal,
     fetchWithdrawal,
     fetchMyWithdrawals,
