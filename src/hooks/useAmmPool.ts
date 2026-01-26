@@ -90,8 +90,8 @@ export function useAmmPool() {
 
   useEffect(() => {
     fetchPool();
-    // Refresh every 5 seconds
-    const interval = setInterval(fetchPool, 5000);
+    // Refresh every 30 seconds (AMM data doesn't change often)
+    const interval = setInterval(fetchPool, 30000);
     return () => clearInterval(interval);
   }, [fetchPool]);
 

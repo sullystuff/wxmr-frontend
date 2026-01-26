@@ -106,7 +106,8 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
         : await jupiter.getSellQuote(parsedInput);
       setJupiterQuote(quote);
     };
-    const debounce = setTimeout(fetchQuote, 300);
+    // Wait 800ms after user stops typing before fetching quote
+    const debounce = setTimeout(fetchQuote, 800);
     return () => clearTimeout(debounce);
   }, [parsedInput, isBuying, jupiter, isOpen]);
 
@@ -167,7 +168,8 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
         setSelectedRoute('jupiter');
       }
     };
-    const debounce = setTimeout(simulate, 500);
+    // Wait 1 second after quote is ready before simulating
+    const debounce = setTimeout(simulate, 1000);
     return () => clearTimeout(debounce);
   }, [parsedInput, publicKey, isBuying, amm, jupiter, jupiterQuote, isOpen]);
 
