@@ -368,6 +368,99 @@ export type WxmrBridge = {
       ]
     },
     {
+      "name": "createAuditRecord",
+      "docs": [
+        "Create an audit record for epoch consolidation (authority only)",
+        "Account size is dynamic based on initial data length"
+      ],
+      "discriminator": [
+        247,
+        223,
+        36,
+        206,
+        121,
+        62,
+        176,
+        26
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "audit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "epoch"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "epoch",
+          "type": "u64"
+        },
+        {
+          "name": "circulatingSupply",
+          "type": "u64"
+        },
+        {
+          "name": "spendableBalance",
+          "type": "u64"
+        },
+        {
+          "name": "unconfirmedBalance",
+          "type": "u64"
+        },
+        {
+          "name": "data",
+          "type": "string"
+        }
+      ]
+    },
+    {
       "name": "createDepositAccount",
       "docs": [
         "Create token metadata for wXMR mint (authority only, one-time)",
@@ -439,6 +532,65 @@ export type WxmrBridge = {
         }
       ],
       "args": []
+    },
+    {
+      "name": "extendAuditData",
+      "docs": [
+        "Append data to an existing audit record (authority only)",
+        "Reallocates the account to fit additional data"
+      ],
+      "discriminator": [
+        180,
+        105,
+        90,
+        172,
+        234,
+        218,
+        238,
+        34
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "audit",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "additionalData",
+          "type": "string"
+        }
+      ]
     },
     {
       "name": "initialize",
@@ -1270,6 +1422,19 @@ export type WxmrBridge = {
       ]
     },
     {
+      "name": "auditRecord",
+      "discriminator": [
+        23,
+        133,
+        250,
+        12,
+        85,
+        60,
+        64,
+        139
+      ]
+    },
+    {
       "name": "bridgeConfig",
       "discriminator": [
         40,
@@ -1334,6 +1499,19 @@ export type WxmrBridge = {
         142,
         176,
         7
+      ]
+    },
+    {
+      "name": "auditRecordCreatedEvent",
+      "discriminator": [
+        240,
+        13,
+        164,
+        165,
+        151,
+        62,
+        2,
+        162
       ]
     },
     {
@@ -1663,6 +1841,79 @@ export type WxmrBridge = {
               "Total USDC volume traded (for stats)"
             ],
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "auditRecord",
+      "docs": [
+        "Audit record for epoch consolidation proof",
+        "Contains all consolidation tx proofs and unconfirmed balance info in one record",
+        "Data field is dynamically sized - account can be extended with extend_audit_data"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "circulatingSupply",
+            "type": "u64"
+          },
+          {
+            "name": "spendableBalance",
+            "type": "u64"
+          },
+          {
+            "name": "unconfirmedBalance",
+            "type": "u64"
+          },
+          {
+            "name": "data",
+            "type": "string"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "auditRecordCreatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "circulatingSupply",
+            "type": "u64"
+          },
+          {
+            "name": "spendableBalance",
+            "type": "u64"
+          },
+          {
+            "name": "unconfirmedBalance",
+            "type": "u64"
+          },
+          {
+            "name": "dataLen",
+            "type": "u32"
           }
         ]
       }

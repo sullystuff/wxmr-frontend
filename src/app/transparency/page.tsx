@@ -1,7 +1,12 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { Connection, PublicKey } from '@solana/web3.js';
+import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
+import { bs58 } from '@coral-xyz/anchor/dist/cjs/utils/bytes';
+import type { WxmrBridge } from '@/idl/wxmr_bridge';
+import IDL from '@/idl/wxmr_bridge.json';
 
 // Monero Logo SVG component (official logo from cryptologos.cc)
 function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
@@ -21,6 +26,31 @@ const BRIDGE_DATA = {
   wxmrMint: 'WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp',
   bridgeProgram: 'EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8',
 };
+
+const SOLANA_RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+
+// Audit record interface
+interface AuditRecord {
+  epoch: number;
+  timestamp: number;
+  circulatingSupply: bigint;
+  spendableBalance: bigint;
+  unconfirmedBalance: bigint;
+  data: string;
+}
+
+// Parsed audit data type
+interface AuditData {
+  timestamp: number;        // Unix timestamp (used as unique ID)
+  triggeredBy: 'scheduled' | 'withdrawal_failure';
+  address: string;
+  totalAmount: number;
+  totalFee: number;
+  txs: Array<{ txid: string; key: string; amount: number; fee: number }>;
+  unconfirmed: Array<{ tx: string; amt: number; conf: number }>;
+  // Legacy support
+  epoch?: number;
+}
 
 // InfoCard component
 function InfoCard({ 
@@ -80,8 +110,100 @@ function ExpandableSection({
   );
 }
 
+// Format XMR amount from atomic units
+function formatXmr(atomic: bigint | number): string {
+  const num = typeof atomic === 'bigint' ? Number(atomic) : atomic;
+  return (num / 1e12).toFixed(6);
+}
+
+// Format timestamp
+function formatDate(timestamp: number): string {
+  return new Date(timestamp * 1000).toLocaleString();
+}
+
+// AuditRecord discriminator (first 8 bytes of sha256("account:AuditRecord"))
+const AUDIT_RECORD_DISCRIMINATOR = [23, 133, 250, 12, 85, 60, 64, 139];
+
+// Fetch audit records from on-chain
+async function fetchAuditRecords(): Promise<AuditRecord[]> {
+  try {
+    const connection = new Connection(SOLANA_RPC, 'confirmed');
+    const programId = new PublicKey(BRIDGE_DATA.bridgeProgram);
+    
+    // Fetch all accounts with the AuditRecord discriminator (dynamic size)
+    const accounts = await connection.getProgramAccounts(programId, {
+      filters: [
+        {
+          memcmp: {
+            offset: 0,
+            bytes: bs58.encode(Buffer.from(AUDIT_RECORD_DISCRIMINATOR)),
+          },
+        },
+      ],
+    });
+
+    const records: AuditRecord[] = [];
+    
+    for (const account of accounts) {
+      try {
+        const data = account.account.data;
+        // Skip discriminator (8 bytes)
+        let offset = 8;
+        
+        const epoch = new BN(data.subarray(offset, offset + 8), 'le').toNumber();
+        offset += 8;
+        
+        const timestamp = new BN(data.subarray(offset, offset + 8), 'le').toNumber();
+        offset += 8;
+        
+        const circulatingSupply = BigInt(new BN(data.subarray(offset, offset + 8), 'le').toString());
+        offset += 8;
+        
+        const spendableBalance = BigInt(new BN(data.subarray(offset, offset + 8), 'le').toString());
+        offset += 8;
+        
+        const unconfirmedBalance = BigInt(new BN(data.subarray(offset, offset + 8), 'le').toString());
+        offset += 8;
+        
+        // String length (4 bytes) + string data
+        const strLen = new BN(data.subarray(offset, offset + 4), 'le').toNumber();
+        offset += 4;
+        
+        const dataStr = new TextDecoder().decode(data.subarray(offset, offset + strLen));
+        
+        records.push({
+          epoch,
+          timestamp,
+          circulatingSupply,
+          spendableBalance,
+          unconfirmedBalance,
+          data: dataStr,
+        });
+      } catch {
+        // Skip malformed records
+      }
+    }
+    
+    // Sort by epoch desc
+    return records.sort((a, b) => b.epoch - a.epoch);
+  } catch (error) {
+    console.error('Error fetching audit records:', error);
+    return [];
+  }
+}
+
 export default function TransparencyPage() {
   const [copied, setCopied] = useState<string | null>(null);
+  const [audits, setAudits] = useState<AuditRecord[]>([]);
+  const [loadingAudits, setLoadingAudits] = useState(true);
+  const [expandedEpoch, setExpandedEpoch] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetchAuditRecords().then(records => {
+      setAudits(records);
+      setLoadingAudits(false);
+    });
+  }, []);
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -398,6 +520,281 @@ export default function TransparencyPage() {
               </p>
             </div>
           </div>
+        </InfoCard>
+
+        {/* Epoch Audit History */}
+        <InfoCard
+          title="Epoch Audit History"
+          icon={
+            <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
+            </svg>
+          }
+        >
+          <p className="text-[var(--muted)] mb-4">
+            Every week (or when needed for withdrawals), we consolidate all spendable XMR and record proof on-chain. 
+            Each audit includes transaction keys so you can verify we control the XMR backing wXMR.
+          </p>
+
+          <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg mb-4">
+            <p className="text-xs text-yellow-200">
+              <strong>Why XMR balance may differ from wXMR supply:</strong> Monero requires transaction fees to 
+              consolidate UTXOs. The bridge operator pays these fees out of pocket—users never pay consolidation fees. 
+              This means the actual XMR backing may be slightly less than the wXMR supply (typically &lt;0.01 XMR difference).
+            </p>
+          </div>
+
+          {loadingAudits ? (
+            <div className="text-center py-8 text-[var(--muted)]">
+              <div className="animate-spin w-6 h-6 border-2 border-[#ff6600] border-t-transparent rounded-full mx-auto mb-2"></div>
+              Loading audit history...
+            </div>
+          ) : audits.length === 0 ? (
+            <div className="text-center py-8 text-[var(--muted)]">
+              No audits recorded yet. First audit will run within 24 hours.
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {audits.map((audit) => {
+                const isExpanded = expandedEpoch === audit.epoch;
+                
+                let auditData: AuditData | null = null;
+                try {
+                  auditData = JSON.parse(audit.data);
+                } catch {
+                  auditData = null;
+                }
+
+                // The epoch field is now a Unix timestamp
+                const auditDate = formatDate(audit.epoch);
+                const triggeredBy = auditData?.triggeredBy;
+                
+                return (
+                  <div key={audit.epoch} className="border border-[var(--border)] rounded-lg overflow-hidden">
+                    <button
+                      onClick={() => setExpandedEpoch(isExpanded ? null : audit.epoch)}
+                      className="w-full p-4 bg-[var(--background)] hover:bg-[var(--card-hover)] flex justify-between items-center text-left transition-colors"
+                    >
+                      <div>
+                        <span className="font-semibold text-white">{auditDate}</span>
+                        {triggeredBy === 'withdrawal_failure' && (
+                          <span className="text-xs text-yellow-400 ml-2 px-2 py-0.5 bg-yellow-400/10 rounded">
+                            triggered by withdrawal
+                          </span>
+                        )}
+                        {triggeredBy === 'scheduled' && (
+                          <span className="text-xs text-green-400 ml-2 px-2 py-0.5 bg-green-400/10 rounded">
+                            scheduled
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="text-right text-sm">
+                          <div className="text-[#ff6600]">{formatXmr(audit.spendableBalance)} XMR</div>
+                          <div className="text-xs text-[var(--muted)]">consolidated</div>
+                        </div>
+                        <svg 
+                          className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} 
+                          fill="none" 
+                          stroke="currentColor" 
+                          viewBox="0 0 24 24"
+                        >
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                      </div>
+                    </button>
+                    
+                    {isExpanded && (
+                      <div className="p-4 border-t border-[var(--border)] bg-[var(--card)] space-y-4">
+                        {/* Balance Summary Box */}
+                        <div className="bg-[var(--background)] rounded-lg p-4 border border-[var(--border)]">
+                          <p className="text-xs text-[var(--muted)] uppercase mb-3 font-semibold">Balance Summary</p>
+                          
+                          {/* Main comparison */}
+                          <div className="space-y-2 text-sm font-mono">
+                            <div className="flex justify-between">
+                              <span className="text-[var(--muted)]">wXMR Circulating Supply:</span>
+                              <span className="text-white">{formatXmr(audit.circulatingSupply)} wXMR</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-[var(--muted)]">XMR Spendable (after fees):</span>
+                              <span className="text-[#ff6600]">{formatXmr(audit.spendableBalance)} XMR</span>
+                            </div>
+                            <div className="flex justify-between">
+                              <span className="text-[var(--muted)]">XMR Unconfirmed (pending):</span>
+                              <span className="text-yellow-400">{formatXmr(audit.unconfirmedBalance)} XMR</span>
+                            </div>
+                            
+                            <div className="border-t border-[var(--border)] pt-2 mt-2">
+                              <div className="flex justify-between font-semibold">
+                                <span className="text-[var(--muted)]">Total XMR Backing:</span>
+                                <span className="text-green-400">
+                                  {formatXmr(BigInt(audit.spendableBalance.toString()) + BigInt(audit.unconfirmedBalance.toString()))} XMR
+                                </span>
+                              </div>
+                            </div>
+                            
+                            {/* Fee difference explanation */}
+                            {(() => {
+                              const totalXmr = BigInt(audit.spendableBalance.toString()) + BigInt(audit.unconfirmedBalance.toString());
+                              const wxmrSupply = BigInt(audit.circulatingSupply.toString());
+                              const difference = wxmrSupply - totalXmr;
+                              
+                              if (difference > BigInt(0)) {
+                                return (
+                                  <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-xs">
+                                    <div className="flex justify-between mb-1">
+                                      <span className="text-[var(--muted)]">Shortfall (fees we paid):</span>
+                                      <span className="text-red-400 font-semibold">-{formatXmr(difference)} XMR</span>
+                                    </div>
+                                    <p className="text-[var(--muted)]">
+                                      This {formatXmr(difference)} XMR difference is the cumulative cost of consolidation fees 
+                                      the bridge operator has paid. Users never pay these fees—we absorb the cost of managing Monero UTXOs.
+                                    </p>
+                                  </div>
+                                );
+                              }
+                              return null;
+                            })()}
+                          </div>
+                          
+                          {/* Total fees this epoch */}
+                          {auditData?.totalFee && auditData.totalFee > 0 && (
+                            <div className="mt-3 pt-3 border-t border-[var(--border)]">
+                              <div className="flex justify-between text-sm">
+                                <span className="text-[var(--muted)]">Fees we paid this epoch:</span>
+                                <span className="text-red-400 font-mono">-{formatXmr(auditData.totalFee)} XMR</span>
+                              </div>
+                              <p className="text-xs text-[var(--muted)] mt-1">
+                                Paid by bridge operator, not deducted from user balances
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Unconfirmed Transfers (viewable with view key) */}
+                        {auditData?.unconfirmed && auditData.unconfirmed.length > 0 && (
+                          <div className="mt-4">
+                            <p className="text-xs text-[var(--muted)] uppercase mb-2">
+                              Unconfirmed Deposits (verify with view key)
+                            </p>
+                            <div className="space-y-1">
+                              {auditData.unconfirmed.map((tx, i) => (
+                                <div key={i} className="text-xs font-mono bg-[var(--background)] p-2 rounded flex justify-between">
+                                  <span className="text-[var(--muted)]">{tx.tx.slice(0, 16)}...</span>
+                                  <span className="text-yellow-400">{formatXmr(tx.amt)} XMR</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Primary Address */}
+                        {auditData?.address && (
+                          <div className="mt-4">
+                            <p className="text-xs text-[var(--muted)] uppercase mb-2">Consolidation Destination</p>
+                            <div className="bg-[var(--background)] p-3 rounded-lg border border-[var(--border)]">
+                              <div className="flex gap-2">
+                                <code className="font-mono text-xs text-[#ff6600] break-all flex-1">{auditData.address}</code>
+                                <button
+                                  onClick={() => copyToClipboard(auditData!.address, `addr-${audit.epoch}`)}
+                                  className="p-1 hover:bg-[var(--card-hover)] rounded flex-shrink-0"
+                                >
+                                  {copied === `addr-${audit.epoch}` ? '✓' : '📋'}
+                                </button>
+                              </div>
+                              <p className="text-xs text-[var(--muted)] mt-1">
+                                All XMR was swept to this address (our primary wallet)
+                              </p>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Consolidation Transactions with TX Keys */}
+                        {auditData?.txs && auditData.txs.length > 0 && (
+                          <div className="mt-4">
+                            <p className="text-xs text-[var(--muted)] uppercase mb-2">
+                              Consolidation Transactions ({auditData.txs.length})
+                            </p>
+                            <p className="text-xs text-[var(--muted)] mb-3">
+                              Each transaction proves we control the XMR. Use the TX key to verify on xmrchain.net.
+                            </p>
+                            <div className="space-y-3">
+                              {auditData.txs.map((tx, i) => (
+                                <div key={i} className="bg-[var(--background)] p-3 rounded-lg border border-[var(--border)]">
+                                  <div className="flex justify-between items-start mb-2">
+                                    <span className="text-xs text-[var(--muted)]">TX #{i + 1}</span>
+                                    <div className="text-right">
+                                      <span className="text-sm text-[#ff6600] font-mono">{formatXmr(tx.amount)} XMR</span>
+                                      <span className="text-xs text-red-400 ml-2">(-{formatXmr(tx.fee)} fee)</span>
+                                    </div>
+                                  </div>
+                                  
+                                  <div className="space-y-2 text-xs">
+                                    <div>
+                                      <p className="text-[var(--muted)]">TXID:</p>
+                                      <div className="flex gap-2">
+                                        <code className="font-mono text-white break-all flex-1">{tx.txid}</code>
+                                        <button
+                                          onClick={() => copyToClipboard(tx.txid, `txid-${audit.epoch}-${i}`)}
+                                          className="p-1 hover:bg-[var(--card-hover)] rounded"
+                                        >
+                                          {copied === `txid-${audit.epoch}-${i}` ? '✓' : '📋'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                    
+                                    <div>
+                                      <p className="text-[var(--muted)]">TX Key (proof of ownership):</p>
+                                      <div className="flex gap-2">
+                                        <code className="font-mono text-green-400 break-all flex-1">{tx.key}</code>
+                                        <button
+                                          onClick={() => copyToClipboard(tx.key, `key-${audit.epoch}-${i}`)}
+                                          className="p-1 hover:bg-[var(--card-hover)] rounded"
+                                        >
+                                          {copied === `key-${audit.epoch}-${i}` ? '✓' : '📋'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  </div>
+                                  
+                                  <a
+                                    href={`https://xmrchain.net/tx/${tx.txid}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-1 text-xs text-[#ff6600] hover:underline mt-2"
+                                  >
+                                    Verify on xmrchain.net →
+                                  </a>
+                                </div>
+                              ))}
+                            </div>
+                            
+                            {auditData.totalFee > 0 && (
+                              <p className="text-xs text-[var(--muted)] mt-2">
+                                Total fees paid: {formatXmr(auditData.totalFee)} XMR
+                              </p>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Verification Instructions */}
+                        <div className="mt-4 p-3 bg-[var(--background)] rounded-lg text-xs text-[var(--muted)]">
+                          <p className="font-semibold text-white mb-1">How to verify:</p>
+                          <ol className="list-decimal list-inside space-y-1">
+                            <li>Go to xmrchain.net and paste the TXID</li>
+                            <li>Click &quot;Prove sending&quot;</li>
+                            <li>Enter our XMR address and the TX key</li>
+                            <li>Confirms we spent the exact amount shown</li>
+                          </ol>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </InfoCard>
 
         {/* Footer */}

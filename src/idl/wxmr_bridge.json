@@ -362,6 +362,99 @@
       ]
     },
     {
+      "name": "create_audit_record",
+      "docs": [
+        "Create an audit record for epoch consolidation (authority only)",
+        "Account size is dynamic based on initial data length"
+      ],
+      "discriminator": [
+        247,
+        223,
+        36,
+        206,
+        121,
+        62,
+        176,
+        26
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "audit",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  117,
+                  100,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "epoch"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "epoch",
+          "type": "u64"
+        },
+        {
+          "name": "circulating_supply",
+          "type": "u64"
+        },
+        {
+          "name": "spendable_balance",
+          "type": "u64"
+        },
+        {
+          "name": "unconfirmed_balance",
+          "type": "u64"
+        },
+        {
+          "name": "data",
+          "type": "string"
+        }
+      ]
+    },
+    {
       "name": "create_deposit_account",
       "docs": [
         "Create token metadata for wXMR mint (authority only, one-time)",
@@ -433,6 +526,65 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "extend_audit_data",
+      "docs": [
+        "Append data to an existing audit record (authority only)",
+        "Reallocates the account to fit additional data"
+      ],
+      "discriminator": [
+        180,
+        105,
+        90,
+        172,
+        234,
+        218,
+        238,
+        34
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "audit",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "additional_data",
+          "type": "string"
+        }
+      ]
     },
     {
       "name": "initialize",
@@ -1264,6 +1416,19 @@
       ]
     },
     {
+      "name": "AuditRecord",
+      "discriminator": [
+        23,
+        133,
+        250,
+        12,
+        85,
+        60,
+        64,
+        139
+      ]
+    },
+    {
       "name": "BridgeConfig",
       "discriminator": [
         40,
@@ -1328,6 +1493,19 @@
         142,
         176,
         7
+      ]
+    },
+    {
+      "name": "AuditRecordCreatedEvent",
+      "discriminator": [
+        240,
+        13,
+        164,
+        165,
+        151,
+        62,
+        2,
+        162
       ]
     },
     {
@@ -1657,6 +1835,79 @@
               "Total USDC volume traded (for stats)"
             ],
             "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AuditRecord",
+      "docs": [
+        "Audit record for epoch consolidation proof",
+        "Contains all consolidation tx proofs and unconfirmed balance info in one record",
+        "Data field is dynamically sized - account can be extended with extend_audit_data"
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "circulating_supply",
+            "type": "u64"
+          },
+          {
+            "name": "spendable_balance",
+            "type": "u64"
+          },
+          {
+            "name": "unconfirmed_balance",
+            "type": "u64"
+          },
+          {
+            "name": "data",
+            "type": "string"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AuditRecordCreatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "epoch",
+            "type": "u64"
+          },
+          {
+            "name": "timestamp",
+            "type": "i64"
+          },
+          {
+            "name": "circulating_supply",
+            "type": "u64"
+          },
+          {
+            "name": "spendable_balance",
+            "type": "u64"
+          },
+          {
+            "name": "unconfirmed_balance",
+            "type": "u64"
+          },
+          {
+            "name": "data_len",
+            "type": "u32"
           }
         ]
       }
