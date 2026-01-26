@@ -3,8 +3,8 @@
 import { useState, useCallback } from 'react';
 import { Connection, VersionedTransaction, PublicKey } from '@solana/web3.js';
 
-const JUPITER_QUOTE_API = 'https://api.jup.ag/quote/v1';
-const JUPITER_SWAP_API = 'https://api.jup.ag/swap/v1';
+const JUPITER_QUOTE_API = 'https://quote-api.jup.ag/v6/quote';
+const JUPITER_SWAP_API = 'https://quote-api.jup.ag/v6/swap';
 const SOLANA_RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 
 // Token addresses
@@ -102,7 +102,7 @@ export function useJupiterQuote() {
     userPublicKey: string
   ): Promise<SwapTransaction | null> => {
     try {
-      const response = await fetch(`${JUPITER_SWAP_API}/swap`, {
+      const response = await fetch(JUPITER_SWAP_API, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
