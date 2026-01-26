@@ -524,6 +524,15 @@ export default function Home() {
               >
                 Withdraw XMR
               </button>
+              <Link
+                href="/swap"
+                className="xmr-tab px-6 py-2.5 rounded-lg font-semibold transition-all bg-[var(--card)] text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-white border border-[var(--border)] flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                </svg>
+                Swap
+              </Link>
             </div>
 
             {/* Alerts */}

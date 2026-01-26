@@ -226,20 +226,12 @@ export default function TransparencyPage() {
               <p className="text-[var(--muted)] mt-0.5">Verify our reserves and proofs</p>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <Link 
-              href="/swap"
-              className="px-4 py-2 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] rounded-lg font-semibold transition-all text-sm"
-            >
-              Swap
-            </Link>
-            <Link 
-              href="/"
-              className="px-6 py-2.5 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] rounded-lg font-semibold transition-all"
-            >
-              Back to Bridge
-            </Link>
-          </div>
+          <Link 
+            href="/"
+            className="px-6 py-2.5 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] rounded-lg font-semibold transition-all"
+          >
+            Back to Bridge
+          </Link>
         </header>
 
         {/* Introduction */}
