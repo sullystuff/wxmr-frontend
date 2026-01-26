@@ -289,9 +289,11 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
     ? ammOutputAmount <= BigInt(0) && ammPreviewAmount > BigInt(0)
     : jupiterOutputAmount <= BigInt(0) && jupiterPreviewAmount > BigInt(0);
 
-  // Only allow swap when simulation confirms the route works (not just preview)
+  // Allow swap when route is available
+  // AMM: trust preview since we have direct pool data (on-chain will validate)
+  // Jupiter: need simulation to confirm route works
   const canSwap = connected && !isSwapping && (
-    (selectedRoute === 'amm' && ammSimResult?.success) ||
+    (selectedRoute === 'amm' && ammAmount > BigInt(0) && amm.pool?.enabled) ||
     (selectedRoute === 'jupiter' && jupiterSimResult?.success)
   );
 
@@ -609,15 +611,13 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                   ? 'Enter amount'
                   : exceedsUserBalance
                     ? `Insufficient ${inputToken.symbol}`
-                    : isSimulating
-                      ? 'Finding route...'
-                      : exceedsPoolLiquidity && selectedRoute === 'amm'
-                        ? 'Exceeds pool liquidity'
-                        : !canSwap && (ammAmount > BigInt(0) || jupiterAmount > BigInt(0))
-                          ? 'Verifying route...'
-                          : outputAmount <= BigInt(0)
-                            ? 'No route available'
-                            : 'Swap'}
+                    : exceedsPoolLiquidity && selectedRoute === 'amm'
+                      ? 'Exceeds pool liquidity'
+                      : selectedRoute === 'jupiter' && !jupiterSimResult?.success && jupiterAmount > BigInt(0)
+                        ? 'Verifying Jupiter route...'
+                        : displayAmount <= BigInt(0)
+                          ? 'No route available'
+                          : 'Swap'}
           </button>
 
           {/* Success */}
