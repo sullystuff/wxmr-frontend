@@ -364,11 +364,32 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
     return num.toLocaleString('en-US', { maximumFractionDigits: decimals === 6 ? 2 : 6 });
   };
   
-  // Handle max button
+  // Handle max button - cap at pool liquidity if needed
   const handleMax = () => {
-    const balance = isBuying ? userUsdcBalance : userWxmrBalance;
+    const userBalance = isBuying ? userUsdcBalance : userWxmrBalance;
     const decimals = isBuying ? 6 : 12;
-    const formatted = (Number(balance) / Math.pow(10, decimals)).toString();
+    
+    // Calculate max input the pool can handle
+    let maxPoolCanHandle = userBalance;
+    if (amm.pool) {
+      if (isBuying) {
+        // Buying wXMR: max USDC = poolWxmrBalance * buyPrice / 1e12
+        const buyPrice = amm.pool.buyPrice;
+        if (buyPrice > BigInt(0)) {
+          maxPoolCanHandle = (poolWxmrBalance * buyPrice) / BigInt('1000000000000');
+        }
+      } else {
+        // Selling wXMR: max wXMR = poolUsdcBalance * 1e12 / sellPrice
+        const sellPrice = amm.pool.sellPrice;
+        if (sellPrice > BigInt(0)) {
+          maxPoolCanHandle = (poolUsdcBalance * BigInt('1000000000000')) / sellPrice;
+        }
+      }
+    }
+    
+    // Use the smaller of user balance and pool capacity
+    const finalAmount = userBalance < maxPoolCanHandle ? userBalance : maxPoolCanHandle;
+    const formatted = (Number(finalAmount) / Math.pow(10, decimals)).toString();
     setInputAmount(formatted);
   };
   
