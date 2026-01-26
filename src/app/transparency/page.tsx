@@ -394,7 +394,7 @@ export default function TransparencyPage() {
             <div className="mt-4 p-4 bg-[#ff6600]/10 border border-[#ff6600]/30 rounded-lg">
               <p className="text-sm">
                 <strong className="text-[#ff6600]">Don&apos;t trust, verify.</strong> We provide all the cryptographic 
-                tools you need to independently audit every deposit and withdrawal. Full transparency, no black boxes.
+                tools you need to independently audit every deposit and withdrawal.
               </p>
             </div>
           </div>
