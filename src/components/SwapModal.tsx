@@ -237,18 +237,63 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
     return () => clearTimeout(debounce);
   }, [parsedInput, publicKey, isBuying, amm, jupiter, jupiterQuote, isOpen]);
 
-  // Get output amount
-  const outputAmount = useMemo(() => {
-    if (selectedRoute === 'amm' && ammSimResult?.success) {
-      return ammSimResult.outputAmount;
+  // Instant previews (no simulation needed)
+  const ammPreviewAmount = useMemo(() => {
+    if (parsedInput <= BigInt(0) || !amm.pool) return BigInt(0);
+    return isBuying 
+      ? amm.calculateBuyOutput(parsedInput)
+      : amm.calculateSellOutput(parsedInput);
+  }, [parsedInput, isBuying, amm]);
+
+  const jupiterPreviewAmount = useMemo(() => {
+    if (!jupiterQuote) return BigInt(0);
+    return BigInt(jupiterQuote.outAmount);
+  }, [jupiterQuote]);
+
+  // Get output amount from simulation (more accurate than preview)
+  const ammOutputAmount = ammSimResult?.success ? ammSimResult.outputAmount : BigInt(0);
+  const jupiterOutputAmount = jupiterSimResult?.success ? jupiterSimResult.outputAmount : BigInt(0);
+
+  // Determine best route based on simulation if available, otherwise preview
+  const ammAmount = ammOutputAmount > BigInt(0) ? ammOutputAmount : ammPreviewAmount;
+  const jupiterAmount = jupiterOutputAmount > BigInt(0) ? jupiterOutputAmount : jupiterPreviewAmount;
+  
+  // Track which has the best rate
+  const ammIsBest = ammAmount > BigInt(0) && ammAmount >= jupiterAmount;
+  const jupiterIsBest = jupiterAmount > BigInt(0) && jupiterAmount > ammAmount;
+  
+  // Auto-select best route when previews change
+  useEffect(() => {
+    if (ammSimResult || jupiterSimResult) return; // Don't override simulation-based selection
+    if (ammIsBest) {
+      setSelectedRoute('amm');
+    } else if (jupiterIsBest) {
+      setSelectedRoute('jupiter');
     }
-    if (selectedRoute === 'jupiter' && jupiterSimResult?.success) {
-      return jupiterSimResult.outputAmount;
+  }, [ammIsBest, jupiterIsBest, ammSimResult, jupiterSimResult]);
+
+  // Output amount for selected route
+  const outputAmount = useMemo(() => {
+    if (selectedRoute === 'amm') {
+      return ammOutputAmount > BigInt(0) ? ammOutputAmount : ammPreviewAmount;
+    }
+    if (selectedRoute === 'jupiter') {
+      return jupiterOutputAmount > BigInt(0) ? jupiterOutputAmount : jupiterPreviewAmount;
     }
     return BigInt(0);
-  }, [selectedRoute, ammSimResult, jupiterSimResult]);
+  }, [selectedRoute, ammOutputAmount, jupiterOutputAmount, ammPreviewAmount, jupiterPreviewAmount]);
+  
+  // Display amount and whether it's a preview
+  const displayAmount = outputAmount;
+  const isPreview = selectedRoute === 'amm' 
+    ? ammOutputAmount <= BigInt(0) && ammPreviewAmount > BigInt(0)
+    : jupiterOutputAmount <= BigInt(0) && jupiterPreviewAmount > BigInt(0);
 
-  const canSwap = connected && outputAmount > BigInt(0) && !isSwapping;
+  // Only allow swap when simulation confirms the route works (not just preview)
+  const canSwap = connected && !isSwapping && (
+    (selectedRoute === 'amm' && ammSimResult?.success) ||
+    (selectedRoute === 'jupiter' && jupiterSimResult?.success)
+  );
 
   // Flip direction
   const flipDirection = () => {
@@ -424,10 +469,11 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm text-gray-400">You receive</span>
               {isSimulating && <span className="text-xs text-gray-500">Finding best rate...</span>}
+              {isPreview && !isSimulating && <span className="text-xs text-gray-500">~estimate</span>}
             </div>
             <div className="flex items-center gap-3">
-              <span className="flex-1 text-3xl font-medium text-white">
-                {outputAmount > BigInt(0) ? formatAmount(outputAmount, outputToken.decimals) : '0'}
+              <span className={`flex-1 text-3xl font-medium ${isPreview ? 'text-gray-400' : 'text-white'}`}>
+                {displayAmount > BigInt(0) ? formatAmount(displayAmount, outputToken.decimals) : '0'}
               </span>
               <div className="flex items-center gap-2 bg-[#2a2a4a] px-3 py-2 rounded-xl cursor-default">
                 <outputToken.icon className="w-6 h-6" />
@@ -436,8 +482,8 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
             </div>
           </div>
 
-          {/* Route Info */}
-          {parsedInput > BigInt(0) && (ammSimResult?.success || jupiterSimResult?.success) && (
+          {/* Route Info - Show when there's any route available */}
+          {parsedInput > BigInt(0) && (ammAmount > BigInt(0) || jupiterAmount > BigInt(0)) && (
             <button
               onClick={() => setShowRoutes(!showRoutes)}
               className="w-full flex items-center justify-between px-4 py-3 bg-[#12121f] rounded-xl hover:bg-[#1a1a2a] transition-colors"
@@ -449,7 +495,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                 <span className="text-sm text-gray-400">
                   via <span className="text-white">{selectedRoute === 'amm' ? 'wXMR AMM' : 'Jupiter'}</span>
                 </span>
-                {ammSimResult?.success && jupiterSimResult?.success && (
+                {ammAmount > BigInt(0) && jupiterAmount > BigInt(0) && (
                   <span className="text-xs text-green-400 bg-green-400/10 px-2 py-0.5 rounded">Best</span>
                 )}
               </div>
@@ -459,10 +505,50 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
             </button>
           )}
 
-          {/* Route Selection */}
+          {/* Route Selection - sorted with best on top */}
           {showRoutes && (
             <div className="space-y-2 p-3 bg-[#12121f] rounded-xl">
-              {ammSimResult?.success && (
+              {/* Best route first */}
+              {ammIsBest && ammAmount > BigInt(0) && (
+                <button
+                  onClick={() => { setSelectedRoute('amm'); setShowRoutes(false); }}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl transition-colors ${
+                    selectedRoute === 'amm' ? 'bg-[#ff6600]/20 border border-[#ff6600]' : 'bg-[#1a1a2a] hover:bg-[#2a2a3a]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div>
+                      <p className="text-sm font-medium text-white">wXMR AMM</p>
+                      <p className="text-xs text-gray-400">{ammOutputAmount > BigInt(0) ? 'Direct swap' : '~estimate'}</p>
+                    </div>
+                    {jupiterAmount > BigInt(0) && <span className="text-xs text-green-400 bg-green-400/10 px-2 py-0.5 rounded">Best</span>}
+                  </div>
+                  <span className="text-sm font-mono text-white">
+                    {formatAmount(ammAmount, outputToken.decimals)}
+                  </span>
+                </button>
+              )}
+              {jupiterIsBest && jupiterAmount > BigInt(0) && (
+                <button
+                  onClick={() => { setSelectedRoute('jupiter'); setShowRoutes(false); }}
+                  className={`w-full flex items-center justify-between p-3 rounded-xl transition-colors ${
+                    selectedRoute === 'jupiter' ? 'bg-[#ff6600]/20 border border-[#ff6600]' : 'bg-[#1a1a2a] hover:bg-[#2a2a3a]'
+                  }`}
+                >
+                  <div className="flex items-center gap-2">
+                    <div>
+                      <p className="text-sm font-medium text-white">Jupiter</p>
+                      <p className="text-xs text-gray-400">{jupiterOutputAmount > BigInt(0) ? 'DEX aggregator' : '~estimate'}</p>
+                    </div>
+                    {ammAmount > BigInt(0) && <span className="text-xs text-green-400 bg-green-400/10 px-2 py-0.5 rounded">Best</span>}
+                  </div>
+                  <span className="text-sm font-mono text-white">
+                    {formatAmount(jupiterAmount, outputToken.decimals)}
+                  </span>
+                </button>
+              )}
+              {/* Second best route */}
+              {!ammIsBest && ammAmount > BigInt(0) && (
                 <button
                   onClick={() => { setSelectedRoute('amm'); setShowRoutes(false); }}
                   className={`w-full flex items-center justify-between p-3 rounded-xl transition-colors ${
@@ -471,14 +557,14 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                 >
                   <div>
                     <p className="text-sm font-medium text-white">wXMR AMM</p>
-                    <p className="text-xs text-gray-400">Direct swap, no fees</p>
+                    <p className="text-xs text-gray-400">{ammOutputAmount > BigInt(0) ? 'Direct swap' : '~estimate'}</p>
                   </div>
                   <span className="text-sm font-mono text-white">
-                    {formatAmount(ammSimResult.outputAmount, outputToken.decimals)}
+                    {formatAmount(ammAmount, outputToken.decimals)}
                   </span>
                 </button>
               )}
-              {jupiterSimResult?.success && (
+              {!jupiterIsBest && jupiterAmount > BigInt(0) && (
                 <button
                   onClick={() => { setSelectedRoute('jupiter'); setShowRoutes(false); }}
                   className={`w-full flex items-center justify-between p-3 rounded-xl transition-colors ${
@@ -487,10 +573,10 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                 >
                   <div>
                     <p className="text-sm font-medium text-white">Jupiter</p>
-                    <p className="text-xs text-gray-400">DEX aggregator</p>
+                    <p className="text-xs text-gray-400">{jupiterOutputAmount > BigInt(0) ? 'DEX aggregator' : '~estimate'}</p>
                   </div>
                   <span className="text-sm font-mono text-white">
-                    {formatAmount(jupiterSimResult.outputAmount, outputToken.decimals)}
+                    {formatAmount(jupiterAmount, outputToken.decimals)}
                   </span>
                 </button>
               )}
@@ -527,9 +613,11 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                       ? 'Finding route...'
                       : exceedsPoolLiquidity && selectedRoute === 'amm'
                         ? 'Exceeds pool liquidity'
-                        : outputAmount <= BigInt(0)
-                          ? 'No route available'
-                          : 'Swap'}
+                        : !canSwap && (ammAmount > BigInt(0) || jupiterAmount > BigInt(0))
+                          ? 'Verifying route...'
+                          : outputAmount <= BigInt(0)
+                            ? 'No route available'
+                            : 'Swap'}
           </button>
 
           {/* Success */}
