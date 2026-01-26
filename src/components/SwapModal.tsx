@@ -349,7 +349,11 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
       setTxSignature(sig);
       setInputAmount('');
     } catch (e) {
-      alert(`Swap failed: ${e instanceof Error ? e.message : 'Unknown error'}`);
+      const msg = e instanceof Error ? e.message.toLowerCase() : '';
+      // Silently ignore user rejections
+      if (!msg.includes('reject') && !msg.includes('cancel') && !msg.includes('denied')) {
+        console.error('Swap failed:', e);
+      }
     } finally {
       setIsSwapping(false);
     }
