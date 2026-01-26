@@ -8,6 +8,101 @@
   },
   "instructions": [
     {
+      "name": "add_liquidity",
+      "docs": [
+        "Add liquidity to the AMM (authority only)"
+      ],
+      "discriminator": [
+        181,
+        157,
+        89,
+        67,
+        143,
+        182,
+        52,
+        72
+      ],
+      "accounts": [
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  109,
+                  109,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "authority_wxmr",
+          "docs": [
+            "Authority's wXMR token account"
+          ],
+          "writable": true
+        },
+        {
+          "name": "authority_usdc",
+          "docs": [
+            "Authority's USDC token account"
+          ],
+          "writable": true
+        },
+        {
+          "name": "pool_wxmr",
+          "docs": [
+            "Pool's wXMR token account"
+          ],
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool_usdc",
+          "docs": [
+            "Pool's USDC token account"
+          ],
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "wxmr_amount",
+          "type": "u64"
+        },
+        {
+          "name": "usdc_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "assign_deposit_address",
       "docs": [
         "Backend assigns a Monero subaddress to the deposit account (one-time)"
@@ -57,6 +152,94 @@
         {
           "name": "xmr_address",
           "type": "string"
+        }
+      ]
+    },
+    {
+      "name": "buy_wxmr",
+      "docs": [
+        "Buy wXMR with USDC"
+      ],
+      "discriminator": [
+        209,
+        134,
+        9,
+        71,
+        64,
+        91,
+        200,
+        53
+      ],
+      "accounts": [
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  109,
+                  109,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "user_wxmr",
+          "docs": [
+            "User's wXMR token account (receives wXMR)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "user_usdc",
+          "docs": [
+            "User's USDC token account (pays USDC)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "pool_wxmr",
+          "docs": [
+            "Pool's wXMR token account"
+          ],
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool_usdc",
+          "docs": [
+            "Pool's USDC token account"
+          ],
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "usdc_amount",
+          "type": "u64"
         }
       ]
     },
@@ -170,6 +353,10 @@
       "args": [
         {
           "name": "xmr_tx_hash",
+          "type": "string"
+        },
+        {
+          "name": "xmr_tx_key",
           "type": "string"
         }
       ]
@@ -297,6 +484,161 @@
         }
       ],
       "args": []
+    },
+    {
+      "name": "initialize_amm",
+      "docs": [
+        "Initialize the AMM pool (authority only)"
+      ],
+      "discriminator": [
+        44,
+        175,
+        253,
+        31,
+        47,
+        138,
+        50,
+        68
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "docs": [
+            "Bridge config (to validate wXMR mint)"
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  109,
+                  109,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "wxmr_mint",
+          "docs": [
+            "wXMR mint (must match bridge config mint)"
+          ]
+        },
+        {
+          "name": "usdc_mint",
+          "docs": [
+            "USDC mint"
+          ]
+        },
+        {
+          "name": "pool_wxmr",
+          "docs": [
+            "Pool's wXMR token account (created as PDA-owned ATA)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  109,
+                  109,
+                  95,
+                  119,
+                  120,
+                  109,
+                  114
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pool"
+              }
+            ]
+          }
+        },
+        {
+          "name": "pool_usdc",
+          "docs": [
+            "Pool's USDC token account (created as PDA-owned ATA)"
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  109,
+                  109,
+                  95,
+                  117,
+                  115,
+                  100,
+                  99
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "pool"
+              }
+            ]
+          }
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "initial_buy_price",
+          "type": "u64"
+        },
+        {
+          "name": "initial_sell_price",
+          "type": "u64"
+        }
+      ]
     },
     {
       "name": "mark_withdrawal_sending",
@@ -431,6 +773,101 @@
       "args": [
         {
           "name": "amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "remove_liquidity",
+      "docs": [
+        "Remove liquidity from the AMM (authority only)"
+      ],
+      "discriminator": [
+        80,
+        85,
+        209,
+        72,
+        24,
+        206,
+        177,
+        108
+      ],
+      "accounts": [
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  109,
+                  109,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "authority_wxmr",
+          "docs": [
+            "Authority's wXMR token account"
+          ],
+          "writable": true
+        },
+        {
+          "name": "authority_usdc",
+          "docs": [
+            "Authority's USDC token account"
+          ],
+          "writable": true
+        },
+        {
+          "name": "pool_wxmr",
+          "docs": [
+            "Pool's wXMR token account"
+          ],
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool_usdc",
+          "docs": [
+            "Pool's USDC token account"
+          ],
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "wxmr_amount",
+          "type": "u64"
+        },
+        {
+          "name": "usdc_amount",
           "type": "u64"
         }
       ]
@@ -614,9 +1051,218 @@
           "type": "string"
         }
       ]
+    },
+    {
+      "name": "sell_wxmr",
+      "docs": [
+        "Sell wXMR for USDC"
+      ],
+      "discriminator": [
+        46,
+        182,
+        39,
+        31,
+        193,
+        69,
+        175,
+        175
+      ],
+      "accounts": [
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  109,
+                  109,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "user",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "user_wxmr",
+          "docs": [
+            "User's wXMR token account (pays wXMR)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "user_usdc",
+          "docs": [
+            "User's USDC token account (receives USDC)"
+          ],
+          "writable": true
+        },
+        {
+          "name": "pool_wxmr",
+          "docs": [
+            "Pool's wXMR token account"
+          ],
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "pool_usdc",
+          "docs": [
+            "Pool's USDC token account"
+          ],
+          "writable": true,
+          "relations": [
+            "pool"
+          ]
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "wxmr_amount",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "set_amm_enabled",
+      "docs": [
+        "Enable or disable AMM trading (authority only)"
+      ],
+      "discriminator": [
+        85,
+        51,
+        50,
+        10,
+        77,
+        216,
+        202,
+        217
+      ],
+      "accounts": [
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  109,
+                  109,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "enabled",
+          "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "update_price",
+      "docs": [
+        "Update AMM prices (authority only - oracle)"
+      ],
+      "discriminator": [
+        61,
+        34,
+        117,
+        155,
+        75,
+        34,
+        123,
+        208
+      ],
+      "accounts": [
+        {
+          "name": "pool",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  97,
+                  109,
+                  109,
+                  95,
+                  112,
+                  111,
+                  111,
+                  108
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "pool"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "new_buy_price",
+          "type": "u64"
+        },
+        {
+          "name": "new_sell_price",
+          "type": "u64"
+        }
+      ]
     }
   ],
   "accounts": [
+    {
+      "name": "AmmPool",
+      "discriminator": [
+        54,
+        82,
+        185,
+        138,
+        179,
+        191,
+        211,
+        169
+      ]
+    },
     {
       "name": "BridgeConfig",
       "discriminator": [
@@ -658,6 +1304,32 @@
     }
   ],
   "events": [
+    {
+      "name": "AmmEnabledChangedEvent",
+      "discriminator": [
+        127,
+        244,
+        132,
+        195,
+        132,
+        145,
+        218,
+        180
+      ]
+    },
+    {
+      "name": "AmmInitializedEvent",
+      "discriminator": [
+        182,
+        106,
+        212,
+        61,
+        61,
+        142,
+        176,
+        7
+      ]
+    },
     {
       "name": "DepositAccountClosedEvent",
       "discriminator": [
@@ -711,6 +1383,58 @@
       ]
     },
     {
+      "name": "LiquidityAddedEvent",
+      "discriminator": [
+        220,
+        104,
+        7,
+        39,
+        147,
+        1,
+        194,
+        142
+      ]
+    },
+    {
+      "name": "LiquidityRemovedEvent",
+      "discriminator": [
+        233,
+        117,
+        13,
+        70,
+        229,
+        1,
+        106,
+        215
+      ]
+    },
+    {
+      "name": "PriceUpdatedEvent",
+      "discriminator": [
+        217,
+        171,
+        222,
+        24,
+        64,
+        152,
+        217,
+        36
+      ]
+    },
+    {
+      "name": "SwapEvent",
+      "discriminator": [
+        64,
+        198,
+        205,
+        232,
+        38,
+        8,
+        113,
+        226
+      ]
+    },
+    {
       "name": "WithdrawCompletedEvent",
       "discriminator": [
         192,
@@ -753,81 +1477,190 @@
   "errors": [
     {
       "code": 6000,
-      "name": "InvalidXmrAddress",
-      "msg": "Invalid XMR address: must be 95 chars (standard/subaddress) or 106 chars (integrated), start with 4/8/9/A/B, and contain only base58 characters"
+      "name": "InvalidMint",
+      "msg": "Invalid wXMR mint (must match bridge config)"
     },
     {
       "code": 6001,
+      "name": "InvalidPrice",
+      "msg": "Invalid price"
+    },
+    {
+      "code": 6002,
+      "name": "InvalidSpread",
+      "msg": "Invalid spread: buy price must be >= sell price"
+    },
+    {
+      "code": 6003,
       "name": "InvalidAmount",
       "msg": "Invalid amount"
     },
     {
-      "code": 6002,
-      "name": "InvalidMint",
-      "msg": "Invalid mint"
-    },
-    {
-      "code": 6003,
-      "name": "InvalidOwner",
-      "msg": "Invalid owner"
-    },
-    {
       "code": 6004,
-      "name": "InvalidRecipient",
-      "msg": "Invalid recipient"
+      "name": "AmountTooSmall",
+      "msg": "Amount too small"
     },
     {
       "code": 6005,
-      "name": "InvalidTokenAccount",
-      "msg": "Invalid token account - must be the correct ATA"
+      "name": "InsufficientLiquidity",
+      "msg": "Insufficient liquidity in pool"
     },
     {
       "code": 6006,
-      "name": "DepositNotPending",
-      "msg": "Deposit account is not in pending status"
+      "name": "InsufficientBalance",
+      "msg": "Insufficient balance"
     },
     {
       "code": 6007,
-      "name": "DepositNotActive",
-      "msg": "Deposit account is not active"
+      "name": "TradingDisabled",
+      "msg": "Trading is disabled"
     },
     {
       "code": 6008,
-      "name": "AddressAlreadyAssigned",
-      "msg": "Deposit address already assigned"
+      "name": "PriceStale",
+      "msg": "Price is stale (not updated within 20 seconds)"
     },
     {
       "code": 6009,
-      "name": "DepositTooSmall",
-      "msg": "Deposit amount too small (minimum 0.01 XMR)"
-    },
-    {
-      "code": 6010,
-      "name": "WithdrawalNotPending",
-      "msg": "Withdrawal is not in pending status"
-    },
-    {
-      "code": 6011,
-      "name": "WithdrawalAlreadyProcessed",
-      "msg": "Withdrawal already processed (completed or sending)"
-    },
-    {
-      "code": 6012,
-      "name": "WithdrawalCannotBeReverted",
-      "msg": "Withdrawal cannot be reverted - already marked as sending (XMR may have been sent)"
-    },
-    {
-      "code": 6013,
-      "name": "WithdrawalTooSmall",
-      "msg": "Withdrawal amount too small (minimum 0.01 XMR)"
-    },
-    {
-      "code": 6014,
-      "name": "StatisticsOverflow",
-      "msg": "Overflow in statistics calculation"
+      "name": "Overflow",
+      "msg": "Arithmetic overflow"
     }
   ],
   "types": [
+    {
+      "name": "AmmEnabledChangedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "enabled",
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AmmInitializedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "buy_price",
+            "type": "u64"
+          },
+          {
+            "name": "sell_price",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "AmmPool",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "docs": [
+              "Authority who can manage liquidity and prices"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "wxmr_mint",
+            "docs": [
+              "wXMR mint address"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "usdc_mint",
+            "docs": [
+              "USDC mint address"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "pool_wxmr",
+            "docs": [
+              "Pool's wXMR token account (PDA-owned)"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "pool_usdc",
+            "docs": [
+              "Pool's USDC token account (PDA-owned)"
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "buy_price",
+            "docs": [
+              "Buy price: USDC (6 decimals) per 1 wXMR (1e12 piconero)",
+              "E.g., 150_000_000 = $150 per XMR"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "sell_price",
+            "docs": [
+              "Sell price: USDC (6 decimals) per 1 wXMR (1e12 piconero)",
+              "Usually slightly lower than buy_price (spread)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "last_price_update",
+            "docs": [
+              "Unix timestamp of last price update (for staleness check)"
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "enabled",
+            "docs": [
+              "Whether trading is enabled"
+            ],
+            "type": "bool"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "Bump seed for PDA"
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "total_wxmr_volume",
+            "docs": [
+              "Total wXMR volume traded (for stats)"
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "total_usdc_volume",
+            "docs": [
+              "Total USDC volume traded (for stats)"
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
     {
       "name": "BridgeConfig",
       "type": {
@@ -990,6 +1823,124 @@
       }
     },
     {
+      "name": "LiquidityAddedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "wxmr_amount",
+            "type": "u64"
+          },
+          {
+            "name": "usdc_amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "LiquidityRemovedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "wxmr_amount",
+            "type": "u64"
+          },
+          {
+            "name": "usdc_amount",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "PriceUpdatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "old_buy_price",
+            "type": "u64"
+          },
+          {
+            "name": "old_sell_price",
+            "type": "u64"
+          },
+          {
+            "name": "new_buy_price",
+            "type": "u64"
+          },
+          {
+            "name": "new_sell_price",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SwapDirection",
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Buy"
+          },
+          {
+            "name": "Sell"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SwapEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "pool",
+            "type": "pubkey"
+          },
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "direction",
+            "type": {
+              "defined": {
+                "name": "SwapDirection"
+              }
+            }
+          },
+          {
+            "name": "wxmr_amount",
+            "type": "u64"
+          },
+          {
+            "name": "usdc_amount",
+            "type": "u64"
+          },
+          {
+            "name": "price",
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
       "name": "WithdrawCompletedEvent",
       "type": {
         "kind": "struct",
@@ -1007,7 +1958,15 @@
             "type": "u64"
           },
           {
+            "name": "xmr_address",
+            "type": "string"
+          },
+          {
             "name": "xmr_tx_hash",
+            "type": "string"
+          },
+          {
+            "name": "xmr_tx_key",
             "type": "string"
           }
         ]

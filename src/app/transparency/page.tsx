@@ -272,14 +272,14 @@ export default function TransparencyPage() {
               <ol className="list-decimal list-inside space-y-2 ml-4">
                 <li>
                   Go to{' '}
-                  <a href="https://localmonero.co/blocks/provecheck" target="_blank" rel="noopener noreferrer" className="text-[#ff6600] hover:underline">
-                    localmonero.co/blocks/provecheck
+                  <a href="https://xmrchain.net" target="_blank" rel="noopener noreferrer" className="text-[#ff6600] hover:underline">
+                    xmrchain.net
                   </a>
                 </li>
-                <li>Enter the transaction ID</li>
-                <li>Enter your XMR address</li>
-                <li>Enter the tx key</li>
-                <li>Click &quot;Check&quot; - it will show the exact amount sent to you</li>
+                <li>Paste the transaction ID and press Enter</li>
+                <li>Click &quot;Prove sending&quot;</li>
+                <li>Enter your XMR address (output address) and the tx key</li>
+                <li>Click &quot;Prove Send&quot; - it will show the exact amount sent to you</li>
               </ol>
 
               <p className="mt-4"><strong className="text-white">Alternative: Monero CLI</strong></p>
