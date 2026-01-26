@@ -48,6 +48,7 @@ interface AuditData {
   totalFee: number;
   txs: Array<{ txid: string; key: string; amount: number; fee: number }>;
   unconfirmed: Array<{ tx: string; amt: number; conf: number }>;
+  burn?: { txid: string; amount: number }; // wXMR burned to cover fees
   // Legacy support
   epoch?: number;
 }
@@ -656,6 +657,36 @@ export default function TransparencyPage() {
                               }
                               return null;
                             })()}
+                            
+                            {/* wXMR Burn to cover shortfall */}
+                            {auditData?.burn && (
+                              <div className="mt-3 p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-xs">
+                                <div className="flex justify-between mb-1">
+                                  <span className="text-[var(--muted)]">wXMR Burned (to match backing):</span>
+                                  <span className="text-green-400 font-semibold">🔥 {formatXmr(auditData.burn.amount)} wXMR</span>
+                                </div>
+                                <p className="text-[var(--muted)] mb-2">
+                                  We burned wXMR from our reserves to ensure circulating supply matches XMR backing exactly.
+                                </p>
+                                <div className="flex items-center gap-2">
+                                  <span className="text-[var(--muted)]">Burn TX:</span>
+                                  <a
+                                    href={`https://solscan.io/tx/${auditData.burn.txid}`}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="font-mono text-green-400 hover:underline truncate flex-1"
+                                  >
+                                    {auditData.burn.txid.slice(0, 20)}...
+                                  </a>
+                                  <button
+                                    onClick={() => copyToClipboard(auditData!.burn!.txid, `burn-${audit.epoch}`)}
+                                    className="p-1 hover:bg-[var(--card-hover)] rounded flex-shrink-0"
+                                  >
+                                    {copied === `burn-${audit.epoch}` ? '✓' : '📋'}
+                                  </button>
+                                </div>
+                              </div>
+                            )}
                           </div>
                           
                           {/* Total fees this epoch */}
