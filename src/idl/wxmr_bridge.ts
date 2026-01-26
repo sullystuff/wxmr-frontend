@@ -805,7 +805,7 @@ export type WxmrBridge = {
     {
       "code": 6009,
       "name": "depositTooSmall",
-      "msg": "Deposit amount too small (minimum 0.001 XMR)"
+      "msg": "Deposit amount too small (minimum 0.01 XMR)"
     },
     {
       "code": 6010,
@@ -825,7 +825,7 @@ export type WxmrBridge = {
     {
       "code": 6013,
       "name": "withdrawalTooSmall",
-      "msg": "Withdrawal amount too small (minimum 0.001 XMR)"
+      "msg": "Withdrawal amount too small (minimum 0.01 XMR)"
     },
     {
       "code": 6014,

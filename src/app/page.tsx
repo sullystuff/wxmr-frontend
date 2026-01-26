@@ -559,7 +559,7 @@ export default function Home() {
                     <>
                       <p className="text-[var(--muted)] mb-6">
                         Create a deposit account to get your permanent XMR deposit address. 
-                        You can deposit any amount, any number of times to this address.
+                        Minimum 0.01 XMR per transfer (and per input!). You can deposit any number of times.
                       </p>
                       <button
                         onClick={handleCreateDepositAccount}
@@ -631,7 +631,7 @@ export default function Home() {
 
                       <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 mb-4">
                         <p className="text-sm text-green-400">
-                          <strong>Send any amount of XMR to this address.</strong> Once confirmed (10 blocks), 
+                          <strong>Minimum 0.01 XMR per transfer.</strong> Once confirmed (10 blocks), 
                           wXMR will be automatically minted to your wallet. You can deposit multiple times.
                         </p>
                       </div>
@@ -666,7 +666,7 @@ export default function Home() {
                     Withdraw XMR
                   </h2>
                   <p className="text-[var(--muted)] mb-6">
-                    Burn wXMR and receive XMR at your specified address. Minimum: 0.001 XMR.
+                    Burn wXMR and receive XMR at your specified address. Minimum: 0.01 XMR.
                   </p>
                   <div className="space-y-5">
                     <div>
@@ -675,7 +675,7 @@ export default function Home() {
                         <input
                           type="number"
                           step="0.000000000001"
-                          min="0.001"
+                          min="0.01"
                           value={withdrawAmount}
                           onChange={(e) => setWithdrawAmount(e.target.value)}
                           placeholder="0.0"

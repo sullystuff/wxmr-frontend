@@ -799,7 +799,7 @@
     {
       "code": 6009,
       "name": "DepositTooSmall",
-      "msg": "Deposit amount too small (minimum 0.001 XMR)"
+      "msg": "Deposit amount too small (minimum 0.01 XMR)"
     },
     {
       "code": 6010,
@@ -819,7 +819,7 @@
     {
       "code": 6013,
       "name": "WithdrawalTooSmall",
-      "msg": "Withdrawal amount too small (minimum 0.001 XMR)"
+      "msg": "Withdrawal amount too small (minimum 0.01 XMR)"
     },
     {
       "code": 6014,
