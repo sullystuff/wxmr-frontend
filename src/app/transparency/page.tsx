@@ -114,7 +114,7 @@ function ExpandableSection({
 // Format XMR amount from atomic units
 function formatXmr(atomic: bigint | number): string {
   const num = typeof atomic === 'bigint' ? Number(atomic) : atomic;
-  return (num / 1e12).toFixed(6);
+  return (num / 1e12).toFixed(12);
 }
 
 // Format timestamp
