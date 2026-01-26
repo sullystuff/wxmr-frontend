@@ -95,9 +95,8 @@ export function useAmmPool() {
     return () => clearInterval(interval);
   }, [fetchPool]);
 
-  // Check if price is stale (>20 seconds old)
-  // Note: on-chain contract enforces this, but we show a warning
-  const isPriceStale = pool ? (Date.now() / 1000 - pool.lastPriceUpdate) > 20 : true;
+  // Price staleness - not checked on frontend, let on-chain handle it
+  const isPriceStale = false;
   const priceAge = pool ? Math.floor(Date.now() / 1000 - pool.lastPriceUpdate) : 0;
 
   // Calculate wXMR output for given USDC input (buying wXMR)

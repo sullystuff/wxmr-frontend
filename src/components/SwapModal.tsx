@@ -430,9 +430,6 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
               <ul className="space-y-1 text-yellow-400/80">
                 {ammSimResult?.error && <li>• AMM: {ammSimResult.error}</li>}
                 {jupiterSimResult?.error && <li>• Jupiter: {jupiterSimResult.error}</li>}
-                {amm.isPriceStale && amm.pool && (
-                  <li>• AMM price is {amm.priceAge}s old (max 20s)</li>
-                )}
               </ul>
             </div>
           )}
