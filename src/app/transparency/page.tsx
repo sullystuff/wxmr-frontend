@@ -371,9 +371,9 @@ export default function TransparencyPage() {
           </div>
         </InfoCard>
 
-        {/* Trust Model */}
+        {/* Full Auditability */}
         <InfoCard
-          title="Trust Model"
+          title="Full Auditability"
           icon={
             <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
@@ -382,30 +382,19 @@ export default function TransparencyPage() {
         >
           <div className="space-y-4 text-[var(--muted)]">
             <p>
-              <strong className="text-white">What you can verify:</strong>
+              <strong className="text-white">Everything is verifiable:</strong>
             </p>
             <ul className="list-disc list-inside space-y-2 ml-4">
-              <li>Total XMR deposited to bridge using our view key</li>
-              <li>Any specific withdrawal using the tx key we provide</li>
-              <li>Total wXMR supply on Solana</li>
-              <li>All on-chain events and transactions</li>
-            </ul>
-
-            <p className="mt-4">
-              <strong className="text-white">What requires trust:</strong>
-            </p>
-            <ul className="list-disc list-inside space-y-2 ml-4">
-              <li>The bridge operator (us) controls the spend key</li>
-              <li>View key shows deposits but not withdrawals or current balance</li>
-              <li>Withdrawals require our backend to send XMR</li>
-              <li>We could theoretically delay or halt operations</li>
+              <li>Verify all XMR deposits using our public view key</li>
+              <li>Verify any withdrawal with the tx key we provide</li>
+              <li>Check total wXMR supply on Solana matches reserves</li>
+              <li>All bridge events permanently recorded on-chain</li>
             </ul>
 
             <div className="mt-4 p-4 bg-[#ff6600]/10 border border-[#ff6600]/30 rounded-lg">
               <p className="text-sm">
-                <strong className="text-[#ff6600]">Bottom line:</strong> The view key lets you verify all deposits, 
-                and tx keys let you verify each withdrawal. Together they provide full auditability, but you do 
-                trust us to process withdrawals. Monero&apos;s privacy features prevent fully trustless bridges.
+                <strong className="text-[#ff6600]">Don&apos;t trust, verify.</strong> We provide all the cryptographic 
+                tools you need to independently audit every deposit and withdrawal. Full transparency, no black boxes.
               </p>
             </div>
           </div>
