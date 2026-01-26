@@ -96,7 +96,9 @@ export function useAmmPool() {
   }, [fetchPool]);
 
   // Check if price is stale (>20 seconds old)
+  // Note: on-chain contract enforces this, but we show a warning
   const isPriceStale = pool ? (Date.now() / 1000 - pool.lastPriceUpdate) > 20 : true;
+  const priceAge = pool ? Math.floor(Date.now() / 1000 - pool.lastPriceUpdate) : 0;
 
   // Calculate wXMR output for given USDC input (buying wXMR)
   const calculateBuyOutput = useCallback((usdcAmount: bigint): bigint => {
@@ -254,7 +256,10 @@ export function useAmmPool() {
     loading,
     error,
     isPriceStale,
-    isAvailable: pool !== null && pool.enabled && !isPriceStale,
+    priceAge,
+    // Be permissive - let simulation determine if it works
+    // Only check pool exists and is enabled, let on-chain staleness check be enforced via simulation
+    isAvailable: pool !== null && pool.enabled,
     calculateBuyOutput,
     calculateSellOutput,
     simulateBuy,

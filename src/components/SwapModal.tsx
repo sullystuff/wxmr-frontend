@@ -122,20 +122,38 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
       setIsSimulating(true);
       const [ammRes, jupRes] = await Promise.all([
         (async () => {
-          if (!amm.isAvailable) {
-            return { success: false, outputAmount: BigInt(0), error: 'AMM unavailable' };
+          // Show specific error if AMM not available
+          if (!amm.pool) {
+            return { success: false, outputAmount: BigInt(0), error: 'AMM not initialized' };
           }
-          return isBuying
-            ? await amm.simulateBuy(parsedInput, publicKey)
-            : await amm.simulateSell(parsedInput, publicKey);
+          if (!amm.pool.enabled) {
+            return { success: false, outputAmount: BigInt(0), error: 'AMM disabled' };
+          }
+          // Try simulation anyway - let on-chain determine if price is stale
+          try {
+            return isBuying
+              ? await amm.simulateBuy(parsedInput, publicKey)
+              : await amm.simulateSell(parsedInput, publicKey);
+          } catch (e) {
+            console.error('AMM simulation error:', e);
+            return { success: false, outputAmount: BigInt(0), error: 'Simulation failed' };
+          }
         })(),
         (async () => {
           if (!jupiterQuote) {
             return { success: false, outputAmount: BigInt(0), error: 'No route' };
           }
-          return await jupiter.simulateSwap(jupiterQuote, publicKey.toBase58());
+          try {
+            return await jupiter.simulateSwap(jupiterQuote, publicKey.toBase58());
+          } catch (e) {
+            console.error('Jupiter simulation error:', e);
+            return { success: false, outputAmount: BigInt(0), error: 'Simulation failed' };
+          }
         })(),
       ]);
+      
+      console.log('Simulation results:', { amm: ammRes, jupiter: jupRes });
+      
       setAmmSimResult(ammRes);
       setJupiterSimResult(jupRes);
       setIsSimulating(false);
@@ -402,6 +420,20 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
               >
                 View on Solscan →
               </a>
+            </div>
+          )}
+
+          {/* Debug info - shows why routes aren't available */}
+          {parsedInput > BigInt(0) && !ammSimResult?.success && !jupiterSimResult?.success && !isSimulating && (
+            <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl text-xs text-yellow-400">
+              <p className="font-semibold mb-1">No routes available:</p>
+              <ul className="space-y-1 text-yellow-400/80">
+                {ammSimResult?.error && <li>• AMM: {ammSimResult.error}</li>}
+                {jupiterSimResult?.error && <li>• Jupiter: {jupiterSimResult.error}</li>}
+                {amm.isPriceStale && amm.pool && (
+                  <li>• AMM price is {amm.priceAge}s old (max 20s)</li>
+                )}
+              </ul>
             </div>
           )}
         </div>
