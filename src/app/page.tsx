@@ -1,16 +1,18 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { useWxmrBridge, DepositAccountInfo, WithdrawalInfo, BridgeConfig } from '@/hooks/useWxmrBridge';
 import { QRCodeSVG } from 'qrcode.react';
 
-// Monero Logo SVG component (official Simple Icons design)
+// Monero Logo SVG component (official logo from cryptologos.cc)
 function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-      <circle cx="12" cy="12" r="12" fill="#FF6600"/>
-      <path d="M12 4C7.582 4 4 7.582 4 12.015c0 .89.152 1.738.412 2.54h2.385V7.82L12 13.03l5.203-5.21v6.735h2.385c.26-.802.412-1.65.412-2.54C20 7.583 16.418 4 12 4zm-1.192 11.538l-2.278-2.28v4.234H5.172C6.58 19.793 9.119 21.333 12 21.333s5.442-1.54 6.83-3.842h-3.36v-4.233l-2.258 2.28-1.192 1.193-1.21-1.193h-.002z" fill="#FFF"/>
+    <svg className={className} viewBox="0 0 3756.09 3756.49" xmlns="http://www.w3.org/2000/svg">
+      <path d="M4128,2249.81C4128,3287,3287.26,4127.86,2250,4127.86S372,3287,372,2249.81,1212.76,371.75,2250,371.75,4128,1212.54,4128,2249.81Z" transform="translate(-371.96 -371.75)" fill="#fff"/>
+      <path d="M2250,371.75c-1036.89,0-1879.12,842.06-1877.8,1878,0.26,207.26,33.31,406.63,95.34,593.12h561.88V1263L2250,2483.57,3470.52,1263v1579.9h562c62.12-186.48,95-385.85,95.37-593.12C4129.66,1212.76,3287,372,2250,372Z" transform="translate(-371.96 -371.75)" fill="#f26822"/>
+      <path d="M1969.3,2764.17l-532.67-532.7v994.14H1029.38l-384.29.07c329.63,540.8,925.35,902.56,1604.91,902.56S3525.31,3766.4,3855,3225.6H3063.25V2231.47l-532.7,532.7-280.61,280.61-280.62-280.61h0Z" transform="translate(-371.96 -371.75)" fill="#4d4d4d"/>
     </svg>
   );
 }
@@ -815,31 +817,27 @@ export default function Home() {
 
         {/* Global Footer */}
         <footer className="mt-16 pt-8 border-t border-[var(--border)]">
-          {/* XMR Viewing Key */}
+          {/* Transparency Link */}
           <div className="xmr-card p-6 mb-6 xmr-glow">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)] mb-4 flex items-center gap-2">
-              <svg className="w-4 h-4 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-              </svg>
-              XMR Viewing Key (Verify Reserves)
-            </h3>
-            <p className="text-xs text-[var(--muted)] mb-4">
-              Use these credentials to verify the bridge&apos;s XMR reserves in any Monero wallet that supports view-only mode.
-            </p>
-            <div className="space-y-3">
-              <div>
-                <p className="text-xs text-[var(--muted)] mb-1">XMR Address</p>
-                <code className="text-xs font-mono text-[#ff6600] bg-[var(--background)] px-3 py-2 rounded-lg border border-[var(--border)] block break-all">
-                  45ZYpKmPaPmh3bnRP1XpMz8cASJQf1cfUgq32H8trCYA4RodzXhsmt2VYkQX9QQ65CetiGja65tH2JmKC3gEZtZjB7AzMpd
-                </code>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <svg className="w-6 h-6 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+                </svg>
+                <div>
+                  <h3 className="font-semibold">Verify Our Reserves</h3>
+                  <p className="text-sm text-[var(--muted)]">View key, tx proofs, and on-chain data</p>
+                </div>
               </div>
-              <div>
-                <p className="text-xs text-[var(--muted)] mb-1">View Key</p>
-                <code className="text-xs font-mono text-[var(--foreground)] bg-[var(--background)] px-3 py-2 rounded-lg border border-[var(--border)] block break-all">
-                  e4e02de197582ff2e93f9eaefc96e122a13ffa838736ef38f4a8ea27a0dc4909
-                </code>
-              </div>
+              <Link
+                href="/transparency"
+                className="px-5 py-2.5 bg-[var(--background)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg text-sm font-medium transition-all flex items-center gap-2"
+              >
+                Transparency
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                </svg>
+              </Link>
             </div>
           </div>
 
@@ -890,6 +888,15 @@ export default function Home() {
 
           {/* Links */}
           <div className="flex flex-wrap justify-center gap-6 mb-8">
+            <Link
+              href="/transparency"
+              className="flex items-center gap-2 text-sm text-[var(--muted)] hover:text-[#ff6600] transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
+              </svg>
+              Transparency
+            </Link>
             <a
               href="https://getmonero.org"
               target="_blank"
