@@ -63,6 +63,69 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
   const [ammSimResult, setAmmSimResult] = useState<{ success: boolean; outputAmount: bigint; error?: string } | null>(null);
   const [jupiterSimResult, setJupiterSimResult] = useState<{ success: boolean; outputAmount: bigint; error?: string } | null>(null);
   const [isSimulating, setIsSimulating] = useState(false);
+  
+  // User balances
+  const [userUsdcBalance, setUserUsdcBalance] = useState<bigint>(BigInt(0));
+  const [userWxmrBalance, setUserWxmrBalance] = useState<bigint>(BigInt(0));
+  
+  // Pool liquidity
+  const [poolUsdcBalance, setPoolUsdcBalance] = useState<bigint>(BigInt(0));
+  const [poolWxmrBalance, setPoolWxmrBalance] = useState<bigint>(BigInt(0));
+
+  // Fetch user balances
+  useEffect(() => {
+    if (!isOpen || !publicKey) {
+      setUserUsdcBalance(BigInt(0));
+      setUserWxmrBalance(BigInt(0));
+      return;
+    }
+    
+    const fetchBalances = async () => {
+      try {
+        const [usdcAta, wxmrAta] = await Promise.all([
+          getAssociatedTokenAddress(USDC_MINT, publicKey),
+          getAssociatedTokenAddress(WXMR_MINT, publicKey),
+        ]);
+        
+        const [usdcAccount, wxmrAccount] = await Promise.all([
+          getAccount(connection, usdcAta).catch(() => null),
+          getAccount(connection, wxmrAta).catch(() => null),
+        ]);
+        
+        setUserUsdcBalance(usdcAccount ? BigInt(usdcAccount.amount.toString()) : BigInt(0));
+        setUserWxmrBalance(wxmrAccount ? BigInt(wxmrAccount.amount.toString()) : BigInt(0));
+      } catch (e) {
+        console.error('Error fetching balances:', e);
+      }
+    };
+    
+    fetchBalances();
+  }, [isOpen, publicKey, connection, txSignature]); // Refetch after swap
+
+  // Fetch pool liquidity
+  useEffect(() => {
+    if (!isOpen || !amm.pool) {
+      setPoolUsdcBalance(BigInt(0));
+      setPoolWxmrBalance(BigInt(0));
+      return;
+    }
+    
+    const fetchPoolBalances = async () => {
+      try {
+        const [usdcAccount, wxmrAccount] = await Promise.all([
+          getAccount(connection, amm.pool!.poolUsdc).catch(() => null),
+          getAccount(connection, amm.pool!.poolWxmr).catch(() => null),
+        ]);
+        
+        setPoolUsdcBalance(usdcAccount ? BigInt(usdcAccount.amount.toString()) : BigInt(0));
+        setPoolWxmrBalance(wxmrAccount ? BigInt(wxmrAccount.amount.toString()) : BigInt(0));
+      } catch (e) {
+        console.error('Error fetching pool balances:', e);
+      }
+    };
+    
+    fetchPoolBalances();
+  }, [isOpen, amm.pool, connection, txSignature]); // Refetch after swap
 
   // Reset on close
   useEffect(() => {
@@ -249,11 +312,41 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
     const num = Number(amount) / Math.pow(10, decimals);
     return num.toLocaleString('en-US', { maximumFractionDigits: decimals === 6 ? 2 : 6 });
   };
+  
+  // Handle max button
+  const handleMax = () => {
+    const balance = isBuying ? userUsdcBalance : userWxmrBalance;
+    const decimals = isBuying ? 6 : 12;
+    const formatted = (Number(balance) / Math.pow(10, decimals)).toString();
+    setInputAmount(formatted);
+  };
+  
+  // Check if amount exceeds pool liquidity (for AMM)
+  const exceedsPoolLiquidity = useMemo(() => {
+    if (parsedInput <= BigInt(0)) return false;
+    if (isBuying) {
+      // Buying wXMR - check if pool has enough wXMR
+      const expectedOutput = amm.calculateBuyOutput(parsedInput);
+      return expectedOutput > poolWxmrBalance;
+    } else {
+      // Selling wXMR - check if pool has enough USDC
+      const expectedOutput = amm.calculateSellOutput(parsedInput);
+      return expectedOutput > poolUsdcBalance;
+    }
+  }, [parsedInput, isBuying, poolWxmrBalance, poolUsdcBalance, amm]);
+  
+  // Check if amount exceeds user balance
+  const exceedsUserBalance = useMemo(() => {
+    if (parsedInput <= BigInt(0)) return false;
+    const balance = isBuying ? userUsdcBalance : userWxmrBalance;
+    return parsedInput > balance;
+  }, [parsedInput, isBuying, userUsdcBalance, userWxmrBalance]);
 
   if (!isOpen) return null;
 
   const inputToken = isBuying ? { symbol: 'USDC', icon: UsdcIcon, decimals: 6 } : { symbol: 'wXMR', icon: WxmrIcon, decimals: 12 };
   const outputToken = isBuying ? { symbol: 'wXMR', icon: WxmrIcon, decimals: 12 } : { symbol: 'USDC', icon: UsdcIcon, decimals: 6 };
+  const userInputBalance = isBuying ? userUsdcBalance : userWxmrBalance;
 
   return (
     <div 
@@ -279,9 +372,22 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
 
         <div className="px-4 pb-4 space-y-2">
           {/* You Pay */}
-          <div className="bg-[#12121f] rounded-2xl p-4">
+          <div className={`bg-[#12121f] rounded-2xl p-4 ${exceedsUserBalance ? 'border border-red-500/50' : ''}`}>
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm text-gray-400">You pay</span>
+              {connected && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-400">
+                    Balance: <span className={exceedsUserBalance ? 'text-red-400' : 'text-gray-300'}>{formatAmount(userInputBalance, inputToken.decimals)}</span>
+                  </span>
+                  <button
+                    onClick={handleMax}
+                    className="text-xs text-[#ff6600] hover:text-[#ff8533] font-semibold"
+                  >
+                    MAX
+                  </button>
+                </div>
+              )}
             </div>
             <div className="flex items-center gap-3">
               <input
@@ -291,11 +397,14 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                 placeholder="0"
                 className="flex-1 bg-transparent text-3xl font-medium text-white focus:outline-none placeholder-gray-600"
               />
-              <div className="flex items-center gap-2 bg-[#2a2a4a] hover:bg-[#3a3a5a] px-3 py-2 rounded-xl cursor-default">
+              <div className="flex items-center gap-2 bg-[#2a2a4a] px-3 py-2 rounded-xl cursor-default">
                 <inputToken.icon className="w-6 h-6" />
                 <span className="font-semibold text-white">{inputToken.symbol}</span>
               </div>
             </div>
+            {exceedsUserBalance && (
+              <p className="text-xs text-red-400 mt-2">Insufficient {inputToken.symbol} balance</p>
+            )}
           </div>
 
           {/* Swap Direction Button */}
@@ -388,12 +497,20 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
             </div>
           )}
 
+          {/* Pool Liquidity Info */}
+          {amm.pool && (
+            <div className="flex justify-between text-xs text-gray-500 px-1">
+              <span>Pool: {formatAmount(poolWxmrBalance, 12)} wXMR</span>
+              <span>{formatAmount(poolUsdcBalance, 6)} USDC</span>
+            </div>
+          )}
+
           {/* Swap Button */}
           <button
             onClick={handleSwap}
-            disabled={!canSwap}
+            disabled={!canSwap || exceedsUserBalance || (exceedsPoolLiquidity && selectedRoute === 'amm')}
             className={`w-full py-4 rounded-2xl font-semibold text-lg transition-all ${
-              canSwap
+              canSwap && !exceedsUserBalance && !(exceedsPoolLiquidity && selectedRoute === 'amm')
                 ? 'bg-gradient-to-r from-[#ff6600] to-[#ff8533] text-white hover:opacity-90'
                 : 'bg-[#2a2a4a] text-gray-500 cursor-not-allowed'
             }`}
@@ -404,11 +521,15 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                 ? 'Swapping...'
                 : parsedInput <= BigInt(0)
                   ? 'Enter amount'
-                  : isSimulating
-                    ? 'Finding route...'
-                    : outputAmount <= BigInt(0)
-                      ? 'No route available'
-                      : 'Swap'}
+                  : exceedsUserBalance
+                    ? `Insufficient ${inputToken.symbol}`
+                    : isSimulating
+                      ? 'Finding route...'
+                      : exceedsPoolLiquidity && selectedRoute === 'amm'
+                        ? 'Exceeds pool liquidity'
+                        : outputAmount <= BigInt(0)
+                          ? 'No route available'
+                          : 'Swap'}
           </button>
 
           {/* Success */}
