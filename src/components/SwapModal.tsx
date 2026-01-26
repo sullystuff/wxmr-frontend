@@ -635,14 +635,11 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
             </div>
           )}
 
-          {/* Debug info - shows why routes aren't available */}
-          {parsedInput > BigInt(0) && !ammSimResult?.success && !jupiterSimResult?.success && !isSimulating && (
+          {/* Debug info - only show if AMM has a real error (Jupiter failing is expected) */}
+          {parsedInput > BigInt(0) && ammAmount <= BigInt(0) && jupiterAmount <= BigInt(0) && !isSimulating && ammSimResult?.error && ammSimResult.error !== 'AMM not initialized' && (
             <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl text-xs text-yellow-400">
-              <p className="font-semibold mb-1">No routes available:</p>
-              <ul className="space-y-1 text-yellow-400/80">
-                {ammSimResult?.error && <li>• AMM: {ammSimResult.error}</li>}
-                {jupiterSimResult?.error && <li>• Jupiter: {jupiterSimResult.error}</li>}
-              </ul>
+              <p className="font-semibold mb-1">AMM unavailable:</p>
+              <p className="text-yellow-400/80">{ammSimResult.error}</p>
             </div>
           )}
         </div>
