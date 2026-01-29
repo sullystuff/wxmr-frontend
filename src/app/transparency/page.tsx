@@ -537,14 +537,6 @@ export default function TransparencyPage() {
             Each audit includes transaction keys so you can verify we control the XMR backing wXMR.
           </p>
 
-          {/* <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-lg mb-4">
-            <p className="text-xs text-yellow-200">
-              <strong>Why XMR balance may differ from wXMR supply:</strong> Monero requires transaction fees to 
-              consolidate UTXOs. The bridge operator pays these fees out of pocket—users never pay consolidation fees. 
-              This means the actual XMR backing may be slightly less than the wXMR supply (typically &lt;0.01 XMR difference).
-            </p>
-          </div> */}
-
           {loadingAudits ? (
             <div className="text-center py-8 text-[var(--muted)]">
               <div className="animate-spin w-6 h-6 border-2 border-[#ff6600] border-t-transparent rounded-full mx-auto mb-2"></div>
