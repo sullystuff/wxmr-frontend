@@ -540,7 +540,7 @@ export default function Home() {
                       You have <span className="text-[#ff6600] font-bold">{formatXmr(pendingBalance)} wXMR</span> pending
                     </p>
                     <p className="text-xs text-[var(--muted)] mt-0.5">
-                      These tokens were minted before your token account was created. Claim them to add to your balance.
+                      These tokens were minted when you didn't have a token account. Click here to claim.
                     </p>
                   </div>
                 </div>
