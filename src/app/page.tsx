@@ -108,7 +108,7 @@ function QRCodeModal({ address, onClose }: { address: string; onClose: () => voi
         </div>
         <div className="mt-4">
           <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">Address</p>
-          <code className="text-xs bg-[var(--background)] p-3 rounded-lg block break-all font-mono border border-[var(--border)] text-[#ff6600]">
+          <code className="text-xs bg-[var(--background)] p-3 rounded-lg block break-all font-mono border border-[var(--border)] text-[#ff6600] select-all cursor-pointer">
             {address}
           </code>
         </div>
@@ -668,7 +668,7 @@ export default function Home() {
                       <div className="bg-[var(--background)] rounded-xl p-4 border border-[var(--border)] mb-4">
                         <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">Your Permanent XMR Deposit Address</p>
                         <div className="flex gap-2">
-                          <code className="text-sm bg-[var(--card)] p-3 rounded-lg flex-1 break-all font-mono border border-[var(--border)] text-[#ff6600]">
+                          <code className="text-sm bg-[var(--card)] p-3 rounded-lg flex-1 break-all font-mono border border-[var(--border)] text-[#ff6600] select-all cursor-pointer">
                             {depositAccount.xmrDepositAddress}
                           </code>
                           <button
