@@ -219,8 +219,6 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
       console.log({ amm: ammRes, jupiter: jupRes });
       
       setAmmSimResult(ammRes);
-      // setJupiterSimResult(jupRes);
-      // setIsSimulating(false);
       setJupiterSimResult(jupRes);
       setIsSimulating(false);
       
@@ -233,9 +231,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
         setSelectedRoute('jupiter');
       }
     };
-    // Wait 1 second after quote is ready before simulating
-    const debounce = setTimeout(simulate, 1000);
-    return () => clearTimeout(debounce);
+    simulate();
   }, [parsedInput, publicKey, isBuying, amm, jupiter, jupiterQuote, isOpen]);
 
   // Instant previews (no simulation needed)
