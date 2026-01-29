@@ -522,7 +522,8 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                 <span className="text-sm text-gray-400">
                   via <span className="text-white">{selectedRoute === 'amm' ? 'wXMR AMM' : 'Jupiter'}</span>
                 </span>
-                {ammAmount > BigInt(0) && jupiterAmount > BigInt(0) && (
+                {ammAmount > BigInt(0) && jupiterAmount > BigInt(0) && 
+                  ((selectedRoute === 'amm' && ammIsBest) || (selectedRoute === 'jupiter' && jupiterIsBest)) && (
                   <span className="text-xs text-green-400 bg-green-400/10 px-2 py-0.5 rounded">Best</span>
                 )}
               </div>
