@@ -2,7 +2,7 @@
 
 A modern web interface for bridging XMR to Solana as wXMR.
 
-Public deployment: [wxmr.io](https://wxmr.io)
+Public deployment: [wxmr.io](https://wxmr.io) or [.onion](https://aefvno77q6d5v6sbzjgqnpfzxvxfu64tub6txr4cohwmqu4vpzyoayad.onion)
 
 ## Features
 
