@@ -497,11 +497,16 @@ export type WxmrBridge = {
           }
         },
         {
-          "name": "wxmrMint"
+          "name": "wxmrMint",
+          "address": "WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp",
+          "relations": [
+            "config"
+          ]
         },
         {
           "name": "authority",
           "writable": true,
+          "address": "Ds4prSZNwyxTz4PZmHXoHDXFzLZ1c8MkfhUwGtqvAvpK",
           "relations": [
             "config"
           ]
@@ -559,7 +564,27 @@ export type WxmrBridge = {
         },
         {
           "name": "deposit",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
         },
         {
           "name": "user",
@@ -569,6 +594,7 @@ export type WxmrBridge = {
         {
           "name": "authority",
           "writable": true,
+          "address": "Ds4prSZNwyxTz4PZmHXoHDXFzLZ1c8MkfhUwGtqvAvpK",
           "relations": [
             "config"
           ]

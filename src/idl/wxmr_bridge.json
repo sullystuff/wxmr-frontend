@@ -491,11 +491,16 @@
           }
         },
         {
-          "name": "wxmr_mint"
+          "name": "wxmr_mint",
+          "address": "WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp",
+          "relations": [
+            "config"
+          ]
         },
         {
           "name": "authority",
           "writable": true,
+          "address": "Ds4prSZNwyxTz4PZmHXoHDXFzLZ1c8MkfhUwGtqvAvpK",
           "relations": [
             "config"
           ]
@@ -553,7 +558,27 @@
         },
         {
           "name": "deposit",
-          "writable": true
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
         },
         {
           "name": "user",
@@ -563,6 +588,7 @@
         {
           "name": "authority",
           "writable": true,
+          "address": "Ds4prSZNwyxTz4PZmHXoHDXFzLZ1c8MkfhUwGtqvAvpK",
           "relations": [
             "config"
           ]
