@@ -175,6 +175,8 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
   // Simulate routes
   useEffect(() => {
     if (!isOpen) return;
+    let isStale = false;
+    
     const simulate = async () => {
       if (parsedInput <= BigInt(0) || !publicKey) {
         setAmmSimResult(null);
@@ -216,6 +218,9 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
         })(),
       ]);
       
+      // Ignore results if effect was cleaned up (stale)
+      if (isStale) return;
+      
       console.log({ amm: ammRes, jupiter: jupRes });
       
       setAmmSimResult(ammRes);
@@ -231,7 +236,13 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
         setSelectedRoute('jupiter');
       }
     };
-    simulate();
+    
+    // Debounce simulation by 1 second after dependencies change
+    const debounce = setTimeout(simulate, 1000);
+    return () => {
+      clearTimeout(debounce);
+      isStale = true;
+    };
   }, [parsedInput, publicKey, isBuying, amm, jupiter, jupiterQuote, isOpen]);
 
   // Instant previews (no simulation needed)
