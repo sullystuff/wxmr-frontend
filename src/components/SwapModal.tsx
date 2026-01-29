@@ -46,6 +46,10 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
   const amm = useAmmPool();
   const jupiter = useJupiterQuote();
   
+  // Extract stable function references to prevent effect loops
+  const { getBuyQuote, getSellQuote } = jupiter;
+  const { simulateBuy, simulateSell, calculateBuyOutput, calculateSellOutput } = amm;
+  
   // Swap direction: true = USDC -> wXMR, false = wXMR -> USDC
   const [isBuying, setIsBuying] = useState(true);
   const [inputAmount, setInputAmount] = useState('');
@@ -163,14 +167,14 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
       }
       const taker = publicKey?.toBase58();
       const quote = isBuying
-        ? await jupiter.getBuyQuote(parsedInput, taker)
-        : await jupiter.getSellQuote(parsedInput, taker);
+        ? await getBuyQuote(parsedInput, taker)
+        : await getSellQuote(parsedInput, taker);
       setJupiterQuote(quote);
     };
     // Wait 800ms after user stops typing before fetching quote
     const debounce = setTimeout(fetchQuote, 800);
     return () => clearTimeout(debounce);
-  }, [parsedInput, isBuying, jupiter, isOpen, publicKey]);
+  }, [parsedInput, isBuying, getBuyQuote, getSellQuote, isOpen, publicKey]);
 
   // Simulate routes
   useEffect(() => {
@@ -196,8 +200,8 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
           // Try simulation anyway - let on-chain determine if price is stale
           try {
             return isBuying
-              ? await amm.simulateBuy(parsedInput, publicKey)
-              : await amm.simulateSell(parsedInput, publicKey);
+              ? await simulateBuy(parsedInput, publicKey)
+              : await simulateSell(parsedInput, publicKey);
           } catch (e) {
             console.error('AMM simulation error:', e);
             return { success: false, outputAmount: BigInt(0), error: 'Simulation failed' };
@@ -207,12 +211,6 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
           if (!jupiterQuote) {
             return { success: false, outputAmount: BigInt(0), error: 'No route' };
           }
-          // try {
-          //   return await jupiter.simulateSwap(jupiterQuote, publicKey.toBase58());
-          // } catch (e) {
-          //   console.error('Jupiter simulation error:', e);
-          //   return { success: false, outputAmount: BigInt(0), error: 'Simulation failed' };
-          // }
           // Skip simulation - trust Jupiter quote directly
           return { success: true, outputAmount: BigInt(jupiterQuote.outAmount) };
         })(),
@@ -243,15 +241,15 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
       clearTimeout(debounce);
       isStale = true;
     };
-  }, [parsedInput, publicKey, isBuying, amm, jupiter, jupiterQuote, isOpen]);
+  }, [parsedInput, publicKey, isBuying, amm.pool, simulateBuy, simulateSell, jupiterQuote, isOpen]);
 
   // Instant previews (no simulation needed)
   const ammPreviewAmount = useMemo(() => {
     if (parsedInput <= BigInt(0) || !amm.pool) return BigInt(0);
     return isBuying 
-      ? amm.calculateBuyOutput(parsedInput)
-      : amm.calculateSellOutput(parsedInput);
-  }, [parsedInput, isBuying, amm]);
+      ? calculateBuyOutput(parsedInput)
+      : calculateSellOutput(parsedInput);
+  }, [parsedInput, isBuying, amm.pool, calculateBuyOutput, calculateSellOutput]);
 
   const jupiterPreviewAmount = useMemo(() => {
     if (!jupiterQuote) return BigInt(0);
@@ -406,14 +404,14 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
     if (parsedInput <= BigInt(0)) return false;
     if (isBuying) {
       // Buying wXMR - check if pool has enough wXMR
-      const expectedOutput = amm.calculateBuyOutput(parsedInput);
+      const expectedOutput = calculateBuyOutput(parsedInput);
       return expectedOutput > poolWxmrBalance;
     } else {
       // Selling wXMR - check if pool has enough USDC
-      const expectedOutput = amm.calculateSellOutput(parsedInput);
+      const expectedOutput = calculateSellOutput(parsedInput);
       return expectedOutput > poolUsdcBalance;
     }
-  }, [parsedInput, isBuying, poolWxmrBalance, poolUsdcBalance, amm]);
+  }, [parsedInput, isBuying, poolWxmrBalance, poolUsdcBalance, calculateBuyOutput, calculateSellOutput]);
   
   // Check if amount exceeds user balance
   const exceedsUserBalance = useMemo(() => {
