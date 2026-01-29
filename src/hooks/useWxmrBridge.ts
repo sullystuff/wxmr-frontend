@@ -7,12 +7,12 @@ import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
 import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddress, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import type { WxmrBridge } from '@/idl/wxmr_bridge';
 import IDL from '@/idl/wxmr_bridge.json';
+import { WXMR_MINT } from '@/constants';
 
 // Program ID - should match deployed program
 const PROGRAM_ID = new PublicKey(
   process.env.NEXT_PUBLIC_BRIDGE_PROGRAM_ID || 'EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8'
 );
-const WXMR_MINT = new PublicKey('WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp');
 
 // Priority fee configuration
 const PRIORITY_FEE_MICROLAMPORTS = 50000;
