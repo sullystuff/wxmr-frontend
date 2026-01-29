@@ -2,6 +2,8 @@
 
 A modern web interface for bridging XMR to Solana as wXMR.
 
+Public deployment: [wxmr.io](https://wxmr.io)
+
 ## Features
 
 - Connect Solana wallet (Phantom, Solflare)
