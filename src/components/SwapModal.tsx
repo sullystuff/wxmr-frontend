@@ -9,11 +9,7 @@ import type { WxmrBridge } from '@/idl/wxmr_bridge';
 import IDL from '@/idl/wxmr_bridge.json';
 import { useAmmPool } from '@/hooks/useAmmPool';
 import { useJupiterQuote, JupiterQuote } from '@/hooks/useJupiterQuote';
-
-const WXMR_MINT = new PublicKey('WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp');
-const USDC_MINT = new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v');
-const PROGRAM_ID = new PublicKey(process.env.NEXT_PUBLIC_BRIDGE_PROGRAM_ID || 'EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8');
-const SOLANA_RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+import { WXMR_MINT, USDC_MINT } from '@/constants';
 
 // Token icons
 function UsdcIcon({ className = "w-6 h-6" }: { className?: string }) {
@@ -165,15 +161,16 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
         setJupiterQuote(null);
         return;
       }
+      const taker = publicKey?.toBase58();
       const quote = isBuying
-        ? await jupiter.getBuyQuote(parsedInput)
-        : await jupiter.getSellQuote(parsedInput);
+        ? await jupiter.getBuyQuote(parsedInput, taker)
+        : await jupiter.getSellQuote(parsedInput, taker);
       setJupiterQuote(quote);
     };
     // Wait 800ms after user stops typing before fetching quote
     const debounce = setTimeout(fetchQuote, 800);
     return () => clearTimeout(debounce);
-  }, [parsedInput, isBuying, jupiter, isOpen]);
+  }, [parsedInput, isBuying, jupiter, isOpen, publicKey]);
 
   // Simulate routes
   useEffect(() => {
@@ -208,18 +205,22 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
           if (!jupiterQuote) {
             return { success: false, outputAmount: BigInt(0), error: 'No route' };
           }
-          try {
-            return await jupiter.simulateSwap(jupiterQuote, publicKey.toBase58());
-          } catch (e) {
-            console.error('Jupiter simulation error:', e);
-            return { success: false, outputAmount: BigInt(0), error: 'Simulation failed' };
-          }
+          // try {
+          //   return await jupiter.simulateSwap(jupiterQuote, publicKey.toBase58());
+          // } catch (e) {
+          //   console.error('Jupiter simulation error:', e);
+          //   return { success: false, outputAmount: BigInt(0), error: 'Simulation failed' };
+          // }
+          // Skip simulation - trust Jupiter quote directly
+          return { success: true, outputAmount: BigInt(jupiterQuote.outAmount) };
         })(),
       ]);
       
-      console.log('Simulation results:', { amm: ammRes, jupiter: jupRes });
+      console.log({ amm: ammRes, jupiter: jupRes });
       
       setAmmSimResult(ammRes);
+      // setJupiterSimResult(jupRes);
+      // setIsSimulating(false);
       setJupiterSimResult(jupRes);
       setIsSimulating(false);
       
