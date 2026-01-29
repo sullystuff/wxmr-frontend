@@ -111,7 +111,7 @@ export type WxmrBridge = {
     {
       "name": "assignDepositAddress",
       "docs": [
-        "Backend assigns a Monero subaddress to the deposit account (one-time)"
+        "admin function"
       ],
       "discriminator": [
         108,
@@ -248,6 +248,278 @@ export type WxmrBridge = {
           "type": "u64"
         }
       ]
+    },
+    {
+      "name": "claimPendingMint",
+      "docs": [
+        "User claims pending tokens after creating their own ATA",
+        "This transfers tokens from the pending account (owned by deposit PDA) to user's ATA",
+        "and closes the pending account, refunding rent to bridge authority"
+      ],
+      "discriminator": [
+        231,
+        97,
+        226,
+        31,
+        241,
+        172,
+        157,
+        190
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "deposit",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  100,
+                  101,
+                  112,
+                  111,
+                  115,
+                  105,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "owner",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "deposit"
+          ]
+        },
+        {
+          "name": "pendingTokenAccount",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "deposit"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wxmrMint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "ownerTokenAccount",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "account",
+                "path": "owner"
+              },
+              {
+                "kind": "const",
+                "value": [
+                  6,
+                  221,
+                  246,
+                  225,
+                  215,
+                  101,
+                  161,
+                  147,
+                  217,
+                  203,
+                  225,
+                  70,
+                  206,
+                  235,
+                  121,
+                  172,
+                  28,
+                  180,
+                  133,
+                  237,
+                  95,
+                  91,
+                  55,
+                  145,
+                  58,
+                  140,
+                  245,
+                  133,
+                  126,
+                  255,
+                  0,
+                  169
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "wxmrMint"
+              }
+            ],
+            "program": {
+              "kind": "const",
+              "value": [
+                140,
+                151,
+                37,
+                143,
+                78,
+                36,
+                137,
+                241,
+                187,
+                61,
+                16,
+                41,
+                20,
+                142,
+                13,
+                131,
+                11,
+                90,
+                19,
+                153,
+                218,
+                255,
+                16,
+                132,
+                4,
+                142,
+                123,
+                216,
+                219,
+                233,
+                248,
+                89
+              ]
+            }
+          }
+        },
+        {
+          "name": "wxmrMint"
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "associatedTokenProgram",
+          "address": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": []
     },
     {
       "name": "closeDepositAccount",
@@ -465,6 +737,7 @@ export type WxmrBridge = {
       "docs": [
         "Create token metadata for wXMR mint (authority only, one-time)",
         "This uses CPI to Metaplex Token Metadata program, with config PDA signing as mint authority",
+        "Public",
         "User creates their permanent deposit account (one per wallet)",
         "Rent serves as spam deterrent - user pays ~0.002 SOL to create"
       ],
@@ -587,61 +860,14 @@ export type WxmrBridge = {
       ],
       "args": [
         {
+          "name": "epoch",
+          "type": "u64"
+        },
+        {
           "name": "additionalData",
           "type": "string"
         }
       ]
-    },
-    {
-      "name": "initialize",
-      "docs": [
-        "Initialize the bridge configuration"
-      ],
-      "discriminator": [
-        175,
-        175,
-        109,
-        31,
-        13,
-        152,
-        155,
-        237
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "wxmrMint",
-          "writable": true
-        },
-        {
-          "name": "authority",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "systemProgram",
-          "address": "11111111111111111111111111111111"
-        }
-      ],
-      "args": []
     },
     {
       "name": "initializeAmm",
@@ -803,7 +1029,7 @@ export type WxmrBridge = {
       "docs": [
         "Backend marks withdrawal as sending BEFORE attempting XMR transfer",
         "This prevents double-spend: once marked Sending, cannot be reverted",
-        "CRITICAL: Call this before sendXmr(), then complete after XMR is sent"
+        "Backend calls this before sendXmr(), then complete after XMR is sent"
       ],
       "discriminator": [
         50,
@@ -851,9 +1077,8 @@ export type WxmrBridge = {
     {
       "name": "mintDeposit",
       "docs": [
-        "Backend mints wXMR for detected XMR deposits",
-        "Deposit account stays open - user can deposit multiple times",
-        "If recipient's token account doesn't exist, it's created (authority pays)"
+        "admin function",
+        "if token account doesn't exist, put amount in pending section"
       ],
       "discriminator": [
         171,
@@ -901,6 +1126,10 @@ export type WxmrBridge = {
         },
         {
           "name": "ownerTokenAccount",
+          "writable": true
+        },
+        {
+          "name": "pendingTokenAccount",
           "writable": true
         },
         {
@@ -1403,6 +1632,77 @@ export type WxmrBridge = {
         {
           "name": "newSellPrice",
           "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "updateTokenMetadata",
+      "docs": [
+        "admin function"
+      ],
+      "discriminator": [
+        243,
+        6,
+        8,
+        23,
+        126,
+        181,
+        251,
+        158
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "wxmrMint",
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "metadata",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "tokenMetadataProgram",
+          "address": "metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s"
+        }
+      ],
+      "args": [
+        {
+          "name": "name",
+          "type": "string"
+        },
+        {
+          "name": "symbol",
+          "type": "string"
+        },
+        {
+          "name": "uri",
+          "type": "string"
         }
       ]
     }

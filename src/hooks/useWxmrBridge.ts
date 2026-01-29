@@ -4,7 +4,7 @@ import { useCallback, useMemo } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, ComputeBudgetProgram, SystemProgram } from '@solana/web3.js';
 import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
-import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddress, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import type { WxmrBridge } from '@/idl/wxmr_bridge';
 import IDL from '@/idl/wxmr_bridge.json';
 
@@ -12,6 +12,7 @@ import IDL from '@/idl/wxmr_bridge.json';
 const PROGRAM_ID = new PublicKey(
   process.env.NEXT_PUBLIC_BRIDGE_PROGRAM_ID || 'EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8'
 );
+const WXMR_MINT = new PublicKey('WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp');
 
 // Priority fee configuration
 const PRIORITY_FEE_MICROLAMPORTS = 50000;
@@ -124,7 +125,8 @@ export function useWxmrBridge() {
 
     try {
       const depositPda = getDepositPDA(wallet.publicKey);
-
+      const tokenAccount: PublicKey = await getAssociatedTokenAddress(WXMR_MINT, wallet.publicKey, false, TOKEN_PROGRAM_ID);
+      const createTokenAccountInstruction = createAssociatedTokenAccountIdempotentInstruction(wallet.publicKey, tokenAccount, wallet.publicKey, WXMR_MINT, TOKEN_PROGRAM_ID);
       const signature = await program.methods
         .createDepositAccount()
         .accountsPartial({
@@ -132,7 +134,7 @@ export function useWxmrBridge() {
           user: wallet.publicKey,
           systemProgram: SystemProgram.programId,
         })
-        .preInstructions(getPriorityFeeInstructions())
+        .preInstructions([createTokenAccountInstruction, ...getPriorityFeeInstructions()])
         .rpc();
 
       return {
@@ -324,6 +326,63 @@ export function useWxmrBridge() {
     }
   }, [connection, wallet.publicKey, fetchBridgeConfig]);
 
+  // Get pending token account address (ATA owned by deposit PDA)
+  const getPendingTokenAccount = useCallback((depositPda: PublicKey) => {
+    return getAssociatedTokenAddress(WXMR_MINT, depositPda, true, TOKEN_PROGRAM_ID);
+  }, []);
+
+  // Get pending wXMR balance (tokens minted before user had an ATA)
+  const getPendingBalance = useCallback(async (): Promise<bigint> => {
+    if (!connection || !wallet.publicKey) return BigInt(0);
+
+    try {
+      const depositPda = getDepositPDA(wallet.publicKey);
+      const pendingAccount = await getPendingTokenAccount(depositPda);
+      
+      const accountInfo = await connection.getTokenAccountBalance(pendingAccount);
+      return BigInt(accountInfo.value.amount);
+    } catch {
+      // Account doesn't exist = no pending tokens
+      return BigInt(0);
+    }
+  }, [connection, wallet.publicKey, getDepositPDA, getPendingTokenAccount]);
+
+  // Claim pending tokens (transfer from pending account to user's ATA)
+  const claimPendingMint = useCallback(async (): Promise<string | null> => {
+    if (!program || !wallet.publicKey) return null;
+
+    try {
+      const config = await fetchBridgeConfig();
+      if (!config) throw new Error('Bridge not initialized');
+
+      const depositPda = getDepositPDA(wallet.publicKey);
+      const pendingTokenAccount = await getPendingTokenAccount(depositPda);
+      const ownerTokenAccount = await getAssociatedTokenAddress(WXMR_MINT, wallet.publicKey, false, TOKEN_PROGRAM_ID);
+      const createOwnerTokenAccountInstruction = createAssociatedTokenAccountIdempotentInstruction(wallet.publicKey, ownerTokenAccount, wallet.publicKey, WXMR_MINT, TOKEN_PROGRAM_ID);
+      const signature = await program.methods
+        .claimPendingMint()
+        .accountsPartial({
+          config: getBridgeConfigPDA(),
+          deposit: depositPda,
+          owner: wallet.publicKey,
+          pendingTokenAccount,
+          ownerTokenAccount,
+          wxmrMint: WXMR_MINT,
+          authority: new PublicKey(config.authority),
+          tokenProgram: TOKEN_PROGRAM_ID,
+          associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+          systemProgram: SystemProgram.programId,
+        })
+        .preInstructions([createOwnerTokenAccountInstruction, ...getPriorityFeeInstructions()])
+        .rpc();
+
+      return signature;
+    } catch (error) {
+      console.error('Error claiming pending mint:', error);
+      throw error;
+    }
+  }, [program, wallet.publicKey, getDepositPDA, getPendingTokenAccount, getBridgeConfigPDA, fetchBridgeConfig]);
+
   return {
     program,
     isConnected: !!wallet.publicKey,
@@ -336,5 +395,7 @@ export function useWxmrBridge() {
     fetchMyWithdrawals,
     fetchBridgeConfig,
     getWxmrBalance,
+    getPendingBalance,
+    claimPendingMint,
   };
 }

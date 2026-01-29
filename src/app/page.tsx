@@ -315,6 +315,8 @@ export default function Home() {
     fetchMyWithdrawals,
     fetchBridgeConfig,
     getWxmrBalance,
+    getPendingBalance,
+    claimPendingMint,
   } = useWxmrBridge();
 
   const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw'>('deposit');
@@ -322,6 +324,7 @@ export default function Home() {
   const [withdrawals, setWithdrawals] = useState<WithdrawalInfo[]>([]);
   const [bridgeConfig, setBridgeConfig] = useState<BridgeConfig | null>(null);
   const [wxmrBalance, setWxmrBalance] = useState<bigint>(BigInt(0));
+  const [pendingBalance, setPendingBalance] = useState<bigint>(BigInt(0));
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -341,21 +344,23 @@ export default function Home() {
     if (!isConnected) return;
 
     try {
-      const [config, balance, myDepositAccount, myWithdrawals] = await Promise.all([
+      const [config, balance, pending, myDepositAccount, myWithdrawals] = await Promise.all([
         fetchBridgeConfig(),
         getWxmrBalance(),
+        getPendingBalance(),
         fetchMyDepositAccount(),
         fetchMyWithdrawals(),
       ]);
 
       setBridgeConfig(config);
       setWxmrBalance(balance);
+      setPendingBalance(pending);
       setDepositAccount(myDepositAccount);
       setWithdrawals(myWithdrawals.sort((a, b) => b.createdAt - a.createdAt));
     } catch (err) {
       console.error('Error loading data:', err);
     }
-  }, [isConnected, fetchBridgeConfig, getWxmrBalance, fetchMyDepositAccount, fetchMyWithdrawals]);
+  }, [isConnected, fetchBridgeConfig, getWxmrBalance, getPendingBalance, fetchMyDepositAccount, fetchMyWithdrawals]);
 
   useEffect(() => {
     loadData();
@@ -397,6 +402,25 @@ export default function Home() {
       }
     } catch (err: any) {
       setError(err.message || 'Failed to close deposit account');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // Handle claim pending tokens
+  const handleClaimPending = async () => {
+    setLoading(true);
+    setError(null);
+    setSuccess(null);
+
+    try {
+      const signature = await claimPendingMint();
+      if (signature) {
+        setSuccess(`Pending tokens claimed! TX: ${signature.slice(0, 20)}...`);
+        await loadData();
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to claim pending tokens');
     } finally {
       setLoading(false);
     }
@@ -503,6 +527,32 @@ export default function Home() {
                 <p className="text-xs text-[var(--muted)] mt-1">XMR</p>
               </div>
             </div>
+
+            {/* Pending Tokens Alert */}
+            {pendingBalance > BigInt(0) && (
+              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-6 flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <svg className="w-5 h-5 text-yellow-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                  </svg>
+                  <div>
+                    <p className="text-sm text-yellow-400 font-medium">
+                      You have <span className="text-[#ff6600] font-bold">{formatXmr(pendingBalance)} wXMR</span> pending
+                    </p>
+                    <p className="text-xs text-[var(--muted)] mt-0.5">
+                      These tokens were minted before your token account was created. Claim them to add to your balance.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleClaimPending}
+                  disabled={loading}
+                  className="px-4 py-2 bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-500/30 text-yellow-400 rounded-lg text-sm font-medium transition-colors flex-shrink-0"
+                >
+                  {loading ? 'Claiming...' : 'Claim'}
+                </button>
+              </div>
+            )}
 
             {/* Tab Navigation */}
             <div className="flex gap-2 mb-6">
