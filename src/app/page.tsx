@@ -127,8 +127,14 @@ function QRCodeModal({ address, onClose }: { address: string; onClose: () => voi
 function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void; onClose: () => void }) {
   const scannerRef = useRef<HTMLDivElement>(null);
   const html5QrCodeRef = useRef<any>(null);
+  const onScanRef = useRef(onScan);
+  const onCloseRef = useRef(onClose);
   const [error, setError] = useState<string | null>(null);
   const [isStarting, setIsStarting] = useState(true);
+
+  // Keep refs up to date without restarting the scanner
+  useEffect(() => { onScanRef.current = onScan; }, [onScan]);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
   useEffect(() => {
     let mounted = true;
@@ -153,9 +159,9 @@ function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void
             if (decodedText.toLowerCase().startsWith('monero:')) {
               address = decodedText.slice(7).split('?')[0];
             }
-            onScan(address);
+            onScanRef.current(address);
             html5QrCode.stop().catch(console.error);
-            onClose();
+            onCloseRef.current();
           },
           () => {}
         );
@@ -185,7 +191,7 @@ function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void
         html5QrCodeRef.current.stop().catch(() => {});
       }
     };
-  }, [onScan, onClose]);
+  }, []); // Run once on mount - callbacks accessed via stable refs
 
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
