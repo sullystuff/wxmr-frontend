@@ -131,6 +131,7 @@ function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void
   const onScanRef = useRef(onScan);
   const onCloseRef = useRef(onClose);
   const [error, setError] = useState<string | null>(null);
+  const [cameraUnavailable, setCameraUnavailable] = useState(false);
   const [isStarting, setIsStarting] = useState(true);
 
   // Keep refs up to date without restarting the scanner
@@ -141,6 +142,15 @@ function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void
     let mounted = true;
 
     const startScanner = async () => {
+      // Pre-check: camera API available?
+      if (!navigator.mediaDevices?.getUserMedia) {
+        if (mounted) {
+          setIsStarting(false);
+          setCameraUnavailable(true);
+        }
+        return;
+      }
+
       try {
         const { Html5Qrcode } = await import('html5-qrcode');
         
@@ -149,7 +159,8 @@ function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void
         const html5QrCode = new Html5Qrcode('qr-scanner-region');
         html5QrCodeRef.current = html5QrCode;
 
-        await html5QrCode.start(
+        // Race the start against a timeout — some in-app browsers hang
+        const startPromise = html5QrCode.start(
           { facingMode: 'environment' },
           {
             fps: 10,
@@ -172,18 +183,26 @@ function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void
           () => {}
         );
 
+        const timeout = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 8000)
+        );
+
+        await Promise.race([startPromise, timeout]);
+
         if (mounted) {
           setIsStarting(false);
         }
       } catch (err: any) {
         if (mounted) {
           setIsStarting(false);
-          if (err.name === 'NotAllowedError') {
+          if (err.message === 'timeout') {
+            setCameraUnavailable(true);
+          } else if (err.name === 'NotAllowedError') {
             setError('Camera access denied. Please allow camera access to scan QR codes.');
-          } else if (err.name === 'NotFoundError') {
-            setError('No camera found on this device.');
+          } else if (err.name === 'NotFoundError' || err.name === 'NotReadableError') {
+            setCameraUnavailable(true);
           } else {
-            setError(err.message || 'Failed to start camera');
+            setCameraUnavailable(true);
           }
         }
       }
@@ -208,6 +227,23 @@ function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void
     return () => window.removeEventListener('keydown', handleEscape);
   }, [onClose]);
 
+  const handlePasteFromClipboard = async () => {
+    try {
+      const text = await navigator.clipboard.readText();
+      const trimmed = text.trim();
+      if (trimmed) {
+        let address = trimmed;
+        if (trimmed.toLowerCase().startsWith('monero:')) {
+          address = trimmed.slice(7).split('?')[0];
+        }
+        onScan(address);
+        onClose();
+      }
+    } catch {
+      // Clipboard API might not be available either; ignore
+    }
+  };
+
   return (
     <div 
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
@@ -222,7 +258,7 @@ function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void
             <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
             </svg>
-            Scan XMR Address
+            {cameraUnavailable ? 'Enter XMR Address' : 'Scan XMR Address'}
           </h3>
           <button
             onClick={onClose}
@@ -238,6 +274,21 @@ function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void
         {error ? (
           <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-lg text-sm">
             {error}
+          </div>
+        ) : cameraUnavailable ? (
+          <div className="space-y-3">
+            <p className="text-sm text-[var(--muted)]">
+              Camera is not available in this browser. You can paste an address from your clipboard instead.
+            </p>
+            <button
+              onClick={handlePasteFromClipboard}
+              className="w-full py-3 bg-[#ff6600]/20 hover:bg-[#ff6600]/30 border border-[#ff6600]/40 text-[#ff6600] rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+              </svg>
+              Paste from Clipboard
+            </button>
           </div>
         ) : (
           <>
@@ -258,9 +309,11 @@ function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void
           </>
         )}
         
-        <p className="text-xs text-[var(--muted)] mt-4 text-center">
-          Point your camera at a Monero address QR code
-        </p>
+        {!cameraUnavailable && (
+          <p className="text-xs text-[var(--muted)] mt-4 text-center">
+            Point your camera at a Monero address QR code
+          </p>
+        )}
         
         <button
           onClick={onClose}
