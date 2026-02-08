@@ -127,6 +127,7 @@ function QRCodeModal({ address, onClose }: { address: string; onClose: () => voi
 function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void; onClose: () => void }) {
   const scannerRef = useRef<HTMLDivElement>(null);
   const html5QrCodeRef = useRef<any>(null);
+  const stoppedRef = useRef(false);
   const onScanRef = useRef(onScan);
   const onCloseRef = useRef(onClose);
   const [error, setError] = useState<string | null>(null);
@@ -154,13 +155,18 @@ function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void
             fps: 10,
             qrbox: { width: 250, height: 250 },
           },
-          (decodedText) => {
+          async (decodedText) => {
+            if (stoppedRef.current) return;
+            stoppedRef.current = true;
+
             let address = decodedText;
             if (decodedText.toLowerCase().startsWith('monero:')) {
               address = decodedText.slice(7).split('?')[0];
             }
             onScanRef.current(address);
-            html5QrCode.stop().catch(console.error);
+            // Wait for the scanner to fully stop (releases camera & cleans up DOM)
+            // BEFORE unmounting the component via onClose
+            try { await html5QrCode.stop(); } catch { /* already stopped */ }
             onCloseRef.current();
           },
           () => {}
@@ -187,7 +193,8 @@ function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void
 
     return () => {
       mounted = false;
-      if (html5QrCodeRef.current) {
+      if (html5QrCodeRef.current && !stoppedRef.current) {
+        stoppedRef.current = true;
         html5QrCodeRef.current.stop().catch(() => {});
       }
     };
