@@ -41,7 +41,7 @@ type RouteSource = 'amm' | 'jupiter';
 export function SwapModal({ isOpen, onClose }: SwapModalProps) {
   const { connection } = useConnection();
   const wallet = useWallet();
-  const { connected, publicKey, signTransaction } = wallet;
+  const { connected, publicKey, signTransaction, sendTransaction } = wallet;
   
   const amm = useAmmPool();
   const jupiter = useJupiterQuote();
@@ -311,7 +311,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
 
   // Execute AMM swap
   const executeAmmSwap = async () => {
-    if (!publicKey || !signTransaction || !amm.poolPda || !amm.pool) throw new Error('Not ready');
+    if (!publicKey || !amm.poolPda || !amm.pool) throw new Error('Not ready');
     const provider = new AnchorProvider(connection, wallet as any, { commitment: 'confirmed' });
     const program = new Program(IDL as any, provider) as Program<WxmrBridge>;
     const userWxmr = await getAssociatedTokenAddress(WXMR_MINT, publicKey);
@@ -327,24 +327,58 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
           poolWxmr: amm.pool.poolWxmr, poolUsdc: amm.pool.poolUsdc, tokenProgram: TOKEN_PROGRAM_ID,
         }).transaction();
 
-    tx.feePayer = publicKey;
-    tx.recentBlockhash = (await connection.getLatestBlockhash()).blockhash;
-    const signed = await signTransaction(tx);
-    const sig = await connection.sendRawTransaction(signed.serialize());
-    await connection.confirmTransaction(sig, 'confirmed');
+    // Use wallet adapter's sendTransaction -- it handles signing, setting
+    // feePayer/blockhash, and sending in one step. This works reliably across
+    // all wallets (Phantom, Solflare, etc.) on all browsers including Chrome,
+    // unlike signTransaction which may be undefined for some wallet-standard wallets.
+    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
+    const sig = await sendTransaction(tx, connection);
+
+    // Confirm with the proper blockhash-aware method.
+    // If confirmation times out, the tx may still have landed -- return the sig either way.
+    try {
+      await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
+    } catch (confirmErr) {
+      console.warn('Confirmation timed out, checking tx status...', confirmErr);
+      const status = await connection.getSignatureStatus(sig);
+      if (!status?.value?.confirmationStatus) {
+        throw confirmErr; // genuinely failed
+      }
+    }
     return sig;
   };
 
-  // Execute Jupiter swap
+  // Execute Jupiter swap via Ultra API
   const executeJupiterSwap = async () => {
     if (!publicKey || !signTransaction || !jupiterQuote) throw new Error('Not ready');
     const swapData = await jupiter.getSwapTransaction(jupiterQuote, publicKey.toBase58());
     if (!swapData) throw new Error('Failed to build tx');
-    const tx = VersionedTransaction.deserialize(Buffer.from(swapData.swapTransaction, 'base64'));
+
+    // Decode base64 transaction using browser-native atob (no Buffer needed)
+    const binaryStr = atob(swapData.swapTransaction);
+    const bytes = new Uint8Array(binaryStr.length);
+    for (let i = 0; i < binaryStr.length; i++) {
+      bytes[i] = binaryStr.charCodeAt(i);
+    }
+    const tx = VersionedTransaction.deserialize(bytes);
+
+    // Sign with wallet
     const signed = await signTransaction(tx);
-    const sig = await connection.sendRawTransaction(signed.serialize());
-    await connection.confirmTransaction(sig, 'confirmed');
-    return sig;
+
+    // Re-encode signed transaction to base64 for Jupiter's /execute endpoint
+    const serialized = signed.serialize();
+    let binary = '';
+    for (let i = 0; i < serialized.length; i++) {
+      binary += String.fromCharCode(serialized[i]);
+    }
+    const signedBase64 = btoa(binary);
+
+    // Submit to Jupiter Ultra's /execute endpoint (they handle broadcasting)
+    const result = await jupiter.executeSwap(signedBase64, swapData.requestId);
+    if (result.status !== 'Success') {
+      throw new Error(result.error || 'Jupiter swap execution failed');
+    }
+    return result.signature!;
   };
 
   const handleSwap = async () => {

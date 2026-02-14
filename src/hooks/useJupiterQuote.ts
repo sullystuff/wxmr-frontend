@@ -90,27 +90,60 @@ export function useJupiterQuote() {
   const getSwapTransaction = useCallback(async (
     quote: JupiterQuote,
     userPublicKey: string
-  ): Promise<{ swapTransaction: string } | null> => {
+  ): Promise<{ swapTransaction: string; requestId: string } | null> => {
     try {
       // Ultra API: transaction already in quote if taker was provided
-      if (quote.transaction) {
-        return { swapTransaction: quote.transaction };
+      if (quote.transaction && quote.requestId) {
+        return { swapTransaction: quote.transaction, requestId: quote.requestId };
       }
       
       // Re-fetch with taker to get transaction
       const isBuying = quote.inputMint === USDC_MINT.toBase58();
       const newQuote = await getQuote(BigInt(quote.inAmount), isBuying, userPublicKey);
       
-      if (!newQuote?.transaction) {
+      if (!newQuote?.transaction || !newQuote?.requestId) {
         return null;
       }
-      return { swapTransaction: newQuote.transaction };
+      return { swapTransaction: newQuote.transaction, requestId: newQuote.requestId };
     } catch (e) {
       console.error('Jupiter swap error:', e);
       setError(e instanceof Error ? e.message : 'Failed to get swap transaction');
       return null;
     }
   }, [getQuote]);
+
+  // Execute a signed swap via Jupiter Ultra's /execute endpoint
+  const executeSwap = useCallback(async (
+    signedTransactionBase64: string,
+    requestId: string
+  ): Promise<{ status: string; signature?: string; error?: string }> => {
+    try {
+      const response = await fetch('https://api.jup.ag/ultra/v1/execute', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...getHeaders(),
+        },
+        body: JSON.stringify({
+          signedTransaction: signedTransactionBase64,
+          requestId,
+        }),
+      });
+
+      const data = await response.json();
+      return {
+        status: data.status || 'Failed',
+        signature: data.signature,
+        error: data.error || data.errorMessage,
+      };
+    } catch (e) {
+      console.error('Jupiter execute error:', e);
+      return {
+        status: 'Failed',
+        error: e instanceof Error ? e.message : 'Execute request failed',
+      };
+    }
+  }, [getHeaders]);
 
   // Simulate a Jupiter swap to verify it will work
   // const simulateSwap = useCallback(async (
@@ -165,6 +198,7 @@ export function useJupiterQuote() {
     getBuyQuote,
     getSellQuote,
     getSwapTransaction,
+    executeSwap,
     // simulateSwap,
   };
 }
