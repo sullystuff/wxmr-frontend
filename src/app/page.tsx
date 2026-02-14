@@ -406,20 +406,23 @@ export default function Home() {
   const [showSwapModal, setShowSwapModal] = useState(false);
   const [copied, setCopied] = useState(false);
 
-  // Load data when connected
+  // Load data — bridge config always, wallet-specific data only when connected
   const loadData = useCallback(async () => {
-    if (!isConnected) return;
-
     try {
-      const [config, balance, pending, myDepositAccount, myWithdrawals] = await Promise.all([
-        fetchBridgeConfig(),
+      // Bridge config can be fetched without a wallet
+      const config = await fetchBridgeConfig();
+      setBridgeConfig(config);
+
+      if (!isConnected) return;
+
+      // Wallet-specific data
+      const [balance, pending, myDepositAccount, myWithdrawals] = await Promise.all([
         getWxmrBalance(),
         getPendingBalance(),
         fetchMyDepositAccount(),
         fetchMyWithdrawals(),
       ]);
 
-      setBridgeConfig(config);
       setWxmrBalance(balance);
       setPendingBalance(pending);
       setDepositAccount(myDepositAccount);
@@ -428,6 +431,16 @@ export default function Home() {
       console.error('Error loading data:', err);
     }
   }, [isConnected, fetchBridgeConfig, getWxmrBalance, getPendingBalance, fetchMyDepositAccount, fetchMyWithdrawals]);
+
+  // Reset wallet-specific state when disconnected
+  useEffect(() => {
+    if (!isConnected) {
+      setWxmrBalance(BigInt(0));
+      setPendingBalance(BigInt(0));
+      setDepositAccount(null);
+      setWithdrawals([]);
+    }
+  }, [isConnected]);
 
   useEffect(() => {
     loadData();
@@ -556,255 +569,270 @@ export default function Home() {
           <WalletMultiButton />
         </header>
 
-        {!isConnected ? (
-          <div className="text-center py-24">
-            <div className="flex justify-center mb-6">
-              <div className="relative">
-                <MoneroLogo className="w-24 h-24 xmr-pulse" />
-                <div className="absolute inset-0 bg-[#ff6600]/20 blur-2xl rounded-full" />
-              </div>
-            </div>
-            <h2 className="text-2xl font-bold mb-3">Connect Your Wallet</h2>
-            <p className="text-[var(--muted)] mb-8">Connect a Solana wallet to start bridging XMR</p>
-            <div className="inline-block">
-              <WalletMultiButton />
-            </div>
+        {/* Stats Cards — always visible */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+          <div className="xmr-card xmr-stat-card p-5">
+            <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Your wXMR Balance</p>
+            <p className="text-2xl font-bold mt-2 text-[#ff6600]">{formatXmr(wxmrBalance)}</p>
+            <p className="text-xs text-[var(--muted)] mt-1">wXMR</p>
           </div>
-        ) : (
-          <>
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
-              <div className="xmr-card xmr-stat-card p-5">
-                <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Your wXMR Balance</p>
-                <p className="text-2xl font-bold mt-2 text-[#ff6600]">{formatXmr(wxmrBalance)}</p>
-                <p className="text-xs text-[var(--muted)] mt-1">wXMR</p>
-              </div>
-              <div className="xmr-card xmr-stat-card p-5">
-                <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Total Bridged In</p>
-                <p className="text-2xl font-bold mt-2">
-                  {bridgeConfig ? formatXmr(bridgeConfig.totalDeposits) : '0'}
+          <div className="xmr-card xmr-stat-card p-5">
+            <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Total Bridged In</p>
+            <p className="text-2xl font-bold mt-2">
+              {bridgeConfig ? formatXmr(bridgeConfig.totalDeposits) : '0'}
+            </p>
+            <p className="text-xs text-[var(--muted)] mt-1">XMR</p>
+          </div>
+          <div className="xmr-card xmr-stat-card p-5">
+            <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Total Bridged Out</p>
+            <p className="text-2xl font-bold mt-2">
+              {bridgeConfig ? formatXmr(bridgeConfig.totalWithdrawals) : '0'}
+            </p>
+            <p className="text-xs text-[var(--muted)] mt-1">XMR</p>
+          </div>
+        </div>
+
+        {/* Pending Tokens Alert — only when connected and pending > 0 */}
+        {isConnected && pendingBalance > BigInt(0) && (
+          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-6 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <svg className="w-5 h-5 text-yellow-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+              </svg>
+              <div>
+                <p className="text-sm text-yellow-400 font-medium">
+                  You have <span className="text-[#ff6600] font-bold">{formatXmr(pendingBalance)} wXMR</span> pending
                 </p>
-                <p className="text-xs text-[var(--muted)] mt-1">XMR</p>
-              </div>
-              <div className="xmr-card xmr-stat-card p-5">
-                <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Total Bridged Out</p>
-                <p className="text-2xl font-bold mt-2">
-                  {bridgeConfig ? formatXmr(bridgeConfig.totalWithdrawals) : '0'}
+                <p className="text-xs text-[var(--muted)] mt-0.5">
+                  These tokens were minted when you didn&apos;t have a token account. Click here to claim.
                 </p>
-                <p className="text-xs text-[var(--muted)] mt-1">XMR</p>
               </div>
             </div>
+            <button
+              onClick={handleClaimPending}
+              disabled={loading}
+              className="px-4 py-2 bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-500/30 text-yellow-400 rounded-lg text-sm font-medium transition-colors flex-shrink-0"
+            >
+              {loading ? 'Claiming...' : 'Claim'}
+            </button>
+          </div>
+        )}
 
-            {/* Pending Tokens Alert */}
-            {pendingBalance > BigInt(0) && (
-              <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-6 flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <svg className="w-5 h-5 text-yellow-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-                  </svg>
-                  <div>
-                    <p className="text-sm text-yellow-400 font-medium">
-                      You have <span className="text-[#ff6600] font-bold">{formatXmr(pendingBalance)} wXMR</span> pending
-                    </p>
-                    <p className="text-xs text-[var(--muted)] mt-0.5">
-                      These tokens were minted when you didn't have a token account. Click here to claim.
-                    </p>
+        {/* Tab Navigation — always visible */}
+        <div className="flex gap-2 mb-6">
+          <button
+            onClick={() => setActiveTab('deposit')}
+            className={`xmr-tab px-6 py-2.5 rounded-lg font-semibold transition-all ${
+              activeTab === 'deposit'
+                ? 'xmr-tab-active text-white'
+                : 'bg-[var(--card)] text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-white border border-[var(--border)]'
+            }`}
+          >
+            Deposit XMR
+          </button>
+          <button
+            onClick={() => setActiveTab('withdraw')}
+            className={`xmr-tab px-6 py-2.5 rounded-lg font-semibold transition-all ${
+              activeTab === 'withdraw'
+                ? 'xmr-tab-active text-white'
+                : 'bg-[var(--card)] text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-white border border-[var(--border)]'
+            }`}
+          >
+            Withdraw XMR
+          </button>
+          <button
+            onClick={() => setShowSwapModal(true)}
+            className="xmr-tab px-6 py-2.5 rounded-lg font-semibold transition-all bg-[var(--card)] text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-white border border-[var(--border)] flex items-center gap-2"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            </svg>
+            Swap
+          </button>
+        </div>
+
+        {/* Alerts */}
+        {error && (
+          <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-lg mb-6 flex items-center gap-3">
+            <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
+            </svg>
+            <span>{error}</span>
+          </div>
+        )}
+        {success && (
+          <div className="bg-green-500/10 border border-green-500/30 text-green-400 p-4 rounded-lg mb-6 flex items-center gap-3">
+            <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
+              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+            </svg>
+            <span>{success}</span>
+          </div>
+        )}
+
+        {/* Main Content */}
+        {activeTab === 'deposit' ? (
+          <div className="space-y-6">
+            {/* Deposit Section */}
+            <div className="xmr-card p-6 xmr-glow">
+              <h2 className="text-xl font-bold mb-2 flex items-center gap-2">
+                <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                </svg>
+                Deposit XMR
+              </h2>
+              
+              {!isConnected ? (
+                // Not connected — prompt to connect
+                <div className="text-center py-10">
+                  <div className="flex justify-center mb-4">
+                    <div className="relative">
+                      <MoneroLogo className="w-16 h-16 xmr-pulse" />
+                      <div className="absolute inset-0 bg-[#ff6600]/20 blur-2xl rounded-full" />
+                    </div>
+                  </div>
+                  <p className="text-[var(--muted)] mb-6">Connect a Solana wallet to create a deposit account and start bridging XMR.</p>
+                  <div className="inline-block">
+                    <WalletMultiButton />
                   </div>
                 </div>
-                <button
-                  onClick={handleClaimPending}
-                  disabled={loading}
-                  className="px-4 py-2 bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-500/30 text-yellow-400 rounded-lg text-sm font-medium transition-colors flex-shrink-0"
-                >
-                  {loading ? 'Claiming...' : 'Claim'}
-                </button>
-              </div>
-            )}
-
-            {/* Tab Navigation */}
-            <div className="flex gap-2 mb-6">
-              <button
-                onClick={() => setActiveTab('deposit')}
-                className={`xmr-tab px-6 py-2.5 rounded-lg font-semibold transition-all ${
-                  activeTab === 'deposit'
-                    ? 'xmr-tab-active text-white'
-                    : 'bg-[var(--card)] text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-white border border-[var(--border)]'
-                }`}
-              >
-                Deposit XMR
-              </button>
-              <button
-                onClick={() => setActiveTab('withdraw')}
-                className={`xmr-tab px-6 py-2.5 rounded-lg font-semibold transition-all ${
-                  activeTab === 'withdraw'
-                    ? 'xmr-tab-active text-white'
-                    : 'bg-[var(--card)] text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-white border border-[var(--border)]'
-                }`}
-              >
-                Withdraw XMR
-              </button>
-              <button
-                onClick={() => setShowSwapModal(true)}
-                className="xmr-tab px-6 py-2.5 rounded-lg font-semibold transition-all bg-[var(--card)] text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-white border border-[var(--border)] flex items-center gap-2"
-              >
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-                </svg>
-                Swap
-              </button>
-            </div>
-
-            {/* Alerts */}
-            {error && (
-              <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-lg mb-6 flex items-center gap-3">
-                <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-                </svg>
-                <span>{error}</span>
-              </div>
-            )}
-            {success && (
-              <div className="bg-green-500/10 border border-green-500/30 text-green-400 p-4 rounded-lg mb-6 flex items-center gap-3">
-                <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-                  <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-                </svg>
-                <span>{success}</span>
-              </div>
-            )}
-
-            {/* Main Content */}
-            {activeTab === 'deposit' ? (
-              <div className="space-y-6">
-                {/* Deposit Section */}
-                <div className="xmr-card p-6 xmr-glow">
-                  <h2 className="text-xl font-bold mb-2 flex items-center gap-2">
-                    <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                    </svg>
-                    Deposit XMR
-                  </h2>
-                  
-                  {!depositAccount ? (
-                    // No deposit account - show create button
-                    <>
-                      <p className="text-[var(--muted)] mb-6">
-                        Create a deposit account to get your permanent XMR deposit address. 
-                        Minimum 0.01 XMR per transfer (and per input!). You can deposit any number of times.
-                      </p>
-                      <button
-                        onClick={handleCreateDepositAccount}
-                        disabled={loading}
-                        className="xmr-btn-primary text-white px-8 py-3 rounded-lg font-semibold"
-                      >
-                        {loading ? (
-                          <span className="flex items-center gap-2">
-                            <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                            </svg>
-                            Processing...
-                          </span>
-                        ) : 'Create Deposit Account'}
-                      </button>
-                    </>
-                  ) : depositAccount.status === 'pending' ? (
-                    // Deposit account pending - waiting for address assignment
-                    <>
-                      <div className="flex items-center gap-2 mb-4">
-                        <StatusBadge status="pending" />
-                        <span className="text-sm text-[var(--muted)]">Created {formatTime(depositAccount.createdAt)}</span>
-                      </div>
-                      <p className="text-[var(--muted)] flex items-center gap-2">
-                        <svg className="animate-spin w-5 h-5 text-[#ff6600]" fill="none" viewBox="0 0 24 24">
+              ) : !depositAccount ? (
+                // No deposit account - show create button
+                <>
+                  <p className="text-[var(--muted)] mb-6">
+                    Create a deposit account to get your permanent XMR deposit address. 
+                    Minimum 0.01 XMR per transfer (and per input!). You can deposit any number of times.
+                  </p>
+                  <button
+                    onClick={handleCreateDepositAccount}
+                    disabled={loading}
+                    className="xmr-btn-primary text-white px-8 py-3 rounded-lg font-semibold"
+                  >
+                    {loading ? (
+                      <span className="flex items-center gap-2">
+                        <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                         </svg>
-                        Waiting for XMR address assignment (usually takes a few seconds)...
-                      </p>
-                    </>
-                  ) : depositAccount.status === 'active' ? (
-                    // Active deposit account - show address
-                    <>
-                      <div className="flex items-center gap-2 mb-4">
-                        <StatusBadge status="active" />
-                        <span className="text-sm text-[var(--muted)]">
-                          Total deposited: <span className="text-[#ff6600] font-medium">{formatXmr(depositAccount.totalDeposited)} XMR</span>
-                        </span>
-                      </div>
-                      
-                      <div className="bg-[var(--background)] rounded-xl p-4 border border-[var(--border)] mb-4">
-                        <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">Your Permanent XMR Deposit Address</p>
-                        <div className="flex gap-2">
-                          <code className="text-sm bg-[var(--card)] p-3 rounded-lg flex-1 break-all font-mono border border-[var(--border)] text-[#ff6600] select-all cursor-pointer">
-                            {depositAccount.xmrDepositAddress}
-                          </code>
-                          <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(depositAccount.xmrDepositAddress);
-                              setCopied(true);
-                              setTimeout(() => setCopied(false), 2000);
-                            }}
-                            className="p-3 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all flex-shrink-0"
-                            title="Copy Address"
-                          >
-                            {copied ? (
-                              <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                              </svg>
-                            ) : (
-                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                              </svg>
-                            )}
-                          </button>
-                          <button
-                            onClick={() => setQrAddress(depositAccount.xmrDepositAddress)}
-                            className="p-3 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all flex-shrink-0"
-                            title="Show QR Code"
-                          >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                            </svg>
-                          </button>
-                        </div>
-                      </div>
-
-                      <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 mb-4">
-                        <p className="text-sm text-green-400">
-                          <strong>Minimum 0.01 XMR per transfer.</strong> Once confirmed (10 blocks), 
-                          wXMR will be automatically minted to your wallet. You can deposit multiple times.
-                        </p>
-                      </div>
-
-                      <div className="pt-4 border-t border-[var(--border)]">
-                        <p className="text-xs text-[var(--muted)] mb-2">
-                          Need a new address for privacy? Close this account to get a fresh one.
-                        </p>
-                        <button
-                          onClick={() => setShowCloseConfirm(true)}
-                          disabled={loading}
-                          className="text-sm text-red-400 hover:text-red-300 transition-colors"
-                        >
-                          Close deposit account
-                        </button>
-                      </div>
-                    </>
-                  ) : (
-                    // Closed account - shouldn't happen (account is deleted)
-                    <p className="text-[var(--muted)]">Account closed. Create a new one to deposit.</p>
-                  )}
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-6">
-                {/* Withdraw Form */}
-                <div className="xmr-card p-6 xmr-glow">
-                  <h2 className="text-xl font-bold mb-2 flex items-center gap-2">
-                    <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                        Processing...
+                      </span>
+                    ) : 'Create Deposit Account'}
+                  </button>
+                </>
+              ) : depositAccount.status === 'pending' ? (
+                // Deposit account pending - waiting for address assignment
+                <>
+                  <div className="flex items-center gap-2 mb-4">
+                    <StatusBadge status="pending" />
+                    <span className="text-sm text-[var(--muted)]">Created {formatTime(depositAccount.createdAt)}</span>
+                  </div>
+                  <p className="text-[var(--muted)] flex items-center gap-2">
+                    <svg className="animate-spin w-5 h-5 text-[#ff6600]" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                     </svg>
-                    Withdraw XMR
-                  </h2>
+                    Waiting for XMR address assignment (usually takes a few seconds)...
+                  </p>
+                </>
+              ) : depositAccount.status === 'active' ? (
+                // Active deposit account - show address
+                <>
+                  <div className="flex items-center gap-2 mb-4">
+                    <StatusBadge status="active" />
+                    <span className="text-sm text-[var(--muted)]">
+                      Total deposited: <span className="text-[#ff6600] font-medium">{formatXmr(depositAccount.totalDeposited)} XMR</span>
+                    </span>
+                  </div>
+                  
+                  <div className="bg-[var(--background)] rounded-xl p-4 border border-[var(--border)] mb-4">
+                    <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">Your Permanent XMR Deposit Address</p>
+                    <div className="flex gap-2">
+                      <code className="text-sm bg-[var(--card)] p-3 rounded-lg flex-1 break-all font-mono border border-[var(--border)] text-[#ff6600] select-all cursor-pointer">
+                        {depositAccount.xmrDepositAddress}
+                      </code>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(depositAccount.xmrDepositAddress);
+                          setCopied(true);
+                          setTimeout(() => setCopied(false), 2000);
+                        }}
+                        className="p-3 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all flex-shrink-0"
+                        title="Copy Address"
+                      >
+                        {copied ? (
+                          <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                          </svg>
+                        )}
+                      </button>
+                      <button
+                        onClick={() => setQrAddress(depositAccount.xmrDepositAddress)}
+                        className="p-3 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all flex-shrink-0"
+                        title="Show QR Code"
+                      >
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
+                        </svg>
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 mb-4">
+                    <p className="text-sm text-green-400">
+                      <strong>Minimum 0.01 XMR per transfer.</strong> Once confirmed (10 blocks), 
+                      wXMR will be automatically minted to your wallet. You can deposit multiple times.
+                    </p>
+                  </div>
+
+                  <div className="pt-4 border-t border-[var(--border)]">
+                    <p className="text-xs text-[var(--muted)] mb-2">
+                      Need a new address for privacy? Close this account to get a fresh one.
+                    </p>
+                    <button
+                      onClick={() => setShowCloseConfirm(true)}
+                      disabled={loading}
+                      className="text-sm text-red-400 hover:text-red-300 transition-colors"
+                    >
+                      Close deposit account
+                    </button>
+                  </div>
+                </>
+              ) : (
+                // Closed account - shouldn't happen (account is deleted)
+                <p className="text-[var(--muted)]">Account closed. Create a new one to deposit.</p>
+              )}
+            </div>
+          </div>
+        ) : (
+          <div className="space-y-6">
+            {/* Withdraw Section */}
+            <div className="xmr-card p-6 xmr-glow">
+              <h2 className="text-xl font-bold mb-2 flex items-center gap-2">
+                <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                </svg>
+                Withdraw XMR
+              </h2>
+
+              {!isConnected ? (
+                // Not connected — prompt to connect
+                <div className="text-center py-10">
+                  <div className="flex justify-center mb-4">
+                    <div className="relative">
+                      <MoneroLogo className="w-16 h-16 xmr-pulse" />
+                      <div className="absolute inset-0 bg-[#ff6600]/20 blur-2xl rounded-full" />
+                    </div>
+                  </div>
+                  <p className="text-[var(--muted)] mb-6">Connect a Solana wallet to withdraw XMR.</p>
+                  <div className="inline-block">
+                    <WalletMultiButton />
+                  </div>
+                </div>
+              ) : (
+                <>
                   <p className="text-[var(--muted)] mb-6">
                     Burn wXMR and receive XMR at your specified address. Minimum: 0.01 XMR.
                   </p>
@@ -870,64 +898,73 @@ export default function Home() {
                       ) : 'Withdraw XMR'}
                     </button>
                   </div>
-                </div>
+                </>
+              )}
+            </div>
 
-                {/* Withdrawal History */}
-                <div className="xmr-card p-6">
-                  <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                    <svg className="w-5 h-5 text-[var(--muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                    </svg>
-                    Your Withdrawals
-                  </h2>
-                  {withdrawals.length === 0 ? (
-                    <div className="text-center py-8">
-                      <div className="text-4xl mb-3 opacity-30">📤</div>
-                      <p className="text-[var(--muted)]">No withdrawals yet</p>
-                    </div>
-                  ) : (
-                    <div className="space-y-4">
-                      {withdrawals.map((withdrawal) => (
-                        <div
-                          key={withdrawal.withdrawalPda}
-                          className="bg-[var(--background)] rounded-lg p-4 border border-[var(--border)] hover:border-[#ff660033] transition-colors"
-                        >
-                          <div className="flex justify-between items-start mb-3">
-                            <StatusBadge status={withdrawal.status} />
-                            <span className="text-xs text-[var(--muted)]">
-                              {formatTime(withdrawal.createdAt)}
-                            </span>
-                          </div>
-                          <p className="text-xl font-bold text-[#ff6600]">
-                            {formatXmr(withdrawal.amount)} <span className="text-sm font-normal text-[var(--muted)]">XMR</span>
-                          </p>
-                          <p className="text-xs text-[var(--muted)] mt-2 font-mono">
-                            To: {truncateAddress(withdrawal.xmrAddress, 12)}
-                          </p>
+            {/* Withdrawal History — only when connected */}
+            {isConnected && (
+              <div className="xmr-card p-6">
+                <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+                  <svg className="w-5 h-5 text-[var(--muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                  </svg>
+                  Your Withdrawals
+                </h2>
+                {withdrawals.length === 0 ? (
+                  <div className="text-center py-8">
+                    <div className="text-4xl mb-3 opacity-30">📤</div>
+                    <p className="text-[var(--muted)]">No withdrawals yet</p>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    {withdrawals.map((withdrawal) => (
+                      <div
+                        key={withdrawal.withdrawalPda}
+                        className="bg-[var(--background)] rounded-lg p-4 border border-[var(--border)] hover:border-[#ff660033] transition-colors"
+                      >
+                        <div className="flex justify-between items-start mb-3">
+                          <StatusBadge status={withdrawal.status} />
+                          <span className="text-xs text-[var(--muted)]">
+                            {formatTime(withdrawal.createdAt)}
+                          </span>
                         </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Footer Info */}
-            <div className="mt-10 pt-6 border-t border-[var(--border)]">
-              <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-[var(--muted)]">
-                <div className="flex items-center gap-2">
-                  <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                  <span>Connected: <code className="text-[var(--foreground)]">{truncateAddress(publicKey?.toBase58() || '', 8)}</code></span>
-                </div>
-                {bridgeConfig && (
-                  <p>
-                    Bridge Authority: <code className="text-[var(--foreground)]">{truncateAddress(bridgeConfig.authority, 8)}</code>
-                  </p>
+                        <p className="text-xl font-bold text-[#ff6600]">
+                          {formatXmr(withdrawal.amount)} <span className="text-sm font-normal text-[var(--muted)]">XMR</span>
+                        </p>
+                        <p className="text-xs text-[var(--muted)] mt-2 font-mono">
+                          To: {truncateAddress(withdrawal.xmrAddress, 12)}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
                 )}
               </div>
-            </div>
-          </>
+            )}
+          </div>
         )}
+
+        {/* Footer Info — always visible */}
+        <div className="mt-10 pt-6 border-t border-[var(--border)]">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-[var(--muted)]">
+            {isConnected ? (
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
+                <span>Connected: <code className="text-[var(--foreground)]">{truncateAddress(publicKey?.toBase58() || '', 8)}</code></span>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 rounded-full bg-gray-500" />
+                <span>Wallet not connected</span>
+              </div>
+            )}
+            {bridgeConfig && (
+              <p>
+                Bridge Authority: <code className="text-[var(--foreground)]">{truncateAddress(bridgeConfig.authority, 8)}</code>
+              </p>
+            )}
+          </div>
+        </div>
 
         {/* QR Code Modal */}
         {qrAddress && (

@@ -99,14 +99,36 @@ export function useWxmrBridge() {
     return pda;
   }, []);
 
-  // Fetch bridge configuration
+  // Fetch bridge configuration (works with or without wallet)
   const fetchBridgeConfig = useCallback(async (): Promise<BridgeConfig | null> => {
-    if (!program) return null;
-
     try {
       const configPda = getBridgeConfigPDA();
-      const config = await (program.account as any).bridgeConfig.fetch(configPda);
-      
+
+      // If we have a program (wallet connected), use it
+      if (program) {
+        const config = await (program.account as any).bridgeConfig.fetch(configPda);
+        return {
+          authority: config.authority.toBase58(),
+          wxmrMint: config.wxmrMint.toBase58(),
+          totalDeposits: BigInt(config.totalDeposits.toString()),
+          totalWithdrawals: BigInt(config.totalWithdrawals.toString()),
+        };
+      }
+
+      // No wallet — read the raw account and decode manually
+      const accountInfo = await connection.getAccountInfo(configPda);
+      if (!accountInfo) return null;
+
+      // Use a throwaway read-only program to decode
+      const readProvider = new AnchorProvider(
+        connection,
+        // Minimal wallet stub — never signs, only used for deserialization
+        { publicKey: PublicKey.default, signTransaction: async (t: any) => t, signAllTransactions: async (t: any) => t } as any,
+        { commitment: 'confirmed' }
+      );
+      const readProgram = new Program(IDL as WxmrBridge, readProvider);
+      const config = (readProgram.coder.accounts as any).decode('bridgeConfig', accountInfo.data);
+
       return {
         authority: config.authority.toBase58(),
         wxmrMint: config.wxmrMint.toBase58(),
@@ -117,7 +139,7 @@ export function useWxmrBridge() {
       console.error('Error fetching bridge config:', error);
       return null;
     }
-  }, [program, getBridgeConfigPDA]);
+  }, [program, connection, getBridgeConfigPDA]);
 
   // Create deposit account (one per wallet - permanent)
   const createDepositAccount = useCallback(async (): Promise<{ signature: string; depositPda: string } | null> => {
