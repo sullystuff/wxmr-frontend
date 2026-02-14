@@ -404,6 +404,7 @@ export default function Home() {
   const [showScanner, setShowScanner] = useState(false);
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [showSwapModal, setShowSwapModal] = useState(false);
+  const [copied, setCopied] = useState(false);
 
   // Load data when connected
   const loadData = useCallback(async () => {
@@ -738,13 +739,23 @@ export default function Home() {
                             {depositAccount.xmrDepositAddress}
                           </code>
                           <button
-                            onClick={() => navigator.clipboard.writeText(depositAccount.xmrDepositAddress)}
+                            onClick={() => {
+                              navigator.clipboard.writeText(depositAccount.xmrDepositAddress);
+                              setCopied(true);
+                              setTimeout(() => setCopied(false), 2000);
+                            }}
                             className="p-3 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all flex-shrink-0"
                             title="Copy Address"
                           >
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                            </svg>
+                            {copied ? (
+                              <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                              </svg>
+                            ) : (
+                              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                              </svg>
+                            )}
                           </button>
                           <button
                             onClick={() => setQrAddress(depositAccount.xmrDepositAddress)}
