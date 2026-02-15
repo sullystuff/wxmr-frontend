@@ -3,7 +3,11 @@
 import { useEffect, useState, useCallback } from 'react';
 import { Connection, PublicKey, Transaction } from '@solana/web3.js';
 import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
-import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import {
+  createAssociatedTokenAccountIdempotentInstruction,
+  getAssociatedTokenAddress,
+  TOKEN_PROGRAM_ID,
+} from '@solana/spl-token';
 import type { WxmrBridge } from '@/idl/wxmr_bridge';
 import IDL from '@/idl/wxmr_bridge.json';
 import { WXMR_MINT, USDC_MINT } from '@/constants';
@@ -136,9 +140,17 @@ export function useAmmPool() {
 
       const userWxmr = await getAssociatedTokenAddress(WXMR_MINT, userPublicKey);
       const userUsdc = await getAssociatedTokenAddress(USDC_MINT, userPublicKey);
+      const ensureUserWxmrAtaIx = createAssociatedTokenAccountIdempotentInstruction(
+        userPublicKey,
+        userWxmr,
+        userPublicKey,
+        WXMR_MINT,
+        TOKEN_PROGRAM_ID
+      );
 
       const tx = await (program.methods as any)
         .buyWxmr(new BN(usdcAmount.toString()))
+        .preInstructions([ensureUserWxmrAtaIx])
         .accounts({
           pool: poolPda,
           user: userPublicKey,
@@ -204,9 +216,17 @@ export function useAmmPool() {
 
       const userWxmr = await getAssociatedTokenAddress(WXMR_MINT, userPublicKey);
       const userUsdc = await getAssociatedTokenAddress(USDC_MINT, userPublicKey);
+      const ensureUserUsdcAtaIx = createAssociatedTokenAccountIdempotentInstruction(
+        userPublicKey,
+        userUsdc,
+        userPublicKey,
+        USDC_MINT,
+        TOKEN_PROGRAM_ID
+      );
 
       const tx = await (program.methods as any)
         .sellWxmr(new BN(wxmrAmount.toString()))
+        .preInstructions([ensureUserUsdcAtaIx])
         .accounts({
           pool: poolPda,
           user: userPublicKey,

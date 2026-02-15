@@ -3,7 +3,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { PublicKey, VersionedTransaction } from '@solana/web3.js';
-import { getAssociatedTokenAddress, getAccount, TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import {
+  createAssociatedTokenAccountIdempotentInstruction,
+  getAssociatedTokenAddress,
+  getAccount,
+  TOKEN_PROGRAM_ID,
+} from '@solana/spl-token';
 import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
 import type { WxmrBridge } from '@/idl/wxmr_bridge';
 import IDL from '@/idl/wxmr_bridge.json';
@@ -316,16 +321,25 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
     const program = new Program(IDL as any, provider) as Program<WxmrBridge>;
     const userWxmr = await getAssociatedTokenAddress(WXMR_MINT, publicKey);
     const userUsdc = await getAssociatedTokenAddress(USDC_MINT, publicKey);
+    const outputAtaMint = isBuying ? WXMR_MINT : USDC_MINT;
+    const outputAta = isBuying ? userWxmr : userUsdc;
+    const ensureOutputAtaIx = createAssociatedTokenAccountIdempotentInstruction(
+      publicKey,
+      outputAta,
+      publicKey,
+      outputAtaMint,
+      TOKEN_PROGRAM_ID
+    );
 
     const tx = isBuying
       ? await (program.methods as any).buyWxmr(new BN(parsedInput.toString())).accounts({
           pool: amm.poolPda, user: publicKey, userWxmr, userUsdc,
           poolWxmr: amm.pool.poolWxmr, poolUsdc: amm.pool.poolUsdc, tokenProgram: TOKEN_PROGRAM_ID,
-        }).transaction()
+        }).preInstructions([ensureOutputAtaIx]).transaction()
       : await (program.methods as any).sellWxmr(new BN(parsedInput.toString())).accounts({
           pool: amm.poolPda, user: publicKey, userWxmr, userUsdc,
           poolWxmr: amm.pool.poolWxmr, poolUsdc: amm.pool.poolUsdc, tokenProgram: TOKEN_PROGRAM_ID,
-        }).transaction();
+        }).preInstructions([ensureOutputAtaIx]).transaction();
 
     // Use wallet adapter's sendTransaction -- it handles signing, setting
     // feePayer/blockhash, and sending in one step. This works reliably across
