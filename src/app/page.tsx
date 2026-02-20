@@ -398,6 +398,7 @@ export default function Home() {
   // Withdrawal form state
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [xmrAddress, setXmrAddress] = useState('');
+  const [withdrawExactOut, setWithdrawExactOut] = useState(false);
 
   // Modal states
   const [qrAddress, setQrAddress] = useState<string | null>(null);
@@ -538,7 +539,7 @@ export default function Home() {
         throw new Error('Insufficient wXMR balance');
       }
 
-      const result = await requestWithdrawal(amountPiconero, xmrAddress);
+      const result = await requestWithdrawal(amountPiconero, xmrAddress, withdrawExactOut);
       if (result) {
         setSuccess(`Withdrawal request created! TX: ${result.signature.slice(0, 20)}...`);
         setWithdrawAmount('');
@@ -881,6 +882,22 @@ export default function Home() {
                           </svg>
                         </button>
                       </div>
+                    </div>
+                    <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-3">
+                      <label className="flex items-start gap-3 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={withdrawExactOut}
+                          onChange={(e) => setWithdrawExactOut(e.target.checked)}
+                          className="mt-0.5 h-4 w-4 rounded border-[var(--border)] bg-[var(--card)]"
+                        />
+                        <div>
+                          <p className="text-sm font-semibold text-white">Exact output withdrawal</p>
+                          <p className="text-xs text-[var(--muted)] mt-1">
+                            When enabled, you receive exactly the entered XMR amount and the bridge covers network fees.
+                          </p>
+                        </div>
+                      </label>
                     </div>
                     <button
                       onClick={handleWithdraw}

@@ -703,6 +703,12 @@ export default function TransparencyPage() {
                                       {copied === `burn-${audit.epoch}` ? '✓' : '📋'}
                                     </button>
                                   </div>
+                                  <div className="mt-3 p-2 rounded border border-green-500/20 bg-[var(--background)]">
+                                    <p className="text-[var(--muted)]">
+                                      Daily burn accounting must also include the XMR transaction fees we paid on users&apos; behalf,
+                                      so we burn an equivalent amount of wXMR for those fees too.
+                                    </p>
+                                  </div>
                                 </div>
                               );
                             })()}

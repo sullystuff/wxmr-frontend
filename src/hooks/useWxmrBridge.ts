@@ -227,7 +227,8 @@ export function useWxmrBridge() {
   // Request a withdrawal (burns wXMR)
   const requestWithdrawal = useCallback(async (
     amount: bigint,
-    xmrAddress: string
+    xmrAddress: string,
+    exactOut = false
   ): Promise<{ signature: string; withdrawalPda: string } | null> => {
     if (!program || !wallet.publicKey) return null;
 
@@ -244,7 +245,7 @@ export function useWxmrBridge() {
       const withdrawalPda = getWithdrawalPDA(wallet.publicKey, nonce);
 
       const signature = await program.methods
-        .requestWithdrawal(new BN(nonce.toString()), new BN(amount.toString()), xmrAddress)
+        .requestWithdrawal(new BN(nonce.toString()), new BN(amount.toString()), xmrAddress, exactOut)
         .accountsPartial({
           config: getBridgeConfigPDA(),
           userTokenAccount,
