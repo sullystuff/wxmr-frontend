@@ -398,7 +398,7 @@ export default function Home() {
   // Withdrawal form state
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [xmrAddress, setXmrAddress] = useState('');
-  const [withdrawExactOut, setWithdrawExactOut] = useState(false);
+  const withdrawExactOut = true;
 
   // Modal states
   const [qrAddress, setQrAddress] = useState<string | null>(null);
@@ -883,13 +883,13 @@ export default function Home() {
                         </button>
                       </div>
                     </div>
-                    <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-3">
-                      <label className="flex items-start gap-3 cursor-pointer">
+                    <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 opacity-80">
+                      <label className="flex items-start gap-3 cursor-not-allowed">
                         <input
                           type="checkbox"
                           checked={withdrawExactOut}
-                          onChange={(e) => setWithdrawExactOut(e.target.checked)}
-                          className="mt-0.5 h-4 w-4 rounded border-[var(--border)] bg-[var(--card)]"
+                          disabled
+                          className="mt-0.5 h-4 w-4 rounded border-[var(--border)] bg-[var(--card)] opacity-75"
                         />
                         <div>
                           <p className="text-sm font-semibold text-white">Exact output withdrawal</p>
