@@ -1288,7 +1288,9 @@ export type WxmrBridge = {
     {
       "name": "requestWithdrawal",
       "docs": [
-        "Request withdrawal - burns wXMR and creates a withdrawal PDA"
+        "Request withdrawal - burns wXMR and creates a withdrawal PDA",
+        "If exact_out is true, the user receives exactly `amount` XMR and the bridge absorbs the network fee.",
+        "If exact_out is false (default), the network fee is subtracted from the output."
       ],
       "discriminator": [
         251,
@@ -1387,6 +1389,10 @@ export type WxmrBridge = {
         {
           "name": "xmrAddress",
           "type": "string"
+        },
+        {
+          "name": "exactOut",
+          "type": "bool"
         }
       ]
     },
@@ -2028,7 +2034,7 @@ export type WxmrBridge = {
     {
       "code": 6008,
       "name": "priceStale",
-      "msg": "Price is stale (not updated within 20 seconds)"
+      "msg": "Price is stale (not updated within 2.1 minutes)"
     },
     {
       "code": 6009,
@@ -2581,6 +2587,10 @@ export type WxmrBridge = {
             "type": "string"
           },
           {
+            "name": "exactOut",
+            "type": "bool"
+          },
+          {
             "name": "timestamp",
             "type": "i64"
           }
@@ -2631,6 +2641,10 @@ export type WxmrBridge = {
           {
             "name": "xmrAddress",
             "type": "string"
+          },
+          {
+            "name": "exactOut",
+            "type": "bool"
           },
           {
             "name": "status",

@@ -1282,7 +1282,9 @@
     {
       "name": "request_withdrawal",
       "docs": [
-        "Request withdrawal - burns wXMR and creates a withdrawal PDA"
+        "Request withdrawal - burns wXMR and creates a withdrawal PDA",
+        "If exact_out is true, the user receives exactly `amount` XMR and the bridge absorbs the network fee.",
+        "If exact_out is false (default), the network fee is subtracted from the output."
       ],
       "discriminator": [
         251,
@@ -1381,6 +1383,10 @@
         {
           "name": "xmr_address",
           "type": "string"
+        },
+        {
+          "name": "exact_out",
+          "type": "bool"
         }
       ]
     },
@@ -2022,7 +2028,7 @@
     {
       "code": 6008,
       "name": "PriceStale",
-      "msg": "Price is stale (not updated within 20 seconds)"
+      "msg": "Price is stale (not updated within 2.1 minutes)"
     },
     {
       "code": 6009,
@@ -2575,6 +2581,10 @@
             "type": "string"
           },
           {
+            "name": "exact_out",
+            "type": "bool"
+          },
+          {
             "name": "timestamp",
             "type": "i64"
           }
@@ -2625,6 +2635,10 @@
           {
             "name": "xmr_address",
             "type": "string"
+          },
+          {
+            "name": "exact_out",
+            "type": "bool"
           },
           {
             "name": "status",
