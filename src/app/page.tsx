@@ -35,6 +35,10 @@ function truncateAddress(address: string, chars = 8): string {
   return `${address.slice(0, chars)}...${address.slice(-chars)}`;
 }
 
+function getErrorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
+
 // Status badge component
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
@@ -126,7 +130,7 @@ function QRCodeModal({ address, onClose }: { address: string; onClose: () => voi
 // QR Scanner Modal component
 function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void; onClose: () => void }) {
   const scannerRef = useRef<HTMLDivElement>(null);
-  const html5QrCodeRef = useRef<any>(null);
+  const html5QrCodeRef = useRef<{ stop: () => Promise<void> } | null>(null);
   const stoppedRef = useRef(false);
   const onScanRef = useRef(onScan);
   const onCloseRef = useRef(onClose);
@@ -192,14 +196,16 @@ function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void
         if (mounted) {
           setIsStarting(false);
         }
-      } catch (err: any) {
+      } catch (err) {
         if (mounted) {
           setIsStarting(false);
-          if (err.message === 'timeout') {
+          const message = err instanceof Error ? err.message : '';
+          const name = err instanceof Error ? err.name : '';
+          if (message === 'timeout') {
             setCameraUnavailable(true);
-          } else if (err.name === 'NotAllowedError') {
+          } else if (name === 'NotAllowedError') {
             setError('Camera access denied. Please allow camera access to scan QR codes.');
-          } else if (err.name === 'NotFoundError' || err.name === 'NotReadableError') {
+          } else if (name === 'NotFoundError' || name === 'NotReadableError') {
             setCameraUnavailable(true);
           } else {
             setCameraUnavailable(true);
@@ -461,8 +467,8 @@ export default function Home() {
         setSuccess(`Deposit account created! TX: ${result.signature.slice(0, 20)}...`);
         await loadData();
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to create deposit account');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to create deposit account'));
     } finally {
       setLoading(false);
     }
@@ -481,8 +487,8 @@ export default function Home() {
         setSuccess(`Deposit account closed! TX: ${signature.slice(0, 20)}... You can now create a new one for a fresh address.`);
         await loadData();
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to close deposit account');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to close deposit account'));
     } finally {
       setLoading(false);
     }
@@ -500,8 +506,8 @@ export default function Home() {
         setSuccess(`Pending tokens claimed! TX: ${signature.slice(0, 20)}...`);
         await loadData();
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to claim pending tokens');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to claim pending tokens'));
     } finally {
       setLoading(false);
     }
@@ -536,7 +542,7 @@ export default function Home() {
       const amountPiconero = BigInt(Math.floor(amountFloat * 1e12));
 
       if (amountPiconero > wxmrBalance) {
-        throw new Error('Insufficient wXMR balance');
+        throw new Error('Insufficient XMR balance');
       }
 
       const result = await requestWithdrawal(amountPiconero, xmrAddress, withdrawExactOut);
@@ -546,8 +552,8 @@ export default function Home() {
         setXmrAddress('');
         await loadData();
       }
-    } catch (err: any) {
-      setError(err.message || 'Failed to create withdrawal request');
+    } catch (err) {
+      setError(getErrorMessage(err, 'Failed to create withdrawal request'));
     } finally {
       setLoading(false);
     }
@@ -562,9 +568,9 @@ export default function Home() {
             <MoneroLogo className="w-12 h-12" />
             <div>
               <h1 className="text-3xl font-bold bg-gradient-to-r from-[#ff6600] to-[#ff8533] bg-clip-text text-transparent">
-                wXMR Bridge
+                Monero Bridge
               </h1>
-              <p className="text-[var(--muted)] mt-0.5">Bridge XMR to Solana</p>
+              <p className="text-[var(--muted)] mt-0.5">Official Monero token on Solana</p>
             </div>
           </div>
           <WalletMultiButton />
@@ -573,9 +579,9 @@ export default function Home() {
         {/* Stats Cards — always visible */}
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
           <div className="xmr-card xmr-stat-card p-5">
-            <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Your wXMR Balance</p>
+            <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Your Solana XMR Balance</p>
             <p className="text-2xl font-bold mt-2 text-[#ff6600]">{formatXmr(wxmrBalance)}</p>
-            <p className="text-xs text-[var(--muted)] mt-1">wXMR</p>
+            <p className="text-xs text-[var(--muted)] mt-1">XMR on Solana</p>
           </div>
           <div className="xmr-card xmr-stat-card p-5">
             <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Total Bridged In</p>
@@ -602,7 +608,7 @@ export default function Home() {
               </svg>
               <div>
                 <p className="text-sm text-yellow-400 font-medium">
-                  You have <span className="text-[#ff6600] font-bold">{formatXmr(pendingBalance)} wXMR</span> pending
+                  You have <span className="text-[#ff6600] font-bold">{formatXmr(pendingBalance)} XMR</span> pending
                 </p>
                 <p className="text-xs text-[var(--muted)] mt-0.5">
                   These tokens were minted when you didn&apos;t have a token account. Click here to claim.
@@ -784,7 +790,7 @@ export default function Home() {
                   <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 mb-4">
                     <p className="text-sm text-green-400">
                       <strong>Minimum 0.01 XMR per transfer.</strong> Once confirmed (10 blocks), 
-                      wXMR will be automatically minted to your wallet. You can deposit multiple times.
+                      XMR on Solana will be automatically minted to your wallet. You can deposit multiple times.
                     </p>
                   </div>
 
@@ -835,7 +841,7 @@ export default function Home() {
               ) : (
                 <>
                   <p className="text-[var(--muted)] mb-6">
-                    Burn wXMR and receive XMR at your specified address. Minimum: 0.01 XMR.
+                    Burn XMR on Solana and receive native XMR at your specified address. Minimum: 0.01 XMR.
                   </p>
                   <div className="space-y-5">
                     <div>
@@ -858,7 +864,7 @@ export default function Home() {
                         </button>
                       </div>
                       <p className="text-xs text-[var(--muted)] mt-2">
-                        Available: <span className="text-[#ff6600] font-medium">{formatXmr(wxmrBalance)} wXMR</span>
+                        Available: <span className="text-[#ff6600] font-medium">{formatXmr(wxmrBalance)} XMR</span>
                       </p>
                     </div>
                     <div>
@@ -1036,9 +1042,9 @@ export default function Home() {
             </div>
           </div>
 
-          {/* wXMR Token Info */}
+          {/* XMR Token Info */}
           <div className="xmr-card p-6 mb-6">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)] mb-4">wXMR Token</h3>
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)] mb-4">XMR Token on Solana</h3>
             <div className="space-y-3">
               <div>
                 <p className="text-xs text-[var(--muted)] mb-1">Mint Address</p>

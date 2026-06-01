@@ -6,8 +6,8 @@ import { Providers } from './providers';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'wXMR Bridge',
-  description: 'Bridge XMR to Solana as wXMR',
+  title: 'Monero Bridge',
+  description: 'Bridge native Monero to and from the official Monero token on Solana',
   icons: {
     icon: '/favicon.svg',
     shortcut: '/favicon.svg',
