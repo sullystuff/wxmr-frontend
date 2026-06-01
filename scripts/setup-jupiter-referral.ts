@@ -5,7 +5,7 @@
  * 
  * This creates:
  * 1. A referral account under Jupiter Ultra Referral Project
- * 2. Referral token accounts for SOL, USDC, and wXMR
+ * 2. Referral token accounts for SOL, USDC, and XMR on Solana
  */
 
 import { ReferralProvider } from '@jup-ag/referral-sdk';
@@ -16,13 +16,13 @@ import * as path from 'path';
 // Configuration
 const RPC_URL = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 const JUPITER_ULTRA_PROJECT = new PublicKey('DkiqsTrw1u1bYFumumC7sCG2S8K25qc2vemJFHyW2wJc');
-const REFERRAL_NAME = 'wXMR-Bridge';
+const REFERRAL_NAME = 'XMR-Bridge';
 
 // Token mints to collect fees in
 const TOKEN_MINTS = {
   SOL: new PublicKey('So11111111111111111111111111111111111111112'),
   USDC: new PublicKey('EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'),
-  WXMR: new PublicKey('WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp'),
+  XMR: new PublicKey('WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp'),
 };
 
 async function main() {
