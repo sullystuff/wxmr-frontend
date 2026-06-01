@@ -43,6 +43,7 @@ interface SwapModalProps {
 }
 
 type RouteSource = 'amm' | 'jupiter';
+const DEFAULT_ROUTE: RouteSource = 'jupiter';
 
 export function SwapModal({ isOpen, onClose }: SwapModalProps) {
   const { connection } = useConnection();
@@ -59,7 +60,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
   // Swap direction: true = USDC -> XMR, false = XMR -> USDC
   const [isBuying, setIsBuying] = useState(true);
   const [inputAmount, setInputAmount] = useState('');
-  const [selectedRoute, setSelectedRoute] = useState<RouteSource>('amm');
+  const [selectedRoute, setSelectedRoute] = useState<RouteSource>(DEFAULT_ROUTE);
   const [jupiterQuote, setJupiterQuote] = useState<JupiterQuote | null>(null);
   const [isSwapping, setIsSwapping] = useState(false);
   const [txSignature, setTxSignature] = useState<string | null>(null);
@@ -141,6 +142,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
       setAmmSimResult(null);
       setJupiterSimResult(null);
       setShowRoutes(false);
+      setSelectedRoute(DEFAULT_ROUTE);
     }
   }, [isOpen]);
 
@@ -230,12 +232,11 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
       setAmmSimResult(ammRes);
       setJupiterSimResult(jupRes);
       setIsSimulating(false);
-      
-      // Auto-select best route
+
+      // Auto-select the best route only after Jupiter has a quote.
+      // Before that, keep the pre-quote default on Jupiter.
       if (ammRes.success && jupRes.success) {
         setSelectedRoute(ammRes.outputAmount >= jupRes.outputAmount ? 'amm' : 'jupiter');
-      } else if (ammRes.success) {
-        setSelectedRoute('amm');
       } else if (jupRes.success) {
         setSelectedRoute('jupiter');
       }
@@ -273,16 +274,17 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
   // Track which has the best rate
   const ammIsBest = ammAmount > BigInt(0) && ammAmount >= jupiterAmount;
   const jupiterIsBest = jupiterAmount > BigInt(0) && jupiterAmount > ammAmount;
-  
-  // Auto-select best route when previews change
+
+  // Auto-select the best preview route once Jupiter has a quote. Until then,
+  // keep the swap surface on Jupiter instead of jumping to the AMM estimate.
   useEffect(() => {
-    if (ammSimResult || jupiterSimResult) return; // Don't override simulation-based selection
+    if (ammSimResult || jupiterSimResult || jupiterAmount <= BigInt(0)) return;
     if (ammIsBest) {
       setSelectedRoute('amm');
     } else if (jupiterIsBest) {
       setSelectedRoute('jupiter');
     }
-  }, [ammIsBest, jupiterIsBest, ammSimResult, jupiterSimResult]);
+  }, [ammIsBest, jupiterIsBest, jupiterAmount, ammSimResult, jupiterSimResult]);
 
   // Output amount for selected route
   const outputAmount = useMemo(() => {
@@ -313,6 +315,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
   const flipDirection = () => {
     setIsBuying(!isBuying);
     setInputAmount('');
+    setSelectedRoute(DEFAULT_ROUTE);
   };
 
   // Execute AMM swap
