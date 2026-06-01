@@ -7,9 +7,9 @@ Public deployment: [main site](https://wxmr.io) or [.onion](https://aefvno77q6d5
 ## Features
 
 - Connect Solana wallet (Phantom, Solflare)
-- Create deposit accounts with permanent XMR addresses
-- View deposit status and balances
-- Withdraw Solana XMR back to native XMR
+- Create bridge addresses for native XMR
+- View bridge status and balances
+- Bridge Solana XMR back to native XMR
 - Swap XMR ↔ USDC via AMM pool or Jupiter aggregator
 - QR code generation and scanning for addresses
 - Transparency page with reserve verification
@@ -42,20 +42,20 @@ Public deployment: [main site](https://wxmr.io) or [.onion](https://aefvno77q6d5
 
 ## Usage
 
-### Depositing XMR
+### Bridging Monero to Solana
 
 1. Connect your Solana wallet
-2. Click "Create Deposit Account"
+2. Click "Create Bridge Address"
 3. Send XMR to the provided address (minimum 0.01 XMR)
 4. Wait for confirmations (20 blocks)
 5. XMR on Solana will be minted to your wallet
 
-### Withdrawing XMR
+### Bridging Solana XMR to Monero
 
 1. Connect your Solana wallet
-2. Switch to "Withdraw XMR" tab
+2. Switch to the "Solana -> Monero" tab
 3. Enter amount and your XMR address
-4. Click "Withdraw XMR"
+4. Click "Bridge to Monero"
 5. Your XMR on Solana will be burned
 6. XMR will be sent to your address
 

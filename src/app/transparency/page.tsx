@@ -237,7 +237,7 @@ export default function TransparencyPage() {
           <h2 className="text-xl font-bold mb-3">Proof of Reserves</h2>
           <p className="text-[var(--muted)] leading-relaxed">
             The Monero bridge is designed for transparency. Every XMR token on Solana is backed 1:1 by native XMR.
-            We provide cryptographic tools so you can independently verify deposits and withdrawals.
+            We provide cryptographic tools so you can independently verify both bridge directions.
           </p>
         </div>
 
@@ -253,7 +253,7 @@ export default function TransparencyPage() {
         >
           <p className="text-[var(--muted)] mb-4">
             The <strong className="text-white">view key</strong> allows you to see all incoming transactions 
-            to our wallet. Combined with the tx keys we provide for withdrawals, you can fully audit the bridge.
+            to our wallet. Combined with the tx keys we provide for Solana to Monero transfers, you can fully audit the bridge.
           </p>
 
           <ExpandableSection title="What is a Monero View Key?" defaultOpen>
@@ -264,17 +264,17 @@ export default function TransparencyPage() {
               </p>
               <p>
                 <strong className="text-white">Important:</strong> The view key only reveals <em>incoming</em> transactions 
-                (deposits to our wallet). It does NOT show outgoing transactions or the current balance. 
-                To verify withdrawals, you need the tx keys we provide for each withdrawal (see below).
+                (Monero to Solana transfers). It does NOT show outgoing transactions or the current balance.
+                To verify Solana to Monero transfers, you need the tx keys we provide for each transfer (see below).
               </p>
               <p>
-                Together, the view key (for deposits) + tx keys (for withdrawals) allow full transparency. 
+                Together, the view key (for Monero to Solana) + tx keys (for Solana to Monero) allow full transparency.
                 The view key cannot be used to steal funds.
               </p>
             </div>
           </ExpandableSection>
 
-          <ExpandableSection title="How to Verify Deposits">
+          <ExpandableSection title="How to Verify Monero -> Solana">
             <div className="text-sm text-[var(--muted)] space-y-4">
               <p><strong className="text-white">Option 1: View-Only Wallet</strong></p>
               <ol className="list-decimal list-inside space-y-2 ml-4">
@@ -282,10 +282,10 @@ export default function TransparencyPage() {
                 <li>Select &quot;Restore wallet from keys&quot;</li>
                 <li>Enter the address and view key below</li>
                 <li>Leave spend key blank (or enter zeros)</li>
-                <li>Sync with a Monero node to see all incoming deposits</li>
+                <li>Sync with a Monero node to see all incoming XMR transfers</li>
               </ol>
               <p className="mt-2 text-xs">
-                Note: This shows total deposits received, not current balance (outputs are hidden without spend key).
+                Note: This shows total XMR received, not current balance (outputs are hidden without spend key).
               </p>
               
               <p className="mt-4"><strong className="text-white">Option 2: Block Explorer</strong></p>
@@ -351,7 +351,7 @@ export default function TransparencyPage() {
 
         {/* Transaction Key Section */}
         <InfoCard
-          title="Transaction Keys (Withdrawal Proofs)"
+          title="Transaction Keys (Solana -> Monero Proofs)"
           icon={
             <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
@@ -359,7 +359,7 @@ export default function TransparencyPage() {
           }
         >
           <p className="text-[var(--muted)] mb-4">
-            Every withdrawal we process includes a <strong className="text-white">transaction key</strong> (tx key) 
+            Every Solana to Monero transfer we process includes a <strong className="text-white">transaction key</strong> (tx key)
             that cryptographically proves the payment was made to your address.
           </p>
 
@@ -374,19 +374,19 @@ export default function TransparencyPage() {
                 private by default. The tx key is the cryptographic proof that a payment was made.
               </p>
               <p>
-                When we complete your withdrawal, we emit the tx key in the Solana transaction event. You can use 
+                When we complete your Solana to Monero transfer, we emit the tx key in the Solana transaction event. You can use
                 this to verify that your XMR was actually sent, even though Monero transactions are private.
               </p>
             </div>
           </ExpandableSection>
 
-          <ExpandableSection title="How to Verify a Withdrawal">
+          <ExpandableSection title="How to Verify Solana -> Monero">
             <div className="text-sm text-[var(--muted)] space-y-4">
               <p><strong className="text-white">What you need:</strong></p>
               <ul className="list-disc list-inside space-y-1 ml-4">
                 <li>Transaction ID (txid) - the Monero transaction hash</li>
-                <li>Your XMR address - where you requested the withdrawal</li>
-                <li>Transaction Key (tx key) - from the Solana withdrawal event</li>
+                <li>Your XMR address - where you requested the native XMR</li>
+                <li>Transaction Key (tx key) - from the Solana bridge event</li>
               </ul>
               
               <p className="mt-4"><strong className="text-white">Verification steps:</strong></p>
@@ -414,16 +414,16 @@ export default function TransparencyPage() {
             <div className="text-sm text-[var(--muted)] space-y-3">
               <p>
                 The tx key is emitted in the <code className="bg-[var(--background)] px-1 rounded">WithdrawCompletedEvent</code> on Solana 
-                when your withdrawal is finalized. You can find it by:
+                when your Solana to Monero transfer is finalized. You can find it by:
               </p>
               <ol className="list-decimal list-inside space-y-2 ml-4">
-                <li>Finding your withdrawal completion transaction on Solscan</li>
+                <li>Finding your bridge completion transaction on Solscan</li>
                 <li>Looking at the &quot;Instruction Logs&quot; or &quot;Events&quot; section</li>
                 <li>The event contains: txid, recipient address, and tx key</li>
               </ol>
               <p className="mt-3 text-xs">
-                We also log tx keys in our backend - if you need help finding a tx key for a completed withdrawal, 
-                contact support with your withdrawal details.
+                We also log tx keys in our backend - if you need help finding a tx key for a completed transfer,
+                contact support with your transfer details.
               </p>
             </div>
           </ExpandableSection>
@@ -439,7 +439,7 @@ export default function TransparencyPage() {
           }
         >
           <p className="text-[var(--muted)] mb-4">
-            All bridge operations are recorded on-chain. The Solana program tracks total deposits and withdrawals, 
+            All bridge operations are recorded on-chain. The Solana program tracks both bridge directions,
             and all events are permanently stored.
           </p>
 
@@ -486,7 +486,7 @@ export default function TransparencyPage() {
                 </a>
               </div>
               <p className="text-xs text-[var(--muted)] mt-2">
-                Contains BridgeConfig with total deposit/withdrawal stats
+                Contains BridgeConfig with bridge volume stats
               </p>
             </div>
           </div>
@@ -506,8 +506,8 @@ export default function TransparencyPage() {
               <strong className="text-white">Everything is verifiable:</strong>
             </p>
             <ul className="list-disc list-inside space-y-2 ml-4">
-              <li>Verify all XMR deposits using our public view key</li>
-              <li>Verify any withdrawal with the tx key we provide</li>
+              <li>Verify all Monero to Solana transfers using our public view key</li>
+              <li>Verify any Solana to Monero transfer with the tx key we provide</li>
               <li>Check total XMR supply on Solana matches reserves</li>
               <li>All bridge events permanently recorded on-chain</li>
             </ul>
@@ -515,7 +515,7 @@ export default function TransparencyPage() {
             <div className="mt-4 p-4 bg-[#ff6600]/10 border border-[#ff6600]/30 rounded-lg">
               <p className="text-sm">
                 <strong className="text-[#ff6600]">Don&apos;t trust, verify.</strong> We provide all the cryptographic 
-                tools you need to independently audit every deposit and withdrawal.
+                tools you need to independently audit both bridge directions.
               </p>
             </div>
           </div>
@@ -531,7 +531,7 @@ export default function TransparencyPage() {
           }
         >
           <p className="text-[var(--muted)] mb-4">
-            Every week (or when needed for withdrawals), we consolidate all spendable XMR and record proof on-chain. 
+            Every week (or when needed for Solana to Monero transfers), we consolidate all spendable XMR and record proof on-chain.
             Each audit includes transaction keys so you can verify we control the native XMR backing Solana XMR.
           </p>
 
@@ -570,7 +570,7 @@ export default function TransparencyPage() {
                         <span className="font-semibold text-white">{auditDate}</span>
                         {triggeredBy === 'withdrawal_failure' && (
                           <span className="text-xs text-yellow-400 ml-2 px-2 py-0.5 bg-yellow-400/10 rounded">
-                            triggered by withdrawal
+                            triggered by bridge-out
                           </span>
                         )}
                         {triggeredBy === 'scheduled' && (
@@ -730,7 +730,7 @@ export default function TransparencyPage() {
                         {auditData?.unconfirmed && auditData.unconfirmed.length > 0 && (
                           <div className="mt-4">
                             <p className="text-xs text-[var(--muted)] uppercase mb-2">
-                              Unconfirmed Deposits (verify with view key)
+                              Unconfirmed Monero -&gt; Solana Transfers (verify with view key)
                             </p>
                             <div className="space-y-1">
                               {auditData.unconfirmed.map((tx, i) => (

@@ -88,7 +88,7 @@ function QRCodeModal({ address, onClose }: { address: string; onClose: () => voi
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-bold flex items-center gap-2">
             <MoneroLogo className="w-5 h-5" />
-            Scan to Deposit XMR
+            Native XMR Bridge Address
           </h3>
           <button
             onClick={onClose}
@@ -264,7 +264,7 @@ function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void
             <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
             </svg>
-            {cameraUnavailable ? 'Enter XMR Address' : 'Scan XMR Address'}
+            {cameraUnavailable ? 'Enter Monero Destination' : 'Scan Monero Destination'}
           </h3>
           <button
             onClick={onClose}
@@ -464,11 +464,11 @@ export default function Home() {
     try {
       const result = await createDepositAccount();
       if (result) {
-        setSuccess(`Deposit account created! TX: ${result.signature.slice(0, 20)}...`);
+        setSuccess(`Bridge address created! TX: ${result.signature.slice(0, 20)}...`);
         await loadData();
       }
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to create deposit account'));
+      setError(getErrorMessage(err, 'Failed to create bridge address'));
     } finally {
       setLoading(false);
     }
@@ -484,11 +484,11 @@ export default function Home() {
     try {
       const signature = await closeDepositAccount();
       if (signature) {
-        setSuccess(`Deposit account closed! TX: ${signature.slice(0, 20)}... You can now create a new one for a fresh address.`);
+        setSuccess(`Bridge address closed! TX: ${signature.slice(0, 20)}... You can now create a new one for a fresh address.`);
         await loadData();
       }
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to close deposit account'));
+      setError(getErrorMessage(err, 'Failed to close bridge address'));
     } finally {
       setLoading(false);
     }
@@ -516,7 +516,7 @@ export default function Home() {
   // Handle withdrawal request
   const handleWithdraw = async () => {
     if (!withdrawAmount || !xmrAddress) {
-      setError('Please enter amount and XMR address');
+      setError('Please enter amount and Monero destination address');
       return;
     }
 
@@ -547,13 +547,13 @@ export default function Home() {
 
       const result = await requestWithdrawal(amountPiconero, xmrAddress, withdrawExactOut);
       if (result) {
-        setSuccess(`Withdrawal request created! TX: ${result.signature.slice(0, 20)}...`);
+        setSuccess(`Solana to Monero bridge request created! TX: ${result.signature.slice(0, 20)}...`);
         setWithdrawAmount('');
         setXmrAddress('');
         await loadData();
       }
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to create withdrawal request'));
+      setError(getErrorMessage(err, 'Failed to create Solana to Monero bridge request'));
     } finally {
       setLoading(false);
     }
@@ -584,14 +584,14 @@ export default function Home() {
             <p className="text-xs text-[var(--muted)] mt-1">XMR on Solana</p>
           </div>
           <div className="xmr-card xmr-stat-card p-5">
-            <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Total Bridged In</p>
+            <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Monero -&gt; Solana</p>
             <p className="text-2xl font-bold mt-2">
               {bridgeConfig ? formatXmr(bridgeConfig.totalDeposits) : '0'}
             </p>
             <p className="text-xs text-[var(--muted)] mt-1">XMR</p>
           </div>
           <div className="xmr-card xmr-stat-card p-5">
-            <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Total Bridged Out</p>
+            <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Solana -&gt; Monero</p>
             <p className="text-2xl font-bold mt-2">
               {bridgeConfig ? formatXmr(bridgeConfig.totalWithdrawals) : '0'}
             </p>
@@ -635,7 +635,7 @@ export default function Home() {
                 : 'bg-[var(--card)] text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-white border border-[var(--border)]'
             }`}
           >
-            Deposit XMR
+            Monero -&gt; Solana
           </button>
           <button
             onClick={() => setActiveTab('withdraw')}
@@ -645,7 +645,7 @@ export default function Home() {
                 : 'bg-[var(--card)] text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-white border border-[var(--border)]'
             }`}
           >
-            Withdraw XMR
+            Solana -&gt; Monero
           </button>
           <button
             onClick={() => setShowSwapModal(true)}
@@ -685,7 +685,7 @@ export default function Home() {
                 <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
                 </svg>
-                Deposit XMR
+                Bridge to Solana
               </h2>
               
               {!isConnected ? (
@@ -697,7 +697,7 @@ export default function Home() {
                       <div className="absolute inset-0 bg-[#ff6600]/20 blur-2xl rounded-full" />
                     </div>
                   </div>
-                  <p className="text-[var(--muted)] mb-6">Connect a Solana wallet to create a deposit account and start bridging XMR.</p>
+                  <p className="text-[var(--muted)] mb-6">Connect a Solana wallet to bridge native XMR onto Solana.</p>
                   <div className="inline-block">
                     <WalletMultiButton />
                   </div>
@@ -706,8 +706,8 @@ export default function Home() {
                 // No deposit account - show create button
                 <>
                   <p className="text-[var(--muted)] mb-6">
-                    Create a deposit account to get your permanent XMR deposit address. 
-                    Minimum 0.01 XMR per transfer (and per input!). You can deposit any number of times.
+                    Create a bridge address to receive native XMR from Monero.
+                    Minimum 0.01 XMR per transfer (and per input!). You can bridge into Solana any number of times.
                   </p>
                   <button
                     onClick={handleCreateDepositAccount}
@@ -722,7 +722,7 @@ export default function Home() {
                         </svg>
                         Processing...
                       </span>
-                    ) : 'Create Deposit Account'}
+                    ) : 'Create Bridge Address'}
                   </button>
                 </>
               ) : depositAccount.status === 'pending' ? (
@@ -746,12 +746,12 @@ export default function Home() {
                   <div className="flex items-center gap-2 mb-4">
                     <StatusBadge status="active" />
                     <span className="text-sm text-[var(--muted)]">
-                      Total deposited: <span className="text-[#ff6600] font-medium">{formatXmr(depositAccount.totalDeposited)} XMR</span>
+                      Total bridged to Solana: <span className="text-[#ff6600] font-medium">{formatXmr(depositAccount.totalDeposited)} XMR</span>
                     </span>
                   </div>
                   
                   <div className="bg-[var(--background)] rounded-xl p-4 border border-[var(--border)] mb-4">
-                    <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">Your Permanent XMR Deposit Address</p>
+                    <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">Your Native XMR Bridge Address</p>
                     <div className="flex gap-2">
                       <code className="text-sm bg-[var(--card)] p-3 rounded-lg flex-1 break-all font-mono border border-[var(--border)] text-[#ff6600] select-all cursor-pointer">
                         {depositAccount.xmrDepositAddress}
@@ -790,26 +790,26 @@ export default function Home() {
                   <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 mb-4">
                     <p className="text-sm text-green-400">
                       <strong>Minimum 0.01 XMR per transfer.</strong> Once confirmed (10 blocks), 
-                      XMR on Solana will be automatically minted to your wallet. You can deposit multiple times.
+                      XMR on Solana will be automatically minted to your wallet. You can bridge into Solana multiple times.
                     </p>
                   </div>
 
                   <div className="pt-4 border-t border-[var(--border)]">
                     <p className="text-xs text-[var(--muted)] mb-2">
-                      Need a new address for privacy? Close this account to get a fresh one.
+                      Need a new address for privacy? Close this bridge address to get a fresh one.
                     </p>
                     <button
                       onClick={() => setShowCloseConfirm(true)}
                       disabled={loading}
                       className="text-sm text-red-400 hover:text-red-300 transition-colors"
                     >
-                      Close deposit account
+                      Close bridge address
                     </button>
                   </div>
                 </>
               ) : (
                 // Closed account - shouldn't happen (account is deleted)
-                <p className="text-[var(--muted)]">Account closed. Create a new one to deposit.</p>
+                <p className="text-[var(--muted)]">Bridge address closed. Create a new one to continue.</p>
               )}
             </div>
           </div>
@@ -821,7 +821,7 @@ export default function Home() {
                 <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
                 </svg>
-                Withdraw XMR
+                Bridge to Monero
               </h2>
 
               {!isConnected ? (
@@ -833,7 +833,7 @@ export default function Home() {
                       <div className="absolute inset-0 bg-[#ff6600]/20 blur-2xl rounded-full" />
                     </div>
                   </div>
-                  <p className="text-[var(--muted)] mb-6">Connect a Solana wallet to withdraw XMR.</p>
+                  <p className="text-[var(--muted)] mb-6">Connect a Solana wallet to bridge XMR back to Monero.</p>
                   <div className="inline-block">
                     <WalletMultiButton />
                   </div>
@@ -868,7 +868,7 @@ export default function Home() {
                       </p>
                     </div>
                     <div>
-                      <label className="block text-sm font-semibold mb-2 uppercase tracking-wide text-[var(--muted)]">XMR Address</label>
+                      <label className="block text-sm font-semibold mb-2 uppercase tracking-wide text-[var(--muted)]">Monero Destination Address</label>
                       <div className="flex gap-2">
                         <input
                           type="text"
@@ -898,7 +898,7 @@ export default function Home() {
                           className="mt-0.5 h-4 w-4 rounded border-[var(--border)] bg-[var(--card)] opacity-75"
                         />
                         <div>
-                          <p className="text-sm font-semibold text-white">Exact output withdrawal</p>
+                          <p className="text-sm font-semibold text-white">Exact native XMR output</p>
                           <p className="text-xs text-[var(--muted)] mt-1">
                             When enabled, you receive exactly the entered XMR amount and the bridge covers network fees.
                           </p>
@@ -918,7 +918,7 @@ export default function Home() {
                           </svg>
                           Processing...
                         </span>
-                      ) : 'Withdraw XMR'}
+                      ) : 'Bridge to Monero'}
                     </button>
                   </div>
                 </>
@@ -932,12 +932,12 @@ export default function Home() {
                   <svg className="w-5 h-5 text-[var(--muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                   </svg>
-                  Your Withdrawals
+                  Solana -&gt; Monero History
                 </h2>
                 {withdrawals.length === 0 ? (
                   <div className="text-center py-8">
                     <div className="text-4xl mb-3 opacity-30">📤</div>
-                    <p className="text-[var(--muted)]">No withdrawals yet</p>
+                    <p className="text-[var(--muted)]">No Solana to Monero transfers yet</p>
                   </div>
                 ) : (
                   <div className="space-y-4">
@@ -1005,9 +1005,9 @@ export default function Home() {
         {/* Close Deposit Account Confirmation Modal */}
         {showCloseConfirm && (
           <ConfirmModal
-            title="Close Deposit Account?"
-            message="WARNING: Any XMR sent to this address that hasn't been minted yet will be LOST. Only close if you're sure no deposits are pending. You can create a new account with a fresh XMR address."
-            confirmText="Close Account"
+            title="Close Bridge Address?"
+            message="WARNING: Any XMR sent to this address that hasn't been minted yet will be LOST. Only close if you're sure no Monero to Solana transfers are pending. You can create a new bridge address afterward."
+            confirmText="Close Address"
             onConfirm={handleCloseDepositAccount}
             onCancel={() => setShowCloseConfirm(false)}
           />
