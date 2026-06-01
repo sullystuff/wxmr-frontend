@@ -4,10 +4,11 @@ import { useCallback, useMemo } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, ComputeBudgetProgram, SystemProgram } from '@solana/web3.js';
 import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
+import type { Wallet as AnchorProviderWallet } from '@coral-xyz/anchor/dist/cjs/provider';
 import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddress, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token';
 import type { WxmrBridge } from '@/idl/wxmr_bridge';
 import IDL from '@/idl/wxmr_bridge.json';
-import { WXMR_MINT } from '@/constants';
+import { XMR_MINT } from '@/constants';
 
 // Program ID - should match deployed program
 const PROGRAM_ID = new PublicKey(
@@ -23,6 +24,14 @@ function getPriorityFeeInstructions() {
     ComputeBudgetProgram.setComputeUnitLimit({ units: COMPUTE_UNIT_LIMIT }),
     ComputeBudgetProgram.setComputeUnitPrice({ microLamports: PRIORITY_FEE_MICROLAMPORTS }),
   ];
+}
+
+function createReadonlyWallet(publicKey: PublicKey): AnchorProviderWallet {
+  return {
+    publicKey,
+    signTransaction: async (tx) => tx,
+    signAllTransactions: async (txs) => txs,
+  };
 }
 
 // Deposit account info (permanent, one per user)
@@ -58,14 +67,19 @@ export function useWxmrBridge() {
 
   const program = useMemo(() => {
     if (!wallet.publicKey) return null;
+    const anchorWallet: AnchorProviderWallet = {
+      publicKey: wallet.publicKey,
+      signTransaction: wallet.signTransaction ?? (async (tx) => tx),
+      signAllTransactions: wallet.signAllTransactions ?? (async (txs) => txs),
+    };
 
     const provider = new AnchorProvider(
       connection,
-      wallet as any,
+      anchorWallet,
       { commitment: 'confirmed' }
     );
 
-    return new Program(IDL as WxmrBridge, provider);
+    return new Program<WxmrBridge>(IDL as WxmrBridge, provider);
   }, [connection, wallet]);
 
   // Get bridge config PDA
@@ -106,7 +120,7 @@ export function useWxmrBridge() {
 
       // If we have a program (wallet connected), use it
       if (program) {
-        const config = await (program.account as any).bridgeConfig.fetch(configPda);
+        const config = await program.account.bridgeConfig.fetch(configPda);
         return {
           authority: config.authority.toBase58(),
           wxmrMint: config.wxmrMint.toBase58(),
@@ -123,11 +137,11 @@ export function useWxmrBridge() {
       const readProvider = new AnchorProvider(
         connection,
         // Minimal wallet stub — never signs, only used for deserialization
-        { publicKey: PublicKey.default, signTransaction: async (t: any) => t, signAllTransactions: async (t: any) => t } as any,
+        createReadonlyWallet(PublicKey.default),
         { commitment: 'confirmed' }
       );
-      const readProgram = new Program(IDL as WxmrBridge, readProvider);
-      const config = (readProgram.coder.accounts as any).decode('bridgeConfig', accountInfo.data);
+      const readProgram = new Program<WxmrBridge>(IDL as WxmrBridge, readProvider);
+      const config = readProgram.coder.accounts.decode('bridgeConfig', accountInfo.data);
 
       return {
         authority: config.authority.toBase58(),
@@ -147,8 +161,8 @@ export function useWxmrBridge() {
 
     try {
       const depositPda = getDepositPDA(wallet.publicKey);
-      const tokenAccount: PublicKey = await getAssociatedTokenAddress(WXMR_MINT, wallet.publicKey, false, TOKEN_PROGRAM_ID);
-      const createTokenAccountInstruction = createAssociatedTokenAccountIdempotentInstruction(wallet.publicKey, tokenAccount, wallet.publicKey, WXMR_MINT, TOKEN_PROGRAM_ID);
+      const tokenAccount: PublicKey = await getAssociatedTokenAddress(XMR_MINT, wallet.publicKey, false, TOKEN_PROGRAM_ID);
+      const createTokenAccountInstruction = createAssociatedTokenAccountIdempotentInstruction(wallet.publicKey, tokenAccount, wallet.publicKey, XMR_MINT, TOKEN_PROGRAM_ID);
       const signature = await program.methods
         .createDepositAccount()
         .accountsPartial({
@@ -203,7 +217,7 @@ export function useWxmrBridge() {
 
     try {
       const depositPda = getDepositPDA(wallet.publicKey);
-      const deposit = await (program.account as any).depositRecord.fetch(depositPda);
+      const deposit = await program.account.depositRecord.fetch(depositPda);
       
       let status: DepositAccountInfo['status'] = 'pending';
       if ('pending' in deposit.status) status = 'pending';
@@ -218,13 +232,13 @@ export function useWxmrBridge() {
         status,
         createdAt: deposit.createdAt.toNumber(),
       };
-    } catch (error) {
+    } catch {
       // Account doesn't exist - user hasn't created one yet
       return null;
     }
   }, [program, wallet.publicKey, getDepositPDA]);
 
-  // Request a withdrawal (burns wXMR)
+  // Request a withdrawal (burns Solana XMR)
   const requestWithdrawal = useCallback(async (
     amount: bigint,
     xmrAddress: string,
@@ -271,7 +285,7 @@ export function useWxmrBridge() {
     if (!program) return null;
 
     try {
-      const withdrawal = await (program.account as any).withdrawalRecord.fetch(new PublicKey(withdrawalPda));
+      const withdrawal = await program.account.withdrawalRecord.fetch(new PublicKey(withdrawalPda));
       
       let status: WithdrawalInfo['status'] = 'pending';
       if ('pending' in withdrawal.status) status = 'pending';
@@ -299,7 +313,7 @@ export function useWxmrBridge() {
     if (!program || !wallet.publicKey) return [];
 
     try {
-      const withdrawals = await (program.account as any).withdrawalRecord.all([
+      const withdrawals = await program.account.withdrawalRecord.all([
         {
           memcmp: {
             offset: 8, // discriminator
@@ -308,7 +322,7 @@ export function useWxmrBridge() {
         },
       ]);
 
-      return withdrawals.map((w: any) => {
+      return withdrawals.map((w) => {
         let status: WithdrawalInfo['status'] = 'pending';
         if ('pending' in w.account.status) status = 'pending';
         else if ('sending' in w.account.status) status = 'sending';
@@ -331,7 +345,7 @@ export function useWxmrBridge() {
     }
   }, [program, wallet.publicKey]);
 
-  // Get wXMR balance for current user
+  // Get Solana XMR balance for current user
   const getWxmrBalance = useCallback(async (): Promise<bigint> => {
     if (!connection || !wallet.publicKey) return BigInt(0);
 
@@ -351,10 +365,10 @@ export function useWxmrBridge() {
 
   // Get pending token account address (ATA owned by deposit PDA)
   const getPendingTokenAccount = useCallback((depositPda: PublicKey) => {
-    return getAssociatedTokenAddress(WXMR_MINT, depositPda, true, TOKEN_PROGRAM_ID);
+    return getAssociatedTokenAddress(XMR_MINT, depositPda, true, TOKEN_PROGRAM_ID);
   }, []);
 
-  // Get pending wXMR balance (tokens minted before user had an ATA)
+  // Get pending XMR balance (tokens minted before user had an ATA)
   const getPendingBalance = useCallback(async (): Promise<bigint> => {
     if (!connection || !wallet.publicKey) return BigInt(0);
 
@@ -380,8 +394,8 @@ export function useWxmrBridge() {
 
       const depositPda = getDepositPDA(wallet.publicKey);
       const pendingTokenAccount = await getPendingTokenAccount(depositPda);
-      const ownerTokenAccount = await getAssociatedTokenAddress(WXMR_MINT, wallet.publicKey, false, TOKEN_PROGRAM_ID);
-      const createOwnerTokenAccountInstruction = createAssociatedTokenAccountIdempotentInstruction(wallet.publicKey, ownerTokenAccount, wallet.publicKey, WXMR_MINT, TOKEN_PROGRAM_ID);
+      const ownerTokenAccount = await getAssociatedTokenAddress(XMR_MINT, wallet.publicKey, false, TOKEN_PROGRAM_ID);
+      const createOwnerTokenAccountInstruction = createAssociatedTokenAccountIdempotentInstruction(wallet.publicKey, ownerTokenAccount, wallet.publicKey, XMR_MINT, TOKEN_PROGRAM_ID);
       const signature = await program.methods
         .claimPendingMint()
         .accountsPartial({
@@ -390,7 +404,7 @@ export function useWxmrBridge() {
           owner: wallet.publicKey,
           pendingTokenAccount,
           ownerTokenAccount,
-          wxmrMint: WXMR_MINT,
+          wxmrMint: XMR_MINT,
           authority: new PublicKey(config.authority),
           tokenProgram: TOKEN_PROGRAM_ID,
           associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,

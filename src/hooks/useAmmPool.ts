@@ -1,8 +1,9 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
-import { Connection, PublicKey, Transaction } from '@solana/web3.js';
+import { Connection, PublicKey } from '@solana/web3.js';
 import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
+import type { Wallet as AnchorProviderWallet } from '@coral-xyz/anchor/dist/cjs/provider';
 import {
   createAssociatedTokenAccountIdempotentInstruction,
   getAssociatedTokenAddress,
@@ -10,10 +11,18 @@ import {
 } from '@solana/spl-token';
 import type { WxmrBridge } from '@/idl/wxmr_bridge';
 import IDL from '@/idl/wxmr_bridge.json';
-import { WXMR_MINT, USDC_MINT } from '@/constants';
+import { XMR_MINT, USDC_MINT } from '@/constants';
 
 const PROGRAM_ID = new PublicKey(process.env.NEXT_PUBLIC_BRIDGE_PROGRAM_ID || 'EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8');
 const SOLANA_RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+
+function createReadonlyWallet(publicKey: PublicKey): AnchorProviderWallet {
+  return {
+    publicKey,
+    signTransaction: async (tx) => tx,
+    signAllTransactions: async (txs) => txs,
+  };
+}
 
 export interface AmmPoolData {
   authority: PublicKey;
@@ -21,8 +30,8 @@ export interface AmmPoolData {
   usdcMint: PublicKey;
   poolWxmr: PublicKey;
   poolUsdc: PublicKey;
-  buyPrice: bigint;  // USDC atomic units per 1 wXMR (1e12 piconero)
-  sellPrice: bigint; // USDC atomic units per 1 wXMR
+  buyPrice: bigint;  // USDC atomic units per 1 XMR (1e12 piconero)
+  sellPrice: bigint; // USDC atomic units per 1 XMR
   lastPriceUpdate: number;
   enabled: boolean;
   totalWxmrVolume: bigint;
@@ -42,15 +51,11 @@ export function useAmmPool() {
       // Create a read-only provider (no wallet needed for reads)
       const provider = new AnchorProvider(
         connection,
-        { 
-          publicKey: PublicKey.default, 
-          signTransaction: async <T,>(tx: T): Promise<T> => tx, 
-          signAllTransactions: async <T,>(txs: T[]): Promise<T[]> => txs 
-        } as any,
+        createReadonlyWallet(PublicKey.default),
         { commitment: 'confirmed' }
       );
       
-      const program = new Program(IDL as any, provider) as Program<WxmrBridge>;
+      const program = new Program<WxmrBridge>(IDL as WxmrBridge, provider);
       
       // Find AMM pool PDA
       const [ammPoolPda] = PublicKey.findProgramAddressSync(
@@ -60,7 +65,7 @@ export function useAmmPool() {
       setPoolPda(ammPoolPda);
 
       // Fetch pool account
-      const poolAccount = await (program.account as any).ammPool.fetchNullable(ammPoolPda);
+      const poolAccount = await program.account.ammPool.fetchNullable(ammPoolPda);
       
       if (!poolAccount) {
         setPool(null);
@@ -102,17 +107,17 @@ export function useAmmPool() {
   const isPriceStale = false;
   const priceAge = pool ? Math.floor(Date.now() / 1000 - pool.lastPriceUpdate) : 0;
 
-  // Calculate wXMR output for given USDC input (buying wXMR)
+  // Calculate XMR output for given USDC input
   const calculateBuyOutput = useCallback((usdcAmount: bigint): bigint => {
     if (!pool || usdcAmount <= BigInt(0)) return BigInt(0);
-    // wxmr = (usdc * 1e12) / buy_price
+    // xmr = (usdc * 1e12) / buy_price
     return (usdcAmount * BigInt('1000000000000')) / pool.buyPrice;
   }, [pool]);
 
-  // Calculate USDC output for given wXMR input (selling wXMR)
+  // Calculate USDC output for given XMR input
   const calculateSellOutput = useCallback((wxmrAmount: bigint): bigint => {
     if (!pool || wxmrAmount <= BigInt(0)) return BigInt(0);
-    // usdc = (wxmr * sell_price) / 1e12
+    // usdc = (xmr * sell_price) / 1e12
     return (wxmrAmount * pool.sellPrice) / BigInt('1000000000000');
   }, [pool]);
 
@@ -129,29 +134,25 @@ export function useAmmPool() {
       const connection = new Connection(SOLANA_RPC);
       const provider = new AnchorProvider(
         connection,
-        { 
-          publicKey: userPublicKey, 
-          signTransaction: async <T,>(tx: T): Promise<T> => tx, 
-          signAllTransactions: async <T,>(txs: T[]): Promise<T[]> => txs 
-        } as any,
+        createReadonlyWallet(userPublicKey),
         { commitment: 'confirmed' }
       );
-      const program = new Program(IDL as any, provider) as Program<WxmrBridge>;
+      const program = new Program<WxmrBridge>(IDL as WxmrBridge, provider);
 
-      const userWxmr = await getAssociatedTokenAddress(WXMR_MINT, userPublicKey);
+      const userWxmr = await getAssociatedTokenAddress(XMR_MINT, userPublicKey);
       const userUsdc = await getAssociatedTokenAddress(USDC_MINT, userPublicKey);
       const ensureUserWxmrAtaIx = createAssociatedTokenAccountIdempotentInstruction(
         userPublicKey,
         userWxmr,
         userPublicKey,
-        WXMR_MINT,
+        XMR_MINT,
         TOKEN_PROGRAM_ID
       );
 
-      const tx = await (program.methods as any)
+      const tx = await program.methods
         .buyWxmr(new BN(usdcAmount.toString()))
         .preInstructions([ensureUserWxmrAtaIx])
-        .accounts({
+        .accountsPartial({
           pool: poolPda,
           user: userPublicKey,
           userWxmr,
@@ -205,16 +206,12 @@ export function useAmmPool() {
       const connection = new Connection(SOLANA_RPC);
       const provider = new AnchorProvider(
         connection,
-        { 
-          publicKey: userPublicKey, 
-          signTransaction: async <T,>(tx: T): Promise<T> => tx, 
-          signAllTransactions: async <T,>(txs: T[]): Promise<T[]> => txs 
-        } as any,
+        createReadonlyWallet(userPublicKey),
         { commitment: 'confirmed' }
       );
-      const program = new Program(IDL as any, provider) as Program<WxmrBridge>;
+      const program = new Program<WxmrBridge>(IDL as WxmrBridge, provider);
 
-      const userWxmr = await getAssociatedTokenAddress(WXMR_MINT, userPublicKey);
+      const userWxmr = await getAssociatedTokenAddress(XMR_MINT, userPublicKey);
       const userUsdc = await getAssociatedTokenAddress(USDC_MINT, userPublicKey);
       const ensureUserUsdcAtaIx = createAssociatedTokenAccountIdempotentInstruction(
         userPublicKey,
@@ -224,10 +221,10 @@ export function useAmmPool() {
         TOKEN_PROGRAM_ID
       );
 
-      const tx = await (program.methods as any)
+      const tx = await program.methods
         .sellWxmr(new BN(wxmrAmount.toString()))
         .preInstructions([ensureUserUsdcAtaIx])
-        .accounts({
+        .accountsPartial({
           pool: poolPda,
           user: userPublicKey,
           userWxmr,
@@ -249,7 +246,7 @@ export function useAmmPool() {
           success: false, 
           outputAmount: BigInt(0), 
           error: errMsg.includes('InsufficientLiquidity') ? 'Insufficient AMM liquidity' :
-                 errMsg.includes('InsufficientBalance') ? 'Insufficient wXMR balance' :
+                 errMsg.includes('InsufficientBalance') ? 'Insufficient XMR balance' :
                  errMsg.includes('PriceStale') ? 'AMM price stale' :
                  'Simulation failed'
         };
