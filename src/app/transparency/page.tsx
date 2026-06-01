@@ -521,9 +521,9 @@ export default function TransparencyPage() {
           </div>
         </InfoCard>
 
-        {/* Epoch Audit History */}
+        {/* Daily Audit History */}
         <InfoCard
-          title="Epoch Audit History"
+          title="Daily Audit History"
           icon={
             <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
@@ -531,7 +531,7 @@ export default function TransparencyPage() {
           }
         >
           <p className="text-[var(--muted)] mb-4">
-            Every week (or when needed for Solana to Monero transfers), we consolidate all spendable XMR and record proof on-chain.
+            Every day (and when needed for Solana to Monero transfers), we consolidate all spendable XMR and record proof on-chain.
             Each audit includes transaction keys so you can verify we control the native XMR backing Solana XMR.
           </p>
 
