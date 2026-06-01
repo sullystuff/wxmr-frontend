@@ -1,6 +1,6 @@
 # Monero Bridge Frontend
 
-A modern web interface for bridging native Monero (XMR) to and from the official Monero token on Solana.
+A modern web interface for bridging native Monero (XMR) to and from the Monero token on Solana.
 
 Public deployment: [main site](https://wxmr.io) or [.onion](https://aefvno77q6d5v6sbzjgqnpfzxvxfu64tub6txr4cohwmqu4vpzyoayad.onion)
 

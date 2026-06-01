@@ -7,7 +7,7 @@ const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: 'Monero Bridge',
-  description: 'Bridge native Monero to and from the official Monero token on Solana',
+  description: 'Bridge native Monero to and from the Monero token on Solana',
   icons: {
     icon: '/favicon.svg',
     shortcut: '/favicon.svg',

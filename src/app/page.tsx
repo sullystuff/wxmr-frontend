@@ -7,7 +7,7 @@ import { useWxmrBridge, DepositAccountInfo, WithdrawalInfo, BridgeConfig } from 
 import { QRCodeSVG } from 'qrcode.react';
 import { SwapModal } from '@/components/SwapModal';
 
-// Monero Logo SVG component (official logo from cryptologos.cc)
+// Monero Logo SVG component from cryptologos.cc
 function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 3756.09 3756.49" xmlns="http://www.w3.org/2000/svg">
@@ -570,7 +570,7 @@ export default function Home() {
               <h1 className="text-3xl font-bold bg-gradient-to-r from-[#ff6600] to-[#ff8533] bg-clip-text text-transparent">
                 Monero Bridge
               </h1>
-              <p className="text-[var(--muted)] mt-0.5">Official Monero token on Solana</p>
+              <p className="text-[var(--muted)] mt-0.5">Monero token on Solana</p>
             </div>
           </div>
           <WalletMultiButton />
