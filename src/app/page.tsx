@@ -583,7 +583,7 @@ export default function Home() {
         </header>
 
         {/* Stats Cards — always visible */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
           <div className="xmr-card xmr-stat-card p-5">
             <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Your Solana XMR Balance</p>
             <p className="text-2xl font-bold mt-2 text-[#ff6600]">{formatXmr(wxmrBalance)}</p>
@@ -593,20 +593,6 @@ export default function Home() {
             <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Circulating Supply</p>
             <p className="text-2xl font-bold mt-2">{formatXmr(circulatingSupply)}</p>
             <p className="text-xs text-[var(--muted)] mt-1">XMR on Solana</p>
-          </div>
-          <div className="xmr-card xmr-stat-card p-5">
-            <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Monero -&gt; Solana</p>
-            <p className="text-2xl font-bold mt-2">
-              {bridgeConfig ? formatXmr(bridgeConfig.totalDeposits) : '0'}
-            </p>
-            <p className="text-xs text-[var(--muted)] mt-1">XMR</p>
-          </div>
-          <div className="xmr-card xmr-stat-card p-5">
-            <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Solana -&gt; Monero</p>
-            <p className="text-2xl font-bold mt-2">
-              {bridgeConfig ? formatXmr(bridgeConfig.totalWithdrawals) : '0'}
-            </p>
-            <p className="text-xs text-[var(--muted)] mt-1">XMR</p>
           </div>
         </div>
 
