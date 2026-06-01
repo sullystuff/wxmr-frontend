@@ -793,7 +793,7 @@ export default function Home() {
 
                   <div className="pt-4 border-t border-[var(--border)]">
                     <p className="text-xs text-[var(--muted)] mb-2">
-                      Need a new address for privacy? Close this bridge address to get a fresh one.
+                      Need a new address? Close this bridge address to get a fresh one.
                     </p>
                     <button
                       onClick={() => setShowCloseConfirm(true)}
