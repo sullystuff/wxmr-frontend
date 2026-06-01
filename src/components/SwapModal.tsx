@@ -1,8 +1,8 @@
 'use client';
 
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
-import { PublicKey, VersionedTransaction } from '@solana/web3.js';
+import { VersionedTransaction } from '@solana/web3.js';
 import {
   createAssociatedTokenAccountIdempotentInstruction,
   getAssociatedTokenAddress,
@@ -10,11 +10,12 @@ import {
   TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
 import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
+import type { Wallet as AnchorProviderWallet } from '@coral-xyz/anchor/dist/cjs/provider';
 import type { WxmrBridge } from '@/idl/wxmr_bridge';
 import IDL from '@/idl/wxmr_bridge.json';
 import { useAmmPool } from '@/hooks/useAmmPool';
 import { useJupiterQuote, JupiterQuote } from '@/hooks/useJupiterQuote';
-import { WXMR_MINT, USDC_MINT } from '@/constants';
+import { XMR_MINT, USDC_MINT } from '@/constants';
 
 // Token icons
 function UsdcIcon({ className = "w-6 h-6" }: { className?: string }) {
@@ -26,7 +27,7 @@ function UsdcIcon({ className = "w-6 h-6" }: { className?: string }) {
   );
 }
 
-function WxmrIcon({ className = "w-6 h-6" }: { className?: string }) {
+function XmrIcon({ className = "w-6 h-6" }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 32 32" fill="none">
       <circle cx="16" cy="16" r="16" fill="#ff6600"/>
@@ -55,7 +56,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
   const { getBuyQuote, getSellQuote } = jupiter;
   const { simulateBuy, simulateSell, calculateBuyOutput, calculateSellOutput } = amm;
   
-  // Swap direction: true = USDC -> wXMR, false = wXMR -> USDC
+  // Swap direction: true = USDC -> XMR, false = XMR -> USDC
   const [isBuying, setIsBuying] = useState(true);
   const [inputAmount, setInputAmount] = useState('');
   const [selectedRoute, setSelectedRoute] = useState<RouteSource>('amm');
@@ -89,7 +90,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
       try {
         const [usdcAta, wxmrAta] = await Promise.all([
           getAssociatedTokenAddress(USDC_MINT, publicKey),
-          getAssociatedTokenAddress(WXMR_MINT, publicKey),
+          getAssociatedTokenAddress(XMR_MINT, publicKey),
         ]);
         
         const [usdcAccount, wxmrAccount] = await Promise.all([
@@ -158,7 +159,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
   const parsedInput = useMemo(() => {
     const num = parseFloat(inputAmount);
     if (isNaN(num) || num <= 0) return BigInt(0);
-    const decimals = isBuying ? 6 : 12; // USDC or wXMR
+    const decimals = isBuying ? 6 : 12; // USDC or XMR
     return BigInt(Math.floor(num * Math.pow(10, decimals)));
   }, [inputAmount, isBuying]);
 
@@ -317,11 +318,16 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
   // Execute AMM swap
   const executeAmmSwap = async () => {
     if (!publicKey || !amm.poolPda || !amm.pool) throw new Error('Not ready');
-    const provider = new AnchorProvider(connection, wallet as any, { commitment: 'confirmed' });
-    const program = new Program(IDL as any, provider) as Program<WxmrBridge>;
-    const userWxmr = await getAssociatedTokenAddress(WXMR_MINT, publicKey);
+    const providerWallet: AnchorProviderWallet = {
+      publicKey,
+      signTransaction: signTransaction ?? (async (tx) => tx),
+      signAllTransactions: wallet.signAllTransactions ?? (async (txs) => txs),
+    };
+    const provider = new AnchorProvider(connection, providerWallet, { commitment: 'confirmed' });
+    const program = new Program<WxmrBridge>(IDL as WxmrBridge, provider);
+    const userWxmr = await getAssociatedTokenAddress(XMR_MINT, publicKey);
     const userUsdc = await getAssociatedTokenAddress(USDC_MINT, publicKey);
-    const outputAtaMint = isBuying ? WXMR_MINT : USDC_MINT;
+    const outputAtaMint = isBuying ? XMR_MINT : USDC_MINT;
     const outputAta = isBuying ? userWxmr : userUsdc;
     const ensureOutputAtaIx = createAssociatedTokenAccountIdempotentInstruction(
       publicKey,
@@ -332,11 +338,11 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
     );
 
     const tx = isBuying
-      ? await (program.methods as any).buyWxmr(new BN(parsedInput.toString())).accounts({
+      ? await program.methods.buyWxmr(new BN(parsedInput.toString())).accountsPartial({
           pool: amm.poolPda, user: publicKey, userWxmr, userUsdc,
           poolWxmr: amm.pool.poolWxmr, poolUsdc: amm.pool.poolUsdc, tokenProgram: TOKEN_PROGRAM_ID,
         }).preInstructions([ensureOutputAtaIx]).transaction()
-      : await (program.methods as any).sellWxmr(new BN(parsedInput.toString())).accounts({
+      : await program.methods.sellWxmr(new BN(parsedInput.toString())).accountsPartial({
           pool: amm.poolPda, user: publicKey, userWxmr, userUsdc,
           poolWxmr: amm.pool.poolWxmr, poolUsdc: amm.pool.poolUsdc, tokenProgram: TOKEN_PROGRAM_ID,
         }).preInstructions([ensureOutputAtaIx]).transaction();
@@ -427,13 +433,13 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
     let maxPoolCanHandle = userBalance;
     if (amm.pool) {
       if (isBuying) {
-        // Buying wXMR: max USDC = poolWxmrBalance * buyPrice / 1e12
+        // Buying XMR: max USDC = poolWxmrBalance * buyPrice / 1e12
         const buyPrice = amm.pool.buyPrice;
         if (buyPrice > BigInt(0)) {
           maxPoolCanHandle = (poolWxmrBalance * buyPrice) / BigInt('1000000000000');
         }
       } else {
-        // Selling wXMR: max wXMR = poolUsdcBalance * 1e12 / sellPrice
+        // Selling XMR: max XMR = poolUsdcBalance * 1e12 / sellPrice
         const sellPrice = amm.pool.sellPrice;
         if (sellPrice > BigInt(0)) {
           maxPoolCanHandle = (poolUsdcBalance * BigInt('1000000000000')) / sellPrice;
@@ -451,11 +457,11 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
   const exceedsPoolLiquidity = useMemo(() => {
     if (parsedInput <= BigInt(0)) return false;
     if (isBuying) {
-      // Buying wXMR - check if pool has enough wXMR
+      // Buying XMR - check if pool has enough XMR
       const expectedOutput = calculateBuyOutput(parsedInput);
       return expectedOutput > poolWxmrBalance;
     } else {
-      // Selling wXMR - check if pool has enough USDC
+      // Selling XMR - check if pool has enough USDC
       const expectedOutput = calculateSellOutput(parsedInput);
       return expectedOutput > poolUsdcBalance;
     }
@@ -470,8 +476,8 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
 
   if (!isOpen) return null;
 
-  const inputToken = isBuying ? { symbol: 'USDC', icon: UsdcIcon, decimals: 6 } : { symbol: 'wXMR', icon: WxmrIcon, decimals: 12 };
-  const outputToken = isBuying ? { symbol: 'wXMR', icon: WxmrIcon, decimals: 12 } : { symbol: 'USDC', icon: UsdcIcon, decimals: 6 };
+  const inputToken = isBuying ? { symbol: 'USDC', icon: UsdcIcon, decimals: 6 } : { symbol: 'XMR', icon: XmrIcon, decimals: 12 };
+  const outputToken = isBuying ? { symbol: 'XMR', icon: XmrIcon, decimals: 12 } : { symbol: 'USDC', icon: UsdcIcon, decimals: 6 };
   const userInputBalance = isBuying ? userUsdcBalance : userWxmrBalance;
 
   return (
@@ -574,7 +580,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                 </svg>
                 <span className="text-sm text-gray-400">
-                  via <span className="text-white">{selectedRoute === 'amm' ? 'wXMR AMM' : 'Jupiter'}</span>
+                  via <span className="text-white">{selectedRoute === 'amm' ? 'XMR AMM' : 'Jupiter'}</span>
                 </span>
                 {ammAmount > BigInt(0) && jupiterAmount > BigInt(0) && 
                   ((selectedRoute === 'amm' && ammIsBest) || (selectedRoute === 'jupiter' && jupiterIsBest)) && (
@@ -600,7 +606,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                 >
                   <div className="flex items-center gap-2">
                     <div>
-                      <p className="text-sm font-medium text-white">wXMR AMM</p>
+                      <p className="text-sm font-medium text-white">XMR AMM</p>
                       <p className="text-xs text-gray-400">{ammOutputAmount > BigInt(0) ? 'Direct swap' : '~estimate'}</p>
                     </div>
                     {jupiterAmount > BigInt(0) && <span className="text-xs text-green-400 bg-green-400/10 px-2 py-0.5 rounded">Best</span>}
@@ -638,7 +644,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                   }`}
                 >
                   <div>
-                    <p className="text-sm font-medium text-white">wXMR AMM</p>
+                    <p className="text-sm font-medium text-white">XMR AMM</p>
                     <p className="text-xs text-gray-400">{ammOutputAmount > BigInt(0) ? 'Direct swap' : '~estimate'}</p>
                   </div>
                   <span className="text-sm font-mono text-white">
@@ -668,7 +674,7 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
           {/* Pool Liquidity Info */}
           {amm.pool && (
             <div className="flex justify-between text-xs text-gray-500 px-1">
-              <span>Pool: {formatAmount(poolWxmrBalance, 12)} wXMR</span>
+              <span>Pool: {formatAmount(poolWxmrBalance, 12)} XMR</span>
               <span>{formatAmount(poolUsdcBalance, 6)} USDC</span>
             </div>
           )}

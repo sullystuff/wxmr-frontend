@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { USDC_MINT, WXMR_MINT } from '@/constants';
+import { USDC_MINT, XMR_MINT } from '@/constants';
 
 // Jupiter API config
 const JUPITER_API_KEY = process.env.NEXT_PUBLIC_JUPITER_API_KEY || '';
@@ -13,7 +13,7 @@ export interface JupiterQuote {
   inAmount: string;
   outAmount: string;
   priceImpactPct: string;
-  routePlan: any[];
+  routePlan: unknown[];
   // Ultra API specific
   transaction?: string | null;
   requestId?: string;
@@ -31,7 +31,7 @@ export function useJupiterQuote() {
     return headers;
   }, []);
 
-  // Get quote - isBuying: true = USDC -> wXMR, false = wXMR -> USDC
+  // Get quote - isBuying: true = USDC -> XMR, false = XMR -> USDC
   const getQuote = useCallback(async (
     amount: bigint, 
     isBuying: boolean, 
@@ -44,8 +44,8 @@ export function useJupiterQuote() {
     
     try {
       const params = new URLSearchParams({
-        inputMint: isBuying ? USDC_MINT.toBase58() : WXMR_MINT.toBase58(),
-        outputMint: isBuying ? WXMR_MINT.toBase58() : USDC_MINT.toBase58(),
+        inputMint: isBuying ? USDC_MINT.toBase58() : XMR_MINT.toBase58(),
+        outputMint: isBuying ? XMR_MINT.toBase58() : USDC_MINT.toBase58(),
         amount: amount.toString(),
       });
       
