@@ -3,10 +3,8 @@
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { Connection, PublicKey } from '@solana/web3.js';
-import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
+import { BN } from '@coral-xyz/anchor';
 import { bs58 } from '@coral-xyz/anchor/dist/cjs/utils/bytes';
-import type { WxmrBridge } from '@/idl/wxmr_bridge';
-import IDL from '@/idl/wxmr_bridge.json';
 
 // Monero Logo SVG component (official logo from cryptologos.cc)
 function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
@@ -23,7 +21,7 @@ function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
 const BRIDGE_DATA = {
   xmrAddress: '45ZYpKmPaPmh3bnRP1XpMz8cASJQf1cfUgq32H8trCYA4RodzXhsmt2VYkQX9QQ65CetiGja65tH2JmKC3gEZtZjB7AzMpd',
   viewKey: 'e4e02de197582ff2e93f9eaefc96e122a13ffa838736ef38f4a8ea27a0dc4909',
-  wxmrMint: 'WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp',
+  xmrMint: 'WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp',
   bridgeProgram: 'EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8',
 };
 
@@ -48,7 +46,7 @@ interface AuditData {
   totalFee: number;
   txs: Array<{ txid: string; key: string; amount: number; fee: number }>;
   unconfirmed: Array<{ tx: string; amt: number; conf: number }>;
-  burn?: { txid: string; amount: number }; // wXMR burned to cover fees
+  burn?: { txid: string; amount: number }; // Solana XMR burned to cover fees
   // Legacy support
   epoch?: number;
 }
@@ -238,7 +236,7 @@ export default function TransparencyPage() {
         <div className="xmr-card p-6 mb-8 xmr-glow">
           <h2 className="text-xl font-bold mb-3">Proof of Reserves</h2>
           <p className="text-[var(--muted)] leading-relaxed">
-            The wXMR bridge is designed for transparency. Every wXMR token is backed 1:1 by real XMR. 
+            The Monero bridge is designed for transparency. Every XMR token on Solana is backed 1:1 by native XMR.
             We provide cryptographic tools so you can independently verify deposits and withdrawals.
           </p>
         </div>
@@ -447,13 +445,13 @@ export default function TransparencyPage() {
 
           <div className="space-y-4">
             <div className="bg-[var(--background)] rounded-lg p-4 border border-[var(--border)]">
-              <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">wXMR Token Mint</p>
+              <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">XMR Token Mint</p>
               <div className="flex items-center gap-2">
                 <code className="text-sm font-mono text-[#ff6600] flex-1 break-all">
-                  {BRIDGE_DATA.wxmrMint}
+                  {BRIDGE_DATA.xmrMint}
                 </code>
                 <a
-                  href={`https://solscan.io/token/${BRIDGE_DATA.wxmrMint}`}
+                  href={`https://solscan.io/token/${BRIDGE_DATA.xmrMint}`}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="p-2 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all"
@@ -465,7 +463,7 @@ export default function TransparencyPage() {
                 </a>
               </div>
               <p className="text-xs text-[var(--muted)] mt-2">
-                Total supply = total wXMR in circulation
+                Total supply = total XMR on Solana in circulation
               </p>
             </div>
 
@@ -510,7 +508,7 @@ export default function TransparencyPage() {
             <ul className="list-disc list-inside space-y-2 ml-4">
               <li>Verify all XMR deposits using our public view key</li>
               <li>Verify any withdrawal with the tx key we provide</li>
-              <li>Check total wXMR supply on Solana matches reserves</li>
+              <li>Check total XMR supply on Solana matches reserves</li>
               <li>All bridge events permanently recorded on-chain</li>
             </ul>
 
@@ -534,7 +532,7 @@ export default function TransparencyPage() {
         >
           <p className="text-[var(--muted)] mb-4">
             Every week (or when needed for withdrawals), we consolidate all spendable XMR and record proof on-chain. 
-            Each audit includes transaction keys so you can verify we control the XMR backing wXMR.
+            Each audit includes transaction keys so you can verify we control the native XMR backing Solana XMR.
           </p>
 
           {loadingAudits ? (
@@ -606,8 +604,8 @@ export default function TransparencyPage() {
                           {/* Main comparison */}
                           <div className="space-y-2 text-sm font-mono">
                             <div className="flex justify-between">
-                              <span className="text-[var(--muted)]">wXMR Circulating Supply:</span>
-                              <span className="text-white">{formatXmr(audit.circulatingSupply)} wXMR</span>
+                              <span className="text-[var(--muted)]">Solana XMR Circulating Supply:</span>
+                              <span className="text-white">{formatXmr(audit.circulatingSupply)} XMR</span>
                             </div>
                             <div className="flex justify-between">
                               <span className="text-[var(--muted)]">XMR Spendable (after fees):</span>
@@ -630,8 +628,8 @@ export default function TransparencyPage() {
                             {/* Fee difference explanation */}
                             {(() => {
                               const totalXmr = BigInt(audit.spendableBalance.toString()) + BigInt(audit.unconfirmedBalance.toString());
-                              const wxmrSupply = BigInt(audit.circulatingSupply.toString());
-                              const difference = wxmrSupply - totalXmr;
+                              const solanaXmrSupply = BigInt(audit.circulatingSupply.toString());
+                              const difference = solanaXmrSupply - totalXmr;
                               
                               if (difference > BigInt(0)) {
                                 return (
@@ -650,7 +648,7 @@ export default function TransparencyPage() {
                               return null;
                             })()}
                             
-                            {/* wXMR Burn to cover shortfall */}
+                            {/* Solana XMR burn to cover shortfall */}
                             {auditData?.burn && (() => {
                               const totalXmr = BigInt(audit.spendableBalance.toString()) + BigInt(audit.unconfirmedBalance.toString());
                               const burnedAmount = BigInt(auditData.burn.amount);
@@ -660,8 +658,8 @@ export default function TransparencyPage() {
                               return (
                                 <div className="mt-3 p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-xs">
                                   <div className="flex justify-between mb-2">
-                                    <span className="text-[var(--muted)]">🔥 wXMR Burned:</span>
-                                    <span className="text-green-400 font-semibold">{formatXmr(auditData.burn.amount)} wXMR</span>
+                                    <span className="text-[var(--muted)]">Solana XMR Burned:</span>
+                                    <span className="text-green-400 font-semibold">{formatXmr(auditData.burn.amount)} XMR</span>
                                   </div>
                                   
                                   {/* Post-burn state - THE MATCH */}
@@ -671,8 +669,8 @@ export default function TransparencyPage() {
                                     </p>
                                     <div className="space-y-1 font-mono">
                                       <div className="flex justify-between">
-                                        <span className="text-[var(--muted)]">wXMR Supply (after burn):</span>
-                                        <span className="text-white">{formatXmr(newWxmrSupply)} wXMR</span>
+                                        <span className="text-[var(--muted)]">Solana XMR Supply (after burn):</span>
+                                        <span className="text-white">{formatXmr(newWxmrSupply)} XMR</span>
                                       </div>
                                       <div className="flex justify-between">
                                         <span className="text-[var(--muted)]">XMR Backing:</span>
@@ -681,7 +679,7 @@ export default function TransparencyPage() {
                                     </div>
                                     {isExactMatch && (
                                       <p className="text-center text-green-400 mt-2 text-[10px]">
-                                        Every wXMR is backed by exactly 1 XMR
+                                        Every Solana XMR is backed by exactly 1 native XMR
                                       </p>
                                     )}
                                   </div>
@@ -706,7 +704,7 @@ export default function TransparencyPage() {
                                   <div className="mt-3 p-2 rounded border border-green-500/20 bg-[var(--background)]">
                                     <p className="text-[var(--muted)]">
                                       Daily burn accounting must also include the XMR transaction fees we paid on users&apos; behalf,
-                                      so we burn an equivalent amount of wXMR for those fees too.
+                                      so we burn an equivalent amount of Solana XMR for those fees too.
                                     </p>
                                   </div>
                                 </div>
