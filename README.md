@@ -1,16 +1,16 @@
-# wXMR Bridge Frontend
+# Monero Bridge Frontend
 
-A modern web interface for bridging XMR to Solana as wXMR.
+A modern web interface for bridging native Monero (XMR) to and from the official Monero token on Solana.
 
-Public deployment: [wxmr.io](https://wxmr.io) or [.onion](https://aefvno77q6d5v6sbzjgqnpfzxvxfu64tub6txr4cohwmqu4vpzyoayad.onion)
+Public deployment: [main site](https://wxmr.io) or [.onion](https://aefvno77q6d5v6sbzjgqnpfzxvxfu64tub6txr4cohwmqu4vpzyoayad.onion)
 
 ## Features
 
 - Connect Solana wallet (Phantom, Solflare)
 - Create deposit accounts with permanent XMR addresses
 - View deposit status and balances
-- Withdraw wXMR back to XMR
-- Swap wXMR ↔ USDC via AMM pool or Jupiter aggregator
+- Withdraw Solana XMR back to native XMR
+- Swap XMR ↔ USDC via AMM pool or Jupiter aggregator
 - QR code generation and scanning for addresses
 - Transparency page with reserve verification
 - Real-time balance updates
@@ -48,7 +48,7 @@ Public deployment: [wxmr.io](https://wxmr.io) or [.onion](https://aefvno77q6d5v6
 2. Click "Create Deposit Account"
 3. Send XMR to the provided address (minimum 0.01 XMR)
 4. Wait for confirmations (20 blocks)
-5. wXMR will be minted to your wallet
+5. XMR on Solana will be minted to your wallet
 
 ### Withdrawing XMR
 
@@ -56,7 +56,7 @@ Public deployment: [wxmr.io](https://wxmr.io) or [.onion](https://aefvno77q6d5v6
 2. Switch to "Withdraw XMR" tab
 3. Enter amount and your XMR address
 4. Click "Withdraw XMR"
-5. Your wXMR will be burned
+5. Your XMR on Solana will be burned
 6. XMR will be sent to your address
 
 ### Swapping
