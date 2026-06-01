@@ -386,6 +386,7 @@ export default function Home() {
     requestWithdrawal,
     fetchMyWithdrawals,
     fetchBridgeConfig,
+    getXmrCirculatingSupply,
     getWxmrBalance,
     getPendingBalance,
     claimPendingMint,
@@ -395,6 +396,7 @@ export default function Home() {
   const [depositAccount, setDepositAccount] = useState<DepositAccountInfo | null>(null);
   const [withdrawals, setWithdrawals] = useState<WithdrawalInfo[]>([]);
   const [bridgeConfig, setBridgeConfig] = useState<BridgeConfig | null>(null);
+  const [circulatingSupply, setCirculatingSupply] = useState<bigint>(BigInt(0));
   const [wxmrBalance, setWxmrBalance] = useState<bigint>(BigInt(0));
   const [pendingBalance, setPendingBalance] = useState<bigint>(BigInt(0));
   const [loading, setLoading] = useState(false);
@@ -417,8 +419,12 @@ export default function Home() {
   const loadData = useCallback(async () => {
     try {
       // Bridge config can be fetched without a wallet
-      const config = await fetchBridgeConfig();
+      const [config, supply] = await Promise.all([
+        fetchBridgeConfig(),
+        getXmrCirculatingSupply(),
+      ]);
       setBridgeConfig(config);
+      setCirculatingSupply(supply);
 
       if (!isConnected) return;
 
@@ -437,7 +443,7 @@ export default function Home() {
     } catch (err) {
       console.error('Error loading data:', err);
     }
-  }, [isConnected, fetchBridgeConfig, getWxmrBalance, getPendingBalance, fetchMyDepositAccount, fetchMyWithdrawals]);
+  }, [isConnected, fetchBridgeConfig, getXmrCirculatingSupply, getWxmrBalance, getPendingBalance, fetchMyDepositAccount, fetchMyWithdrawals]);
 
   // Reset wallet-specific state when disconnected
   useEffect(() => {
@@ -577,10 +583,15 @@ export default function Home() {
         </header>
 
         {/* Stats Cards — always visible */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
           <div className="xmr-card xmr-stat-card p-5">
             <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Your Solana XMR Balance</p>
             <p className="text-2xl font-bold mt-2 text-[#ff6600]">{formatXmr(wxmrBalance)}</p>
+            <p className="text-xs text-[var(--muted)] mt-1">XMR on Solana</p>
+          </div>
+          <div className="xmr-card xmr-stat-card p-5">
+            <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Circulating Supply</p>
+            <p className="text-2xl font-bold mt-2">{formatXmr(circulatingSupply)}</p>
             <p className="text-xs text-[var(--muted)] mt-1">XMR on Solana</p>
           </div>
           <div className="xmr-card xmr-stat-card p-5">

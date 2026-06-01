@@ -155,6 +155,17 @@ export function useWxmrBridge() {
     }
   }, [program, connection, getBridgeConfigPDA]);
 
+  // Get live Solana XMR mint supply
+  const getXmrCirculatingSupply = useCallback(async (): Promise<bigint> => {
+    try {
+      const supply = await connection.getTokenSupply(XMR_MINT);
+      return BigInt(supply.value.amount);
+    } catch (error) {
+      console.error('Error fetching XMR circulating supply:', error);
+      return BigInt(0);
+    }
+  }, [connection]);
+
   // Create deposit account (one per wallet - permanent)
   const createDepositAccount = useCallback(async (): Promise<{ signature: string; depositPda: string } | null> => {
     if (!program || !wallet.publicKey) return null;
@@ -431,6 +442,7 @@ export function useWxmrBridge() {
     fetchWithdrawal,
     fetchMyWithdrawals,
     fetchBridgeConfig,
+    getXmrCirculatingSupply,
     getWxmrBalance,
     getPendingBalance,
     claimPendingMint,
