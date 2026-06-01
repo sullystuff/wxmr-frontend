@@ -1,213 +1,356 @@
 @import "tailwindcss";
 
-:root {
-  /* Monero brand colors */
-  --xmr-orange: #ff6600;
-  --xmr-orange-light: #ff8533;
-  --xmr-orange-dark: #e55c00;
-  --xmr-gray: #4c4c4c;
-  --xmr-dark: #1e1e1e;
-  
-  /* Theme colors */
-  --background: #0d0d0d;
-  --background-gradient: linear-gradient(135deg, #0d0d0d 0%, #1a1a1a 50%, #0d0d0d 100%);
-  --foreground: #f5f5f5;
-  --card: #161616;
-  --card-hover: #1f1f1f;
-  --border: #2d2d2d;
-  --border-hover: #ff660033;
-  --primary: #ff6600;
-  --primary-hover: #ff8533;
-  --primary-glow: rgba(255, 102, 0, 0.15);
-  --success: #22c55e;
-  --error: #ef4444;
-  --muted: #888888;
+/* ============================================================
+   wXMR Protocol — design system
+   Dark, dense, Solana-native (Jupiter / Tensor / Helius lineage).
+   Near-black canvas, charcoal surfaces, subtle gray borders,
+   high-contrast white type, Monero orange as the single accent,
+   Solana green reserved strictly for live / positive status.
+   ============================================================ */
+
+@theme {
+  /* Surfaces — true near-black, tight tonal steps */
+  --color-canvas: #050505; /* page background */
+  --color-surface: #0c0c10; /* primary card */
+  --color-surface-2: #101014; /* secondary card / hover */
+  --color-inset: #08080b; /* recessed fields, darker than card */
+  --color-sunken: #131318; /* segmented track, chips */
+
+  /* Ink */
+  --color-ink: #f8f8f8; /* primary */
+  --color-ink-2: #9d9dab; /* secondary */
+  --color-ink-3: #62626e; /* muted captions / mono labels */
+  --color-ink-inv: #050505; /* text on the orange accent */
+
+  /* Hairlines — translucent white, the way real protocol UIs do it */
+  --color-line: rgba(255, 255, 255, 0.06);
+  --color-line-2: rgba(255, 255, 255, 0.11);
+
+  /* Accent — Monero orange */
+  --color-accent: #ff6b1a;
+  --color-accent-ink: #ff8a45; /* lighter orange for text/links on dark */
+  --color-accent-wash: rgba(255, 107, 26, 0.1);
+
+  /* Solana green — live / positive / verified (the secondary accent) */
+  --color-success: #14f195;
+  --color-success-wash: rgba(20, 241, 149, 0.1);
+  --color-success-ink: #2ee6a0; /* legible green for text on dark */
+
+  /* Solana purple — used very sparingly (one ecosystem accent) */
+  --color-purple: #9945ff;
+
+  --color-warn: #f5a623;
+  --color-warn-wash: rgba(245, 166, 35, 0.1);
+  --color-danger: #ff5d5d;
+  --color-danger-wash: rgba(255, 93, 93, 0.1);
+
+  /* Receive panel — a faint warm pool */
+  --color-recv: #161009;
+  --color-recv-line: rgba(255, 106, 26, 0.18);
+
+  /* Radii — precise, not bubbly */
+  --radius-field: 12px;
+  --radius-card: 16px;
+  --radius-pill: 999px;
+
+  /* Shadows — borders carry structure; shadows are deep + black, never colored */
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.03), 0 10px 30px rgba(0, 0, 0, 0.5);
+  --shadow-pop: 0 20px 60px rgba(0, 0, 0, 0.72);
+
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-display: var(--font-display), var(--font-inter), ui-sans-serif, sans-serif;
+  --font-mono: var(--font-mono-ibm), ui-monospace, "SF Mono", Menlo, monospace;
+}
+
+/* ---------- base ---------- */
+html {
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
-  background: var(--background);
-  background-image: 
-    radial-gradient(ellipse at top, rgba(255, 102, 0, 0.03) 0%, transparent 50%),
-    radial-gradient(ellipse at bottom right, rgba(255, 102, 0, 0.02) 0%, transparent 40%);
-  background-attachment: fixed;
-  color: var(--foreground);
-  min-height: 100vh;
+  background: var(--color-canvas);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv05" 1, "cv11" 1, "ss01" 1;
+  text-rendering: optimizeLegibility;
 }
 
-/* Monero-style accent line at top */
-body::before {
-  content: '';
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 2px;
-  background: linear-gradient(90deg, transparent, var(--xmr-orange), transparent);
-  z-index: 9999;
+::selection {
+  background: var(--color-accent-wash);
+  color: var(--color-ink);
 }
 
-/* Wallet adapter button overrides */
-.wallet-adapter-button {
-  background: linear-gradient(135deg, var(--xmr-orange) 0%, var(--xmr-orange-dark) 100%) !important;
-  border-radius: 8px !important;
-  font-weight: 600 !important;
-  box-shadow: 0 4px 14px rgba(255, 102, 0, 0.25) !important;
-  transition: all 0.2s ease !important;
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  letter-spacing: -0.02em;
+}
+/* Display font runs a touch loose at huge sizes; tighten the hero */
+.display-xl {
+  font-family: var(--font-display);
+  letter-spacing: -0.04em;
 }
 
-.wallet-adapter-button:hover {
-  background: linear-gradient(135deg, var(--xmr-orange-light) 0%, var(--xmr-orange) 100%) !important;
-  box-shadow: 0 6px 20px rgba(255, 102, 0, 0.35) !important;
-  transform: translateY(-1px) !important;
+/* Tabular, mono-feel numerals for all protocol data */
+.tnum {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+.mono {
+  font-family: var(--font-mono);
+  font-feature-settings: "tnum" 1, "zero" 1;
 }
 
-.wallet-adapter-modal-wrapper {
-  background: var(--card) !important;
-  border: 1px solid var(--border) !important;
+/* Faint dotted grid texture for the page background — subtle, not noisy */
+.grid-bg {
+  background-image: radial-gradient(circle at center, var(--color-line) 0.5px, transparent 0.5px);
+  background-size: 26px 26px;
+  background-position: center top;
 }
 
-.wallet-adapter-modal-button-close {
-  background: var(--border) !important;
+/* Brand gradient text — Monero orange, for one word in the headline */
+.brand-gradient {
+  background: linear-gradient(110deg, #ffb07a 0%, #ff7d2e 45%, #ff5a00 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 
-.wallet-adapter-modal-list li {
-  background: var(--background) !important;
-  border: 1px solid var(--border) !important;
-  transition: all 0.2s ease !important;
+/* Very faint warm depth behind the hero — barely perceptible, not a glow blob */
+.hero-glow {
+  position: absolute;
+  pointer-events: none;
+  width: min(820px, 85vw);
+  height: 420px;
+  left: 42%;
+  top: -180px;
+  transform: translateX(-50%);
+  background: radial-gradient(ellipse at center, rgba(255, 107, 26, 0.08), transparent 64%);
 }
 
-.wallet-adapter-modal-list li:hover {
-  border-color: var(--xmr-orange) !important;
+/* The bridge widget reads as the focal object via a deep, clean shadow — no colored halo */
+.glow-card {
+  box-shadow: var(--shadow-card), 0 28px 64px rgba(0, 0, 0, 0.5);
 }
 
-/* Card styling */
-.xmr-card {
-  background: linear-gradient(135deg, var(--card) 0%, #1a1a1a 100%);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  transition: all 0.2s ease;
+:where(a, button, [tabindex]):focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
 }
-
-.xmr-card:hover {
-  border-color: var(--border-hover);
-  box-shadow: 0 0 30px var(--primary-glow);
-}
-
-/* Primary button styling */
-.xmr-btn-primary {
-  background: linear-gradient(135deg, var(--xmr-orange) 0%, var(--xmr-orange-dark) 100%);
-  box-shadow: 0 4px 14px rgba(255, 102, 0, 0.25);
-  transition: all 0.2s ease;
-}
-
-.xmr-btn-primary:hover:not(:disabled) {
-  background: linear-gradient(135deg, var(--xmr-orange-light) 0%, var(--xmr-orange) 100%);
-  box-shadow: 0 6px 20px rgba(255, 102, 0, 0.35);
-  transform: translateY(-1px);
-}
-
-.xmr-btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-/* Input styling */
-.xmr-input {
-  background: var(--background);
-  border: 1px solid var(--border);
-  border-radius: 8px;
-  transition: all 0.2s ease;
-}
-
-.xmr-input:focus {
-  border-color: var(--xmr-orange);
-  box-shadow: 0 0 0 3px rgba(255, 102, 0, 0.1);
+:where(input, textarea):focus,
+:where(input, textarea):focus-visible {
   outline: none;
 }
 
-/* Status badges */
-.xmr-badge {
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 12px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
+/* Field — recessed, orange focus ring */
+.field-input {
+  background: var(--color-inset);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-field);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+.field-input:focus-within {
+  border-color: var(--color-accent);
+  box-shadow: 0 0 0 3px rgba(255, 106, 26, 0.14);
 }
 
-/* Glowing orange accent */
-.xmr-glow {
-  box-shadow: 0 0 40px var(--primary-glow);
+/* Primary button — the strongest element on screen via solid Monero orange,
+   a crisp top highlight and a tight shadow. No giant glow. */
+.btn-primary {
+  background: var(--color-accent);
+  color: var(--color-ink-inv);
+  border-radius: var(--radius-field);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 2px 8px rgba(0, 0, 0, 0.4);
+  transition: filter 0.13s ease, transform 0.1s ease;
+}
+.btn-primary:hover:not(:disabled) {
+  filter: brightness(1.07);
+}
+.btn-primary:active:not(:disabled) {
+  transform: translateY(0.5px);
+}
+.btn-primary:disabled {
+  background: var(--color-sunken);
+  color: var(--color-ink-3);
+  box-shadow: none;
+  cursor: not-allowed;
 }
 
-/* Stats card special styling */
-.xmr-stat-card {
-  position: relative;
-  overflow: hidden;
+/* Secondary / ghost */
+.btn-secondary {
+  background: var(--color-surface-2);
+  color: var(--color-ink);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-field);
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.btn-secondary:hover:not(:disabled) {
+  border-color: var(--color-line-2);
+  background: var(--color-sunken);
 }
 
-.xmr-stat-card::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 3px;
-  background: linear-gradient(90deg, var(--xmr-orange), var(--xmr-orange-light), var(--xmr-orange));
-  opacity: 0;
-  transition: opacity 0.2s ease;
+/* Cards */
+.surface-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card);
+}
+.surface-inset {
+  background: var(--color-inset);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-card);
 }
 
-.xmr-stat-card:hover::before {
-  opacity: 1;
+/* ---------- wallet-adapter, dark ---------- */
+.wallet-adapter-button {
+  background: var(--color-accent) !important;
+  color: var(--color-ink-inv) !important;
+  border-radius: var(--radius-field) !important;
+  font-family: var(--font-sans) !important;
+  font-weight: 600 !important;
+  font-size: 13px !important;
+  height: auto !important;
+  padding: 10px 16px !important;
+  line-height: 1 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.2), 0 2px 8px rgba(0, 0, 0, 0.4) !important;
+}
+.wallet-adapter-button:not([disabled]):hover {
+  filter: brightness(1.07);
+}
+.wallet-adapter-modal-list .wallet-adapter-button {
+  box-shadow: none !important;
+}
+.wallet-adapter-modal-wrapper {
+  background: var(--color-surface) !important;
+  border: 1px solid var(--color-line) !important;
+  box-shadow: var(--shadow-pop) !important;
+  border-radius: var(--radius-card) !important;
+}
+.wallet-adapter-modal-title {
+  color: var(--color-ink) !important;
+}
+.wallet-adapter-modal-button-close {
+  background: var(--color-sunken) !important;
+}
+.wallet-adapter-modal-button-close svg {
+  fill: var(--color-ink-2) !important;
+}
+.wallet-adapter-modal-list li {
+  background: var(--color-inset) !important;
+  border: 1px solid var(--color-line) !important;
+  border-radius: var(--radius-field) !important;
+}
+.wallet-adapter-modal-list li:hover {
+  border-color: var(--color-line-2) !important;
+  background: var(--color-sunken) !important;
+}
+.wallet-adapter-modal-list .wallet-adapter-button {
+  color: var(--color-ink) !important;
+  background: transparent !important;
 }
 
-/* Tab styling */
-.xmr-tab {
-  position: relative;
-  transition: all 0.2s ease;
-}
-
-.xmr-tab-active {
-  background: linear-gradient(135deg, var(--xmr-orange) 0%, var(--xmr-orange-dark) 100%);
-  box-shadow: 0 4px 14px rgba(255, 102, 0, 0.25);
-}
-
-/* Custom scrollbar */
+/* ---------- scrollbar ---------- */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 10px;
+  height: 10px;
 }
-
 ::-webkit-scrollbar-track {
-  background: var(--background);
+  background: transparent;
 }
-
 ::-webkit-scrollbar-thumb {
-  background: var(--border);
-  border-radius: 4px;
+  background: var(--color-line-2);
+  border: 3px solid var(--color-canvas);
+  border-radius: var(--radius-pill);
 }
-
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--xmr-orange);
+  background: var(--color-ink-3);
 }
 
-/* Selection color */
-::selection {
-  background: rgba(255, 102, 0, 0.3);
-  color: var(--foreground);
+/* ---------- motion ---------- */
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+.spin {
+  animation: spin 0.7s linear infinite;
 }
 
-/* Monero logo animation for loading states */
-@keyframes pulse-orange {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+@keyframes pulse-dot {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+.pulse-dot {
+  animation: pulse-dot 2s ease-in-out infinite;
 }
 
-.xmr-pulse {
-  animation: pulse-orange 2s ease-in-out infinite;
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.rise {
+  animation: rise 0.28s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
-/* Subtle background pattern */
-.xmr-pattern {
-  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 0L30 60M0 30L60 30' stroke='%23ff6600' stroke-opacity='0.03' stroke-width='1'/%3E%3C/svg%3E");
+/* Hero network: packets flowing along the edges (XMR → wXMR → ecosystem) */
+@keyframes dash-flow {
+  to {
+    stroke-dashoffset: -120;
+  }
+}
+.net-flow {
+  stroke-dasharray: 2 9;
+  stroke-linecap: round;
+  animation: dash-flow 3.5s linear infinite;
+}
+@keyframes net-breathe {
+  0%, 100% {
+    opacity: 0.85;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+.net-node {
+  animation: net-breathe 3s ease-in-out infinite;
+}
+
+/* Live status dot with a soft Solana-green halo */
+.live-dot {
+  position: relative;
+}
+.live-dot::after {
+  content: "";
+  position: absolute;
+  inset: -4px;
+  border-radius: 999px;
+  background: var(--color-success);
+  opacity: 0.18;
+  animation: pulse-dot 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spin,
+  .pulse-dot,
+  .rise,
+  .live-dot::after,
+  .net-flow,
+  .net-node {
+    animation: none;
+  }
 }
