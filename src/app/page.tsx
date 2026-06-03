@@ -922,19 +922,19 @@ export default function Home() {
               )}
             </div>
 
-            {/* Withdrawal History — only when connected */}
+            {/* Pending Solana to Monero transfers — only when connected */}
             {isConnected && (
               <div className="xmr-card p-6">
                 <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
                   <svg className="w-5 h-5 text-[var(--muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
                   </svg>
-                  Solana -&gt; Monero History
+                  Pending Solana -&gt; Monero Transfers
                 </h2>
                 {withdrawals.length === 0 ? (
                   <div className="text-center py-8">
                     <div className="text-4xl mb-3 opacity-30">📤</div>
-                    <p className="text-[var(--muted)]">No Solana to Monero transfers yet</p>
+                    <p className="text-[var(--muted)]">No pending Solana to Monero transfers</p>
                   </div>
                 ) : (
                   <div className="space-y-4">

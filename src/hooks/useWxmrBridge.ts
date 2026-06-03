@@ -319,7 +319,7 @@ export function useWxmrBridge() {
     }
   }, [program]);
 
-  // Fetch all withdrawals for current user
+  // Fetch currently open withdrawal records for current user
   const fetchMyWithdrawals = useCallback(async (): Promise<WithdrawalInfo[]> => {
     if (!program || !wallet.publicKey) return [];
 
