@@ -7,6 +7,10 @@ import { useWxmrBridge, DepositAccountInfo, WithdrawalInfo, BridgeConfig } from 
 import { QRCodeSVG } from 'qrcode.react';
 import { SwapModal } from '@/components/SwapModal';
 
+const PICONERO_PER_XMR = BigInt('1000000000000');
+const MIN_WITHDRAW_XMR = '0.01';
+const MIN_WITHDRAW_PICONERO = BigInt('10000000000');
+
 // Monero Logo SVG component from cryptologos.cc
 function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
   return (
@@ -20,8 +24,18 @@ function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
 
 // Format piconero to XMR (12 decimal places)
 function formatXmr(piconero: bigint): string {
-  const xmr = Number(piconero) / 1e12;
+  const xmr = Number(piconero) / Number(PICONERO_PER_XMR);
   return xmr.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 12 });
+}
+
+function parseXmrToPiconero(amount: string): bigint | null {
+  const trimmed = amount.trim();
+  const match = trimmed.match(/^(?:(\d+)(?:\.(\d{0,12})?)?|\.(\d{1,12}))$/);
+  if (!match) return null;
+
+  const whole = match[1] ?? '0';
+  const fractional = match[2] ?? match[3] ?? '';
+  return BigInt(whole) * PICONERO_PER_XMR + BigInt(fractional.padEnd(12, '0') || '0');
 }
 
 // Format timestamp
@@ -407,6 +421,14 @@ export default function Home() {
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [xmrAddress, setXmrAddress] = useState('');
   const withdrawExactOut = true;
+  const parsedWithdrawAmount = parseXmrToPiconero(withdrawAmount);
+  const isWithdrawAmountBelowMinimum = parsedWithdrawAmount !== null
+    && parsedWithdrawAmount > BigInt(0)
+    && parsedWithdrawAmount < MIN_WITHDRAW_PICONERO;
+  const canRequestWithdrawal = !loading
+    && Boolean(withdrawAmount && xmrAddress)
+    && parsedWithdrawAmount !== null
+    && parsedWithdrawAmount >= MIN_WITHDRAW_PICONERO;
 
   // Modal states
   const [qrAddress, setQrAddress] = useState<string | null>(null);
@@ -536,17 +558,22 @@ export default function Home() {
       return;
     }
 
+    const amountPiconero = parseXmrToPiconero(withdrawAmount);
+    if (amountPiconero === null || amountPiconero <= BigInt(0)) {
+      setError('Invalid amount');
+      return;
+    }
+
+    if (amountPiconero < MIN_WITHDRAW_PICONERO) {
+      setError(`Minimum Solana to Monero transfer is ${MIN_WITHDRAW_XMR} XMR`);
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setSuccess(null);
 
     try {
-      const amountFloat = parseFloat(withdrawAmount);
-      if (isNaN(amountFloat) || amountFloat <= 0) {
-        throw new Error('Invalid amount');
-      }
-      const amountPiconero = BigInt(Math.floor(amountFloat * 1e12));
-
       if (amountPiconero > wxmrBalance) {
         throw new Error('Insufficient XMR balance');
       }
@@ -838,7 +865,7 @@ export default function Home() {
               ) : (
                 <>
                   <p className="text-[var(--muted)] mb-6">
-                    Burn XMR on Solana and receive native XMR at your specified address. Minimum: 0.01 XMR.
+                    Burn XMR on Solana and receive native XMR at your specified address. Minimum: {MIN_WITHDRAW_XMR} XMR.
                   </p>
                   <div className="space-y-5">
                     <div>
@@ -847,7 +874,7 @@ export default function Home() {
                         <input
                           type="number"
                           step="0.000000000001"
-                          min="0.01"
+                          min={MIN_WITHDRAW_XMR}
                           value={withdrawAmount}
                           onChange={(e) => setWithdrawAmount(e.target.value)}
                           placeholder="0.0"
@@ -863,6 +890,11 @@ export default function Home() {
                       <p className="text-xs text-[var(--muted)] mt-2">
                         Available: <span className="text-[#ff6600] font-medium">{formatXmr(wxmrBalance)} XMR</span>
                       </p>
+                      {isWithdrawAmountBelowMinimum && (
+                        <p className="text-xs text-red-400 mt-1">
+                          Minimum Solana to Monero transfer is {MIN_WITHDRAW_XMR} XMR.
+                        </p>
+                      )}
                     </div>
                     <div>
                       <label className="block text-sm font-semibold mb-2 uppercase tracking-wide text-[var(--muted)]">Monero Destination Address</label>
@@ -904,7 +936,7 @@ export default function Home() {
                     </div>
                     <button
                       onClick={handleWithdraw}
-                      disabled={loading || !withdrawAmount || !xmrAddress}
+                      disabled={!canRequestWithdrawal}
                       className="xmr-btn-primary w-full text-white px-6 py-3.5 rounded-lg font-semibold"
                     >
                       {loading ? (
