@@ -896,6 +896,93 @@ export type WxmrBridge = {
       ]
     },
     {
+      "name": "initialize",
+      "docs": [
+        "Initialize the bridge config and create the config-owned wXMR fee treasury."
+      ],
+      "discriminator": [
+        175,
+        175,
+        109,
+        31,
+        13,
+        152,
+        155,
+        237
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "wxmrMint",
+          "writable": true
+        },
+        {
+          "name": "feeTreasury",
+          "docs": [
+            "Treasury wXMR token account owned by the config PDA. Collects withdrawal fees."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  95,
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "tokenProgram",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        },
+        {
+          "name": "rent",
+          "address": "SysvarRent111111111111111111111111111111111"
+        }
+      ],
+      "args": []
+    },
+    {
       "name": "initializeAmm",
       "docs": [
         "Initialize the AMM pool (authority only)"
@@ -1191,6 +1278,87 @@ export type WxmrBridge = {
       ]
     },
     {
+      "name": "removeFeeOverride",
+      "docs": [
+        "admin function",
+        "Remove a user from the fee whitelist - they revert to the global fee.",
+        "Rent is refunded to the authority."
+      ],
+      "discriminator": [
+        237,
+        246,
+        238,
+        80,
+        226,
+        26,
+        85,
+        244
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "feeOverride",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  95,
+                  111,
+                  118,
+                  101,
+                  114,
+                  114,
+                  105,
+                  100,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "user",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
       "name": "removeLiquidity",
       "docs": [
         "Remove liquidity from the AMM (authority only)"
@@ -1364,6 +1532,66 @@ export type WxmrBridge = {
           "writable": true
         },
         {
+          "name": "feeTreasury",
+          "docs": [
+            "Config-owned treasury that receives the wXMR fee."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  95,
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "feeOverride",
+          "docs": [
+            "validated by seeds; the account may be uninitialized, in which case the",
+            "global fee applies. Read-only."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  95,
+                  111,
+                  118,
+                  101,
+                  114,
+                  114,
+                  105,
+                  100,
+                  101
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
           "name": "user",
           "writable": true,
           "signer": true
@@ -1447,6 +1675,34 @@ export type WxmrBridge = {
         {
           "name": "userTokenAccount",
           "writable": true
+        },
+        {
+          "name": "feeTreasury",
+          "docs": [
+            "Config-owned treasury that refunds the wXMR fee on revert."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  95,
+                  116,
+                  114,
+                  101,
+                  97,
+                  115,
+                  117,
+                  114,
+                  121
+                ]
+              }
+            ]
+          }
         },
         {
           "name": "user",
@@ -1608,6 +1864,150 @@ export type WxmrBridge = {
         {
           "name": "enabled",
           "type": "bool"
+        }
+      ]
+    },
+    {
+      "name": "setFeeBps",
+      "docs": [
+        "admin function",
+        "Set the withdrawal fee in basis points (0 = disabled, 10_000 = 100%)."
+      ],
+      "discriminator": [
+        2,
+        161,
+        245,
+        141,
+        111,
+        32,
+        39,
+        198
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "feeBps",
+          "type": "u16"
+        }
+      ]
+    },
+    {
+      "name": "setFeeOverride",
+      "docs": [
+        "admin function",
+        "Add or update a per-user withdrawal fee override (the \"fee whitelist\").",
+        "`fee_bps` is the custom fee for that user (0 = free withdrawals) and can be",
+        "adjusted at any time. Only the config authority may call this."
+      ],
+      "discriminator": [
+        238,
+        6,
+        44,
+        194,
+        50,
+        78,
+        93,
+        3
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "feeOverride",
+          "docs": [
+            "Per-user fee override PDA. Created on first set, updated thereafter."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  102,
+                  101,
+                  101,
+                  95,
+                  111,
+                  118,
+                  101,
+                  114,
+                  114,
+                  105,
+                  100,
+                  101
+                ]
+              },
+              {
+                "kind": "arg",
+                "path": "user"
+              }
+            ]
+          }
+        },
+        {
+          "name": "authority",
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        },
+        {
+          "name": "systemProgram",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "user",
+          "type": "pubkey"
+        },
+        {
+          "name": "feeBps",
+          "type": "u16"
         }
       ]
     },
@@ -1793,6 +2193,19 @@ export type WxmrBridge = {
       ]
     },
     {
+      "name": "feeOverride",
+      "discriminator": [
+        45,
+        33,
+        41,
+        248,
+        253,
+        236,
+        239,
+        85
+      ]
+    },
+    {
       "name": "withdrawalRecord",
       "discriminator": [
         88,
@@ -1896,6 +2309,45 @@ export type WxmrBridge = {
         247,
         28,
         44
+      ]
+    },
+    {
+      "name": "feeBpsUpdatedEvent",
+      "discriminator": [
+        76,
+        157,
+        212,
+        224,
+        3,
+        54,
+        39,
+        55
+      ]
+    },
+    {
+      "name": "feeOverrideRemovedEvent",
+      "discriminator": [
+        127,
+        181,
+        64,
+        26,
+        35,
+        3,
+        131,
+        172
+      ]
+    },
+    {
+      "name": "feeOverrideSetEvent",
+      "discriminator": [
+        3,
+        104,
+        73,
+        239,
+        148,
+        127,
+        209,
+        34
       ]
     },
     {
@@ -2272,6 +2724,13 @@ export type WxmrBridge = {
             "type": "u64"
           },
           {
+            "name": "feeBps",
+            "docs": [
+              "Withdrawal fee in basis points (0 = disabled). Fee is collected in wXMR."
+            ],
+            "type": "u16"
+          },
+          {
             "name": "bump",
             "type": "u8"
           }
@@ -2407,6 +2866,79 @@ export type WxmrBridge = {
           },
           {
             "name": "closed"
+          }
+        ]
+      }
+    },
+    {
+      "name": "feeBpsUpdatedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "authority",
+            "type": "pubkey"
+          },
+          {
+            "name": "oldFeeBps",
+            "type": "u16"
+          },
+          {
+            "name": "newFeeBps",
+            "type": "u16"
+          }
+        ]
+      }
+    },
+    {
+      "name": "feeOverride",
+      "docs": [
+        "Per-user withdrawal fee override - the admin-managed \"fee whitelist\".",
+        "Only writable by the config authority. When present, its fee_bps overrides the",
+        "global fee for that user (0 = free withdrawals)."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "feeBps",
+            "type": "u16"
+          },
+          {
+            "name": "bump",
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "feeOverrideRemovedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          }
+        ]
+      }
+    },
+    {
+      "name": "feeOverrideSetEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "user",
+            "type": "pubkey"
+          },
+          {
+            "name": "feeBps",
+            "type": "u16"
           }
         ]
       }
@@ -2583,6 +3115,10 @@ export type WxmrBridge = {
             "type": "u64"
           },
           {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
             "name": "xmrAddress",
             "type": "string"
           },
@@ -2615,6 +3151,10 @@ export type WxmrBridge = {
             "type": "u64"
           },
           {
+            "name": "fee",
+            "type": "u64"
+          },
+          {
             "name": "reason",
             "type": "string"
           }
@@ -2636,6 +3176,9 @@ export type WxmrBridge = {
           },
           {
             "name": "amount",
+            "docs": [
+              "Net amount (piconero) to be sent as XMR. Equals the burned wXMR (amount requested minus fee)."
+            ],
             "type": "u64"
           },
           {
@@ -2661,6 +3204,13 @@ export type WxmrBridge = {
           {
             "name": "createdAt",
             "type": "i64"
+          },
+          {
+            "name": "fee",
+            "docs": [
+              "wXMR fee transferred to the treasury at request time (0 if fee disabled)."
+            ],
+            "type": "u64"
           }
         ]
       }
