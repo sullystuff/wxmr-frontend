@@ -650,30 +650,36 @@ export default function Home() {
         )}
 
         {/* Tab Navigation — always visible */}
-        <div className="flex gap-2 mb-6">
+        <div className="flex flex-wrap gap-2 mb-6">
           <button
             onClick={() => setActiveTab('deposit')}
-            className={`xmr-tab px-6 py-2.5 rounded-lg font-semibold transition-all ${
+            className={`xmr-tab min-h-[3.5rem] min-w-[10.5rem] px-5 py-2.5 rounded-lg font-semibold transition-all flex flex-col items-center justify-center gap-0.5 leading-tight ${
               activeTab === 'deposit'
                 ? 'xmr-tab-active text-white'
                 : 'bg-[var(--card)] text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-white border border-[var(--border)]'
             }`}
           >
-            Monero -&gt; Solana
+            <span>Monero -&gt; Solana</span>
+            <span className={`text-xs font-medium ${activeTab === 'deposit' ? 'text-white/75' : 'text-[var(--muted)]'}`}>
+              Fee: 0%
+            </span>
           </button>
           <button
             onClick={() => setActiveTab('withdraw')}
-            className={`xmr-tab px-6 py-2.5 rounded-lg font-semibold transition-all ${
+            className={`xmr-tab min-h-[3.5rem] min-w-[10.5rem] px-5 py-2.5 rounded-lg font-semibold transition-all flex flex-col items-center justify-center gap-0.5 leading-tight ${
               activeTab === 'withdraw'
                 ? 'xmr-tab-active text-white'
                 : 'bg-[var(--card)] text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-white border border-[var(--border)]'
             }`}
           >
-            Solana -&gt; Monero
+            <span>Solana -&gt; Monero</span>
+            <span className={`text-xs font-medium ${activeTab === 'withdraw' ? 'text-white/75' : 'text-[var(--muted)]'}`}>
+              Fee: 0%
+            </span>
           </button>
           <button
             onClick={() => setShowSwapModal(true)}
-            className="xmr-tab px-6 py-2.5 rounded-lg font-semibold transition-all bg-[var(--card)] text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-white border border-[var(--border)] flex items-center gap-2"
+            className="xmr-tab min-h-[3.5rem] px-6 py-2.5 rounded-lg font-semibold transition-all bg-[var(--card)] text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-white border border-[var(--border)] flex items-center gap-2"
           >
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
