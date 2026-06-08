@@ -59,6 +59,7 @@ export interface BridgeConfig {
   wxmrMint: string;
   totalDeposits: bigint;
   totalWithdrawals: bigint;
+  feeBps: number;
 }
 
 export function useWxmrBridge() {
@@ -126,6 +127,7 @@ export function useWxmrBridge() {
           wxmrMint: config.wxmrMint.toBase58(),
           totalDeposits: BigInt(config.totalDeposits.toString()),
           totalWithdrawals: BigInt(config.totalWithdrawals.toString()),
+          feeBps: Number(config.feeBps),
         };
       }
 
@@ -148,6 +150,7 @@ export function useWxmrBridge() {
         wxmrMint: config.wxmrMint.toBase58(),
         totalDeposits: BigInt(config.totalDeposits.toString()),
         totalWithdrawals: BigInt(config.totalWithdrawals.toString()),
+        feeBps: Number(config.feeBps),
       };
     } catch (error) {
       console.error('Error fetching bridge config:', error);

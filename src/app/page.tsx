@@ -8,8 +8,10 @@ import { QRCodeSVG } from 'qrcode.react';
 import { SwapModal } from '@/components/SwapModal';
 
 const PICONERO_PER_XMR = BigInt('1000000000000');
+const BASIS_POINTS = BigInt(10000);
 const MIN_WITHDRAW_XMR = '0.01';
 const MIN_WITHDRAW_PICONERO = BigInt('10000000000');
+const DEFAULT_WITHDRAW_FEE_BPS = 10;
 
 // Monero Logo SVG component from cryptologos.cc
 function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
@@ -36,6 +38,58 @@ function parseXmrToPiconero(amount: string): bigint | null {
   const whole = match[1] ?? '0';
   const fractional = match[2] ?? match[3] ?? '';
   return BigInt(whole) * PICONERO_PER_XMR + BigInt(fractional.padEnd(12, '0') || '0');
+}
+
+function formatFeePercent(feeBps: number): string {
+  const percent = feeBps / 100;
+  return `${percent.toLocaleString('en-US', {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: 2,
+  })}%`;
+}
+
+function calculateWithdrawalFee(amount: bigint, feeBps: number, roundUp = false): bigint {
+  if (amount <= BigInt(0) || feeBps <= 0) return BigInt(0);
+
+  const numerator = amount * BigInt(feeBps);
+  if (!roundUp) return numerator / BASIS_POINTS;
+  return (numerator + BASIS_POINTS - BigInt(1)) / BASIS_POINTS;
+}
+
+function getWithdrawalPreview(amount: bigint | null, exactOut: boolean, feeBps: number) {
+  if (amount === null || amount <= BigInt(0)) return null;
+
+  if (exactOut) {
+    const feeAmount = calculateWithdrawalFee(amount, feeBps, true);
+    return {
+      burnAmount: amount + feeAmount,
+      receiveAmount: amount,
+      feeAmount,
+    };
+  }
+
+  const feeAmount = calculateWithdrawalFee(amount, feeBps);
+  return {
+    burnAmount: amount,
+    receiveAmount: amount > feeAmount ? amount - feeAmount : BigInt(0),
+    feeAmount,
+  };
+}
+
+function getMaxExactReceiveAmount(balance: bigint, feeBps: number): bigint {
+  if (balance <= BigInt(0) || feeBps <= 0) return balance;
+
+  const maxReceive = (balance * BASIS_POINTS) / (BASIS_POINTS + BigInt(feeBps));
+  let adjustedReceive = maxReceive;
+
+  while (
+    adjustedReceive > BigInt(0)
+    && adjustedReceive + calculateWithdrawalFee(adjustedReceive, feeBps, true) > balance
+  ) {
+    adjustedReceive -= BigInt(1);
+  }
+
+  return adjustedReceive;
 }
 
 // Format timestamp
@@ -420,15 +474,25 @@ export default function Home() {
   // Withdrawal form state
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [xmrAddress, setXmrAddress] = useState('');
-  const withdrawExactOut = true;
+  const [withdrawExactOut, setWithdrawExactOut] = useState(false);
+  const withdrawFeeBps = bridgeConfig?.feeBps ?? DEFAULT_WITHDRAW_FEE_BPS;
+  const withdrawFeePercent = formatFeePercent(withdrawFeeBps);
   const parsedWithdrawAmount = parseXmrToPiconero(withdrawAmount);
+  const withdrawPreview = getWithdrawalPreview(parsedWithdrawAmount, withdrawExactOut, withdrawFeeBps);
+  const maxWithdrawAmount = withdrawExactOut
+    ? getMaxExactReceiveAmount(wxmrBalance, withdrawFeeBps)
+    : wxmrBalance;
   const isWithdrawAmountBelowMinimum = parsedWithdrawAmount !== null
     && parsedWithdrawAmount > BigInt(0)
     && parsedWithdrawAmount < MIN_WITHDRAW_PICONERO;
+  const isWithdrawAmountOverBalance = withdrawPreview !== null
+    && withdrawPreview.burnAmount > wxmrBalance;
   const canRequestWithdrawal = !loading
     && Boolean(withdrawAmount && xmrAddress)
     && parsedWithdrawAmount !== null
-    && parsedWithdrawAmount >= MIN_WITHDRAW_PICONERO;
+    && parsedWithdrawAmount >= MIN_WITHDRAW_PICONERO
+    && withdrawPreview !== null
+    && !isWithdrawAmountOverBalance;
 
   // Modal states
   const [qrAddress, setQrAddress] = useState<string | null>(null);
@@ -569,12 +633,18 @@ export default function Home() {
       return;
     }
 
+    const preview = getWithdrawalPreview(amountPiconero, withdrawExactOut, withdrawFeeBps);
+    if (!preview) {
+      setError('Invalid amount');
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setSuccess(null);
 
     try {
-      if (amountPiconero > wxmrBalance) {
+      if (preview.burnAmount > wxmrBalance) {
         throw new Error('Insufficient XMR balance');
       }
 
@@ -674,7 +744,7 @@ export default function Home() {
           >
             <span>Solana -&gt; Monero</span>
             <span className={`text-xs font-medium ${activeTab === 'withdraw' ? 'text-white/75' : 'text-[var(--muted)]'}`}>
-              Fee: 0%
+              Fee: {withdrawFeePercent}
             </span>
           </button>
           <button
@@ -871,11 +941,13 @@ export default function Home() {
               ) : (
                 <>
                   <p className="text-[var(--muted)] mb-6">
-                    Burn XMR on Solana and receive native XMR at your specified address. Minimum: {MIN_WITHDRAW_XMR} XMR.
+                    Burn XMR on Solana and receive native XMR at your specified address. Solana -&gt; Monero fee: {withdrawFeePercent}. Minimum: {MIN_WITHDRAW_XMR} XMR.
                   </p>
                   <div className="space-y-5">
                     <div>
-                      <label className="block text-sm font-semibold mb-2 uppercase tracking-wide text-[var(--muted)]">Amount (XMR)</label>
+                      <label className="block text-sm font-semibold mb-2 uppercase tracking-wide text-[var(--muted)]">
+                        {withdrawExactOut ? 'Receive Amount (XMR)' : 'Burn Amount (XMR)'}
+                      </label>
                       <div className="flex gap-2">
                         <input
                           type="number"
@@ -887,7 +959,7 @@ export default function Home() {
                           className="xmr-input flex-1 px-4 py-3 text-white"
                         />
                         <button
-                          onClick={() => setWithdrawAmount(formatXmr(wxmrBalance))}
+                          onClick={() => setWithdrawAmount(formatXmr(maxWithdrawAmount))}
                           className="px-5 py-3 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg text-sm font-semibold transition-all"
                         >
                           MAX
@@ -901,6 +973,61 @@ export default function Home() {
                           Minimum Solana to Monero transfer is {MIN_WITHDRAW_XMR} XMR.
                         </p>
                       )}
+                      {isWithdrawAmountOverBalance && withdrawPreview && (
+                        <p className="text-xs text-red-400 mt-1">
+                          Requires {formatXmr(withdrawPreview.burnAmount)} XMR including the {withdrawFeePercent} fee.
+                        </p>
+                      )}
+                    </div>
+                    <label className="flex items-center justify-between gap-4 rounded-lg border border-[var(--border)] bg-[var(--background)] px-4 py-3 cursor-pointer">
+                      <div>
+                        <p className="text-sm font-semibold text-white">Exact receive</p>
+                        <p className="text-xs text-[var(--muted)] mt-1">
+                          {withdrawExactOut
+                            ? `You receive the entered amount and pay the ${withdrawFeePercent} fee on top.`
+                            : `The ${withdrawFeePercent} fee is deducted from the entered burn amount.`}
+                        </p>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={withdrawExactOut}
+                        onChange={(e) => setWithdrawExactOut(e.target.checked)}
+                        className="sr-only"
+                      />
+                      <span
+                        aria-hidden="true"
+                        className={`relative h-6 w-11 rounded-full border transition-colors ${
+                          withdrawExactOut
+                            ? 'border-[#ff6600] bg-[#ff6600]'
+                            : 'border-[var(--border)] bg-[var(--card)]'
+                        }`}
+                      >
+                        <span
+                          className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
+                            withdrawExactOut ? 'translate-x-5' : 'translate-x-0.5'
+                          }`}
+                        />
+                      </span>
+                    </label>
+                    <div className="space-y-2 border-y border-[var(--border)] py-3 text-sm">
+                      <div className="flex items-center justify-between gap-4">
+                        <span className="text-[var(--muted)]">Receive preview</span>
+                        <span className="font-semibold text-[#ff6600]">
+                          {withdrawPreview ? formatXmr(withdrawPreview.receiveAmount) : '0.0000'} XMR
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 text-xs">
+                        <span className="text-[var(--muted)]">{withdrawFeePercent} bridge fee</span>
+                        <span className="text-white">
+                          {withdrawPreview ? formatXmr(withdrawPreview.feeAmount) : '0.0000'} XMR
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-4 text-xs">
+                        <span className="text-[var(--muted)]">Solana XMR burned</span>
+                        <span className="text-white">
+                          {withdrawPreview ? formatXmr(withdrawPreview.burnAmount) : '0.0000'} XMR
+                        </span>
+                      </div>
                     </div>
                     <div>
                       <label className="block text-sm font-semibold mb-2 uppercase tracking-wide text-[var(--muted)]">Monero Destination Address</label>
@@ -923,22 +1050,6 @@ export default function Home() {
                           </svg>
                         </button>
                       </div>
-                    </div>
-                    <div className="rounded-lg border border-[var(--border)] bg-[var(--background)] p-3 opacity-80">
-                      <label className="flex items-start gap-3 cursor-not-allowed">
-                        <input
-                          type="checkbox"
-                          checked={withdrawExactOut}
-                          disabled
-                          className="mt-0.5 h-4 w-4 rounded border-[var(--border)] bg-[var(--card)] opacity-75"
-                        />
-                        <div>
-                          <p className="text-sm font-semibold text-white">Exact native XMR output</p>
-                          <p className="text-xs text-[var(--muted)] mt-1">
-                            When enabled, you receive exactly the entered XMR amount and the bridge covers network fees.
-                          </p>
-                        </div>
-                      </label>
                     </div>
                     <button
                       onClick={handleWithdraw}
