@@ -77,17 +77,28 @@ function getGrossAmountForExactReceive(receiveAmount: bigint, feeBps: number): b
   return grossAmount;
 }
 
-function getWithdrawalPreview(receiveAmount: bigint | null, exactOut: boolean, feeBps: number) {
-  if (receiveAmount === null || receiveAmount <= BigInt(0)) return null;
+function getWithdrawalPreview(amount: bigint | null, exactOut: boolean, feeBps: number) {
+  if (amount === null || amount <= BigInt(0)) return null;
 
-  const debitAmount = getGrossAmountForExactReceive(receiveAmount, feeBps);
-  if (debitAmount === null) return null;
+  if (exactOut) {
+    const debitAmount = getGrossAmountForExactReceive(amount, feeBps);
+    if (debitAmount === null) return null;
+
+    return {
+      requestAmount: amount,
+      burnAmount: debitAmount,
+      receiveAmount: amount,
+      feeAmount: debitAmount - amount,
+    };
+  }
+
+  const feeAmount = calculateWithdrawalFee(amount, feeBps);
 
   return {
-    requestAmount: exactOut ? receiveAmount : debitAmount,
-    burnAmount: debitAmount,
-    receiveAmount,
-    feeAmount: debitAmount - receiveAmount,
+    requestAmount: amount,
+    burnAmount: amount,
+    receiveAmount: amount > feeAmount ? amount - feeAmount : BigInt(0),
+    feeAmount,
   };
 }
 
@@ -486,17 +497,19 @@ export default function Home() {
   const withdrawFeePercent = formatFeePercent(withdrawFeeBps);
   const parsedWithdrawAmount = parseXmrToPiconero(withdrawAmount);
   const withdrawPreview = getWithdrawalPreview(parsedWithdrawAmount, withdrawExactOut, withdrawFeeBps);
-  const maxWithdrawAmount = getMaxExactReceiveAmount(wxmrBalance, withdrawFeeBps);
-  const isWithdrawAmountBelowMinimum = withdrawPreview !== null
-    && withdrawPreview.receiveAmount > BigInt(0)
-    && withdrawPreview.receiveAmount < MIN_WITHDRAW_PICONERO;
+  const maxWithdrawAmount = withdrawExactOut
+    ? getMaxExactReceiveAmount(wxmrBalance, withdrawFeeBps)
+    : wxmrBalance;
+  const isWithdrawAmountBelowMinimum = parsedWithdrawAmount !== null
+    && parsedWithdrawAmount > BigInt(0)
+    && parsedWithdrawAmount < MIN_WITHDRAW_PICONERO;
   const isWithdrawAmountOverBalance = withdrawPreview !== null
     && withdrawPreview.burnAmount > wxmrBalance;
   const canRequestWithdrawal = !loading
     && Boolean(withdrawAmount && xmrAddress)
     && parsedWithdrawAmount !== null
     && withdrawPreview !== null
-    && withdrawPreview.receiveAmount >= MIN_WITHDRAW_PICONERO
+    && parsedWithdrawAmount >= MIN_WITHDRAW_PICONERO
     && !isWithdrawAmountOverBalance;
 
   // Modal states
@@ -639,7 +652,7 @@ export default function Home() {
       return;
     }
 
-    if (preview.receiveAmount < MIN_WITHDRAW_PICONERO) {
+    if (amountPiconero < MIN_WITHDRAW_PICONERO) {
       setError(`Minimum Solana to Monero transfer is ${MIN_WITHDRAW_XMR} XMR`);
       return;
     }
@@ -986,11 +999,11 @@ export default function Home() {
                     </div>
                     <label className="flex items-center justify-between gap-4 rounded-lg border border-[var(--border)] bg-[var(--background)] px-4 py-3 cursor-pointer">
                       <div>
-                        <p className="text-sm font-semibold text-white">Fee handling</p>
+                        <p className="text-sm font-semibold text-white">Exact amount out</p>
                         <p className="text-xs text-[var(--muted)] mt-1">
                           {withdrawExactOut
                             ? `The withdrawal uses exact-receive mode and adds the ${withdrawFeePercent} fee on top.`
-                            : `The app includes the ${withdrawFeePercent} fee so you receive the entered amount.`}
+                            : `Exact amount out is disabled; the receive preview reflects the amount after the ${withdrawFeePercent} fee.`}
                         </p>
                       </div>
                       <input
