@@ -11,7 +11,7 @@ const PICONERO_PER_XMR = BigInt('1000000000000');
 const BASIS_POINTS = BigInt(10000);
 const MIN_WITHDRAW_XMR = '0.01';
 const MIN_WITHDRAW_PICONERO = BigInt('10000000000');
-const DEFAULT_WITHDRAW_FEE_BPS = 10;
+const WITHDRAW_FEE_BPS = 10;
 
 // Monero Logo SVG component from cryptologos.cc
 function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
@@ -475,7 +475,7 @@ export default function Home() {
   const [withdrawAmount, setWithdrawAmount] = useState('');
   const [xmrAddress, setXmrAddress] = useState('');
   const [withdrawExactOut, setWithdrawExactOut] = useState(false);
-  const withdrawFeeBps = bridgeConfig?.feeBps ?? DEFAULT_WITHDRAW_FEE_BPS;
+  const withdrawFeeBps = WITHDRAW_FEE_BPS;
   const withdrawFeePercent = formatFeePercent(withdrawFeeBps);
   const parsedWithdrawAmount = parseXmrToPiconero(withdrawAmount);
   const withdrawPreview = getWithdrawalPreview(parsedWithdrawAmount, withdrawExactOut, withdrawFeeBps);
