@@ -4,16 +4,9 @@ import { useState, useEffect, useMemo } from 'react';
 import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
 import {
-  createAssociatedTokenAccountIdempotentInstruction,
   getAssociatedTokenAddress,
   getAccount,
-  TOKEN_PROGRAM_ID,
 } from '@solana/spl-token';
-import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
-import type { Wallet as AnchorProviderWallet } from '@coral-xyz/anchor/dist/cjs/provider';
-import type { WxmrBridge } from '@/idl/wxmr_bridge';
-import IDL from '@/idl/wxmr_bridge.json';
-import { useAmmPool } from '@/hooks/useAmmPool';
 import { useJupiterQuote, JupiterQuote } from '@/hooks/useJupiterQuote';
 import { XMR_MINT, USDC_MINT } from '@/constants';
 
@@ -42,42 +35,27 @@ interface SwapModalProps {
   onClose: () => void;
 }
 
-type RouteSource = 'amm' | 'jupiter';
-const DEFAULT_ROUTE: RouteSource = 'jupiter';
-
 export function SwapModal({ isOpen, onClose }: SwapModalProps) {
   const { connection } = useConnection();
   const wallet = useWallet();
-  const { connected, publicKey, signTransaction, sendTransaction } = wallet;
+  const { connected, publicKey, signTransaction } = wallet;
   
-  const amm = useAmmPool();
   const jupiter = useJupiterQuote();
   
   // Extract stable function references to prevent effect loops
   const { getBuyQuote, getSellQuote } = jupiter;
-  const { simulateBuy, simulateSell, calculateBuyOutput, calculateSellOutput } = amm;
   
   // Swap direction: true = USDC -> XMR, false = XMR -> USDC
   const [isBuying, setIsBuying] = useState(true);
   const [inputAmount, setInputAmount] = useState('');
-  const [selectedRoute, setSelectedRoute] = useState<RouteSource>(DEFAULT_ROUTE);
   const [jupiterQuote, setJupiterQuote] = useState<JupiterQuote | null>(null);
+  const [isQuotePending, setIsQuotePending] = useState(false);
   const [isSwapping, setIsSwapping] = useState(false);
   const [txSignature, setTxSignature] = useState<string | null>(null);
-  const [showRoutes, setShowRoutes] = useState(false);
-  
-  // Simulation results
-  const [ammSimResult, setAmmSimResult] = useState<{ success: boolean; outputAmount: bigint; error?: string } | null>(null);
-  const [jupiterSimResult, setJupiterSimResult] = useState<{ success: boolean; outputAmount: bigint; error?: string } | null>(null);
-  const [isSimulating, setIsSimulating] = useState(false);
   
   // User balances
   const [userUsdcBalance, setUserUsdcBalance] = useState<bigint>(BigInt(0));
   const [userWxmrBalance, setUserWxmrBalance] = useState<bigint>(BigInt(0));
-  
-  // Pool liquidity
-  const [poolUsdcBalance, setPoolUsdcBalance] = useState<bigint>(BigInt(0));
-  const [poolWxmrBalance, setPoolWxmrBalance] = useState<bigint>(BigInt(0));
 
   // Fetch user balances
   useEffect(() => {
@@ -109,40 +87,13 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
     fetchBalances();
   }, [isOpen, publicKey, connection, txSignature]); // Refetch after swap
 
-  // Fetch pool liquidity
-  useEffect(() => {
-    if (!isOpen || !amm.pool) {
-      setPoolUsdcBalance(BigInt(0));
-      setPoolWxmrBalance(BigInt(0));
-      return;
-    }
-    
-    const fetchPoolBalances = async () => {
-      try {
-        const [usdcAccount, wxmrAccount] = await Promise.all([
-          getAccount(connection, amm.pool!.poolUsdc).catch(() => null),
-          getAccount(connection, amm.pool!.poolWxmr).catch(() => null),
-        ]);
-        
-        setPoolUsdcBalance(usdcAccount ? BigInt(usdcAccount.amount.toString()) : BigInt(0));
-        setPoolWxmrBalance(wxmrAccount ? BigInt(wxmrAccount.amount.toString()) : BigInt(0));
-      } catch (e) {
-        console.error('Error fetching pool balances:', e);
-      }
-    };
-    
-    fetchPoolBalances();
-  }, [isOpen, amm.pool, connection, txSignature]); // Refetch after swap
-
   // Reset on close
   useEffect(() => {
     if (!isOpen) {
       setInputAmount('');
       setTxSignature(null);
-      setAmmSimResult(null);
-      setJupiterSimResult(null);
-      setShowRoutes(false);
-      setSelectedRoute(DEFAULT_ROUTE);
+      setJupiterQuote(null);
+      setIsQuotePending(false);
     }
   }, [isOpen]);
 
@@ -167,208 +118,58 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
 
   // Fetch Jupiter quote
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      setIsQuotePending(false);
+      return;
+    }
+    let isStale = false;
+
+    if (parsedInput <= BigInt(0)) {
+      setJupiterQuote(null);
+      setIsQuotePending(false);
+      return;
+    }
+
+    setJupiterQuote(null);
+    setIsQuotePending(true);
+
     const fetchQuote = async () => {
-      if (parsedInput <= BigInt(0)) {
-        setJupiterQuote(null);
-        return;
-      }
       const taker = publicKey?.toBase58();
       const quote = isBuying
         ? await getBuyQuote(parsedInput, taker)
         : await getSellQuote(parsedInput, taker);
+      if (isStale) return;
       setJupiterQuote(quote);
+      setIsQuotePending(false);
     };
     // Wait 800ms after user stops typing before fetching quote
     const debounce = setTimeout(fetchQuote, 800);
-    return () => clearTimeout(debounce);
-  }, [parsedInput, isBuying, getBuyQuote, getSellQuote, isOpen, publicKey]);
-
-  // Simulate routes
-  useEffect(() => {
-    if (!isOpen) return;
-    let isStale = false;
-    
-    const simulate = async () => {
-      if (parsedInput <= BigInt(0) || !publicKey) {
-        setAmmSimResult(null);
-        setJupiterSimResult(null);
-        return;
-      }
-      setIsSimulating(true);
-      const [ammRes, jupRes] = await Promise.all([
-        (async () => {
-          // Show specific error if AMM not available
-          if (!amm.pool) {
-            return { success: false, outputAmount: BigInt(0), error: 'AMM not initialized' };
-          }
-          if (!amm.pool.enabled) {
-            return { success: false, outputAmount: BigInt(0), error: 'AMM disabled' };
-          }
-          // Try simulation anyway - let on-chain determine if price is stale
-          try {
-            return isBuying
-              ? await simulateBuy(parsedInput, publicKey)
-              : await simulateSell(parsedInput, publicKey);
-          } catch (e) {
-            console.error('AMM simulation error:', e);
-            return { success: false, outputAmount: BigInt(0), error: 'Simulation failed' };
-          }
-        })(),
-        (async () => {
-          if (!jupiterQuote) {
-            return { success: false, outputAmount: BigInt(0), error: 'No route' };
-          }
-          // Skip simulation - trust Jupiter quote directly
-          return { success: true, outputAmount: BigInt(jupiterQuote.outAmount) };
-        })(),
-      ]);
-      
-      // Ignore results if effect was cleaned up (stale)
-      if (isStale) return;
-      
-      console.log({ amm: ammRes, jupiter: jupRes });
-      
-      setAmmSimResult(ammRes);
-      setJupiterSimResult(jupRes);
-      setIsSimulating(false);
-
-      // Auto-select the best route only after Jupiter has a quote.
-      // Before that, keep the pre-quote default on Jupiter.
-      if (ammRes.success && jupRes.success) {
-        setSelectedRoute(ammRes.outputAmount >= jupRes.outputAmount ? 'amm' : 'jupiter');
-      } else if (jupRes.success) {
-        setSelectedRoute('jupiter');
-      }
-    };
-    
-    // Debounce simulation by 1 second after dependencies change
-    const debounce = setTimeout(simulate, 1000);
     return () => {
-      clearTimeout(debounce);
       isStale = true;
+      clearTimeout(debounce);
     };
-  }, [parsedInput, publicKey, isBuying, amm.pool, simulateBuy, simulateSell, jupiterQuote, isOpen]);
-
-  // Instant previews (no simulation needed)
-  const ammPreviewAmount = useMemo(() => {
-    if (parsedInput <= BigInt(0) || !amm.pool) return BigInt(0);
-    return isBuying 
-      ? calculateBuyOutput(parsedInput)
-      : calculateSellOutput(parsedInput);
-  }, [parsedInput, isBuying, amm.pool, calculateBuyOutput, calculateSellOutput]);
+  }, [parsedInput, isBuying, getBuyQuote, getSellQuote, isOpen, publicKey]);
 
   const jupiterPreviewAmount = useMemo(() => {
     if (!jupiterQuote) return BigInt(0);
     return BigInt(jupiterQuote.outAmount);
   }, [jupiterQuote]);
 
-  // Get output amount from simulation (more accurate than preview)
-  const ammOutputAmount = ammSimResult?.success ? ammSimResult.outputAmount : BigInt(0);
-  const jupiterOutputAmount = jupiterSimResult?.success ? jupiterSimResult.outputAmount : BigInt(0);
-
-  // Determine best route based on simulation if available, otherwise preview
-  const ammAmount = ammOutputAmount > BigInt(0) ? ammOutputAmount : ammPreviewAmount;
-  const jupiterAmount = jupiterOutputAmount > BigInt(0) ? jupiterOutputAmount : jupiterPreviewAmount;
-  
-  // Track which has the best rate
-  const ammIsBest = ammAmount > BigInt(0) && ammAmount >= jupiterAmount;
-  const jupiterIsBest = jupiterAmount > BigInt(0) && jupiterAmount > ammAmount;
-
-  // Auto-select the best preview route once Jupiter has a quote. Until then,
-  // keep the swap surface on Jupiter instead of jumping to the AMM estimate.
-  useEffect(() => {
-    if (ammSimResult || jupiterSimResult || jupiterAmount <= BigInt(0)) return;
-    if (ammIsBest) {
-      setSelectedRoute('amm');
-    } else if (jupiterIsBest) {
-      setSelectedRoute('jupiter');
-    }
-  }, [ammIsBest, jupiterIsBest, jupiterAmount, ammSimResult, jupiterSimResult]);
-
-  // Output amount for selected route
-  const outputAmount = useMemo(() => {
-    if (selectedRoute === 'amm') {
-      return ammOutputAmount > BigInt(0) ? ammOutputAmount : ammPreviewAmount;
-    }
-    if (selectedRoute === 'jupiter') {
-      return jupiterOutputAmount > BigInt(0) ? jupiterOutputAmount : jupiterPreviewAmount;
-    }
-    return BigInt(0);
-  }, [selectedRoute, ammOutputAmount, jupiterOutputAmount, ammPreviewAmount, jupiterPreviewAmount]);
+  const jupiterAmount = jupiterPreviewAmount;
   
   // Display amount and whether it's a preview
-  const displayAmount = outputAmount;
-  const isPreview = selectedRoute === 'amm' 
-    ? ammOutputAmount <= BigInt(0) && ammPreviewAmount > BigInt(0)
-    : jupiterOutputAmount <= BigInt(0) && jupiterPreviewAmount > BigInt(0);
+  const displayAmount = jupiterAmount;
+  const isPreview = jupiterAmount > BigInt(0);
+  const isFindingRoute = parsedInput > BigInt(0) && (isQuotePending || jupiter.loading);
 
-  // Allow swap when route is available
-  // AMM: trust preview since we have direct pool data (on-chain will validate)
-  // Jupiter: need simulation to confirm route works
-  const canSwap = connected && !isSwapping && (
-    (selectedRoute === 'amm' && ammAmount > BigInt(0) && amm.pool?.enabled) ||
-    (selectedRoute === 'jupiter' && jupiterSimResult?.success)
-  );
+  // AMM routes are disabled because the IDL no longer exposes AMM instructions.
+  const canSwap = connected && Boolean(signTransaction) && !isSwapping && jupiterAmount > BigInt(0);
 
   // Flip direction
   const flipDirection = () => {
     setIsBuying(!isBuying);
     setInputAmount('');
-    setSelectedRoute(DEFAULT_ROUTE);
-  };
-
-  // Execute AMM swap
-  const executeAmmSwap = async () => {
-    if (!publicKey || !amm.poolPda || !amm.pool) throw new Error('Not ready');
-    const providerWallet: AnchorProviderWallet = {
-      publicKey,
-      signTransaction: signTransaction ?? (async (tx) => tx),
-      signAllTransactions: wallet.signAllTransactions ?? (async (txs) => txs),
-    };
-    const provider = new AnchorProvider(connection, providerWallet, { commitment: 'confirmed' });
-    const program = new Program<WxmrBridge>(IDL as WxmrBridge, provider);
-    const userWxmr = await getAssociatedTokenAddress(XMR_MINT, publicKey);
-    const userUsdc = await getAssociatedTokenAddress(USDC_MINT, publicKey);
-    const outputAtaMint = isBuying ? XMR_MINT : USDC_MINT;
-    const outputAta = isBuying ? userWxmr : userUsdc;
-    const ensureOutputAtaIx = createAssociatedTokenAccountIdempotentInstruction(
-      publicKey,
-      outputAta,
-      publicKey,
-      outputAtaMint,
-      TOKEN_PROGRAM_ID
-    );
-
-    const tx = isBuying
-      ? await program.methods.buyWxmr(new BN(parsedInput.toString())).accountsPartial({
-          pool: amm.poolPda, user: publicKey, userWxmr, userUsdc,
-          poolWxmr: amm.pool.poolWxmr, poolUsdc: amm.pool.poolUsdc, tokenProgram: TOKEN_PROGRAM_ID,
-        }).preInstructions([ensureOutputAtaIx]).transaction()
-      : await program.methods.sellWxmr(new BN(parsedInput.toString())).accountsPartial({
-          pool: amm.poolPda, user: publicKey, userWxmr, userUsdc,
-          poolWxmr: amm.pool.poolWxmr, poolUsdc: amm.pool.poolUsdc, tokenProgram: TOKEN_PROGRAM_ID,
-        }).preInstructions([ensureOutputAtaIx]).transaction();
-
-    // Use wallet adapter's sendTransaction -- it handles signing, setting
-    // feePayer/blockhash, and sending in one step. This works reliably across
-    // all wallets (Phantom, Solflare, etc.) on all browsers including Chrome,
-    // unlike signTransaction which may be undefined for some wallet-standard wallets.
-    const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash('confirmed');
-    const sig = await sendTransaction(tx, connection);
-
-    // Confirm with the proper blockhash-aware method.
-    // If confirmation times out, the tx may still have landed -- return the sig either way.
-    try {
-      await connection.confirmTransaction({ signature: sig, blockhash, lastValidBlockHeight }, 'confirmed');
-    } catch (confirmErr) {
-      console.warn('Confirmation timed out, checking tx status...', confirmErr);
-      const status = await connection.getSignatureStatus(sig);
-      if (!status?.value?.confirmationStatus) {
-        throw confirmErr; // genuinely failed
-      }
-    }
-    return sig;
+    setJupiterQuote(null);
   };
 
   // Execute Jupiter swap via Ultra API
@@ -408,9 +209,10 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
     setIsSwapping(true);
     setTxSignature(null);
     try {
-      const sig = selectedRoute === 'amm' ? await executeAmmSwap() : await executeJupiterSwap();
+      const sig = await executeJupiterSwap();
       setTxSignature(sig);
       setInputAmount('');
+      setJupiterQuote(null);
     } catch (e) {
       const msg = e instanceof Error ? e.message.toLowerCase() : '';
       // Silently ignore user rejections
@@ -427,48 +229,13 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
     return num.toLocaleString('en-US', { maximumFractionDigits: decimals === 6 ? 2 : 6 });
   };
   
-  // Handle max button - cap at pool liquidity if needed
+  // Handle max button
   const handleMax = () => {
     const userBalance = isBuying ? userUsdcBalance : userWxmrBalance;
     const decimals = isBuying ? 6 : 12;
-    
-    // Calculate max input the pool can handle
-    let maxPoolCanHandle = userBalance;
-    if (amm.pool) {
-      if (isBuying) {
-        // Buying XMR: max USDC = poolWxmrBalance * buyPrice / 1e12
-        const buyPrice = amm.pool.buyPrice;
-        if (buyPrice > BigInt(0)) {
-          maxPoolCanHandle = (poolWxmrBalance * buyPrice) / BigInt('1000000000000');
-        }
-      } else {
-        // Selling XMR: max XMR = poolUsdcBalance * 1e12 / sellPrice
-        const sellPrice = amm.pool.sellPrice;
-        if (sellPrice > BigInt(0)) {
-          maxPoolCanHandle = (poolUsdcBalance * BigInt('1000000000000')) / sellPrice;
-        }
-      }
-    }
-    
-    // Use the smaller of user balance and pool capacity
-    const finalAmount = userBalance < maxPoolCanHandle ? userBalance : maxPoolCanHandle;
-    const formatted = (Number(finalAmount) / Math.pow(10, decimals)).toString();
+    const formatted = (Number(userBalance) / Math.pow(10, decimals)).toString();
     setInputAmount(formatted);
   };
-  
-  // Check if amount exceeds pool liquidity (for AMM)
-  const exceedsPoolLiquidity = useMemo(() => {
-    if (parsedInput <= BigInt(0)) return false;
-    if (isBuying) {
-      // Buying XMR - check if pool has enough XMR
-      const expectedOutput = calculateBuyOutput(parsedInput);
-      return expectedOutput > poolWxmrBalance;
-    } else {
-      // Selling XMR - check if pool has enough USDC
-      const expectedOutput = calculateSellOutput(parsedInput);
-      return expectedOutput > poolUsdcBalance;
-    }
-  }, [parsedInput, isBuying, poolWxmrBalance, poolUsdcBalance, calculateBuyOutput, calculateSellOutput]);
   
   // Check if amount exceeds user balance
   const exceedsUserBalance = useMemo(() => {
@@ -558,8 +325,8 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
           <div className="bg-[#12121f] rounded-2xl p-4">
             <div className="flex justify-between items-center mb-2">
               <span className="text-sm text-gray-400">You receive</span>
-              {isSimulating && <span className="text-xs text-gray-500">Finding best rate...</span>}
-              {isPreview && !isSimulating && <span className="text-xs text-gray-500">~estimate</span>}
+              {isFindingRoute && <span className="text-xs text-gray-500">Finding route...</span>}
+              {isPreview && !isFindingRoute && <span className="text-xs text-gray-500">~estimate</span>}
             </div>
             <div className="flex items-center gap-3">
               <span className={`flex-1 text-3xl font-medium ${isPreview ? 'text-gray-400' : 'text-white'}`}>
@@ -572,122 +339,29 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
             </div>
           </div>
 
-          {/* Route Info - Show when there's any route available */}
-          {parsedInput > BigInt(0) && (ammAmount > BigInt(0) || jupiterAmount > BigInt(0)) && (
-            <button
-              onClick={() => setShowRoutes(!showRoutes)}
-              className="w-full flex items-center justify-between px-4 py-3 bg-[#12121f] rounded-xl hover:bg-[#1a1a2a] transition-colors"
-            >
+          {/* AMM route selection is disabled because AMM instructions were removed from the IDL. */}
+          {parsedInput > BigInt(0) && jupiterAmount > BigInt(0) && (
+            <div className="w-full flex items-center justify-between px-4 py-3 bg-[#12121f] rounded-xl">
               <div className="flex items-center gap-2">
                 <svg className="w-4 h-4 text-gray-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6" />
                 </svg>
                 <span className="text-sm text-gray-400">
-                  via <span className="text-white">{selectedRoute === 'amm' ? 'XMR AMM' : 'Jupiter'}</span>
+                  via <span className="text-white">Jupiter</span>
                 </span>
-                {ammAmount > BigInt(0) && jupiterAmount > BigInt(0) && 
-                  ((selectedRoute === 'amm' && ammIsBest) || (selectedRoute === 'jupiter' && jupiterIsBest)) && (
-                  <span className="text-xs text-green-400 bg-green-400/10 px-2 py-0.5 rounded">Best</span>
-                )}
               </div>
-              <svg className={`w-4 h-4 text-gray-400 transition-transform ${showRoutes ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-              </svg>
-            </button>
-          )}
-
-          {/* Route Selection - sorted with best on top */}
-          {showRoutes && (
-            <div className="space-y-2 p-3 bg-[#12121f] rounded-xl">
-              {/* Best route first */}
-              {ammIsBest && ammAmount > BigInt(0) && (
-                <button
-                  onClick={() => { setSelectedRoute('amm'); setShowRoutes(false); }}
-                  className={`w-full flex items-center justify-between p-3 rounded-xl transition-colors ${
-                    selectedRoute === 'amm' ? 'bg-[#ff6600]/20 border border-[#ff6600]' : 'bg-[#1a1a2a] hover:bg-[#2a2a3a]'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <div>
-                      <p className="text-sm font-medium text-white">XMR AMM</p>
-                      <p className="text-xs text-gray-400">{ammOutputAmount > BigInt(0) ? 'Direct swap' : '~estimate'}</p>
-                    </div>
-                    {jupiterAmount > BigInt(0) && <span className="text-xs text-green-400 bg-green-400/10 px-2 py-0.5 rounded">Best</span>}
-                  </div>
-                  <span className="text-sm font-mono text-white">
-                    {formatAmount(ammAmount, outputToken.decimals)}
-                  </span>
-                </button>
-              )}
-              {jupiterIsBest && jupiterAmount > BigInt(0) && (
-                <button
-                  onClick={() => { setSelectedRoute('jupiter'); setShowRoutes(false); }}
-                  className={`w-full flex items-center justify-between p-3 rounded-xl transition-colors ${
-                    selectedRoute === 'jupiter' ? 'bg-[#ff6600]/20 border border-[#ff6600]' : 'bg-[#1a1a2a] hover:bg-[#2a2a3a]'
-                  }`}
-                >
-                  <div className="flex items-center gap-2">
-                    <div>
-                      <p className="text-sm font-medium text-white">Jupiter</p>
-                      <p className="text-xs text-gray-400">{jupiterOutputAmount > BigInt(0) ? 'DEX aggregator' : '~estimate'}</p>
-                    </div>
-                    {ammAmount > BigInt(0) && <span className="text-xs text-green-400 bg-green-400/10 px-2 py-0.5 rounded">Best</span>}
-                  </div>
-                  <span className="text-sm font-mono text-white">
-                    {formatAmount(jupiterAmount, outputToken.decimals)}
-                  </span>
-                </button>
-              )}
-              {/* Second best route */}
-              {!ammIsBest && ammAmount > BigInt(0) && (
-                <button
-                  onClick={() => { setSelectedRoute('amm'); setShowRoutes(false); }}
-                  className={`w-full flex items-center justify-between p-3 rounded-xl transition-colors ${
-                    selectedRoute === 'amm' ? 'bg-[#ff6600]/20 border border-[#ff6600]' : 'bg-[#1a1a2a] hover:bg-[#2a2a3a]'
-                  }`}
-                >
-                  <div>
-                    <p className="text-sm font-medium text-white">XMR AMM</p>
-                    <p className="text-xs text-gray-400">{ammOutputAmount > BigInt(0) ? 'Direct swap' : '~estimate'}</p>
-                  </div>
-                  <span className="text-sm font-mono text-white">
-                    {formatAmount(ammAmount, outputToken.decimals)}
-                  </span>
-                </button>
-              )}
-              {!jupiterIsBest && jupiterAmount > BigInt(0) && (
-                <button
-                  onClick={() => { setSelectedRoute('jupiter'); setShowRoutes(false); }}
-                  className={`w-full flex items-center justify-between p-3 rounded-xl transition-colors ${
-                    selectedRoute === 'jupiter' ? 'bg-[#ff6600]/20 border border-[#ff6600]' : 'bg-[#1a1a2a] hover:bg-[#2a2a3a]'
-                  }`}
-                >
-                  <div>
-                    <p className="text-sm font-medium text-white">Jupiter</p>
-                    <p className="text-xs text-gray-400">{jupiterOutputAmount > BigInt(0) ? 'DEX aggregator' : '~estimate'}</p>
-                  </div>
-                  <span className="text-sm font-mono text-white">
-                    {formatAmount(jupiterAmount, outputToken.decimals)}
-                  </span>
-                </button>
-              )}
-            </div>
-          )}
-
-          {/* Pool Liquidity Info */}
-          {amm.pool && (
-            <div className="flex justify-between text-xs text-gray-500 px-1">
-              <span>Pool: {formatAmount(poolWxmrBalance, 12)} XMR</span>
-              <span>{formatAmount(poolUsdcBalance, 6)} USDC</span>
+              <span className="text-sm font-mono text-white">
+                {formatAmount(jupiterAmount, outputToken.decimals)}
+              </span>
             </div>
           )}
 
           {/* Swap Button */}
           <button
             onClick={handleSwap}
-            disabled={!canSwap || exceedsUserBalance || (exceedsPoolLiquidity && selectedRoute === 'amm')}
+            disabled={!canSwap || exceedsUserBalance}
             className={`w-full py-4 rounded-2xl font-semibold text-lg transition-all ${
-              canSwap && !exceedsUserBalance && !(exceedsPoolLiquidity && selectedRoute === 'amm')
+              canSwap && !exceedsUserBalance
                 ? 'bg-gradient-to-r from-[#ff6600] to-[#ff8533] text-white hover:opacity-90'
                 : 'bg-[#2a2a4a] text-gray-500 cursor-not-allowed'
             }`}
@@ -700,13 +374,11 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
                   ? 'Enter amount'
                   : exceedsUserBalance
                     ? `Insufficient ${inputToken.symbol}`
-                    : exceedsPoolLiquidity && selectedRoute === 'amm'
-                      ? 'Exceeds pool liquidity'
-                      : selectedRoute === 'jupiter' && !jupiterSimResult?.success && jupiterAmount > BigInt(0)
-                        ? 'Verifying Jupiter route...'
-                        : displayAmount <= BigInt(0)
-                          ? 'No route available'
-                          : 'Swap'}
+                    : isFindingRoute || jupiter.loading
+                      ? 'Finding route...'
+                      : displayAmount <= BigInt(0)
+                        ? 'No route available'
+                        : 'Swap'}
           </button>
 
           {/* Success */}
@@ -724,11 +396,10 @@ export function SwapModal({ isOpen, onClose }: SwapModalProps) {
             </div>
           )}
 
-          {/* Debug info - only show if AMM has a real error (Jupiter failing is expected) */}
-          {parsedInput > BigInt(0) && ammAmount <= BigInt(0) && jupiterAmount <= BigInt(0) && !isSimulating && ammSimResult?.error && ammSimResult.error !== 'AMM not initialized' && (
+          {parsedInput > BigInt(0) && jupiter.error && displayAmount <= BigInt(0) && (
             <div className="p-3 bg-yellow-500/10 border border-yellow-500/30 rounded-xl text-xs text-yellow-400">
-              <p className="font-semibold mb-1">AMM unavailable:</p>
-              <p className="text-yellow-400/80">{ammSimResult.error}</p>
+              <p className="font-semibold mb-1">Route unavailable:</p>
+              <p className="text-yellow-400/80">{jupiter.error}</p>
             </div>
           )}
         </div>
