@@ -946,12 +946,12 @@ export default function Home() {
               ) : (
                 <>
                   <p className="text-[var(--muted)] mb-6">
-                    Burn XMR on Solana and receive native XMR at your specified address. Solana -&gt; Monero fee: {withdrawFeePercent}. Minimum: {MIN_WITHDRAW_XMR} XMR.
+                    Send XMR from Solana and receive native XMR at your specified address. Solana -&gt; Monero fee: {withdrawFeePercent}. Minimum: {MIN_WITHDRAW_XMR} XMR.
                   </p>
                   <div className="space-y-5">
                     <div>
                       <label className="block text-sm font-semibold mb-2 uppercase tracking-wide text-[var(--muted)]">
-                        {withdrawExactOut ? 'Receive Amount (XMR)' : 'Burn Amount (XMR)'}
+                        Receive Amount (XMR)
                       </label>
                       <div className="flex gap-2">
                         <input
@@ -986,11 +986,11 @@ export default function Home() {
                     </div>
                     <label className="flex items-center justify-between gap-4 rounded-lg border border-[var(--border)] bg-[var(--background)] px-4 py-3 cursor-pointer">
                       <div>
-                        <p className="text-sm font-semibold text-white">Exact receive</p>
+                        <p className="text-sm font-semibold text-white">Fee handling</p>
                         <p className="text-xs text-[var(--muted)] mt-1">
                           {withdrawExactOut
-                            ? `You receive the entered amount and pay the ${withdrawFeePercent} fee on top.`
-                            : `The ${withdrawFeePercent} fee is deducted from the entered burn amount.`}
+                            ? `The withdrawal uses exact-receive mode and adds the ${withdrawFeePercent} fee on top.`
+                            : `The app includes the ${withdrawFeePercent} fee so you receive the entered amount.`}
                         </p>
                       </div>
                       <input
@@ -1016,7 +1016,7 @@ export default function Home() {
                     </label>
                     <div className="space-y-2 border-y border-[var(--border)] py-3 text-sm">
                       <div className="flex items-center justify-between gap-4">
-                        <span className="text-[var(--muted)]">Receive preview</span>
+                        <span className="text-[var(--muted)]">Receive amount</span>
                         <span className="font-semibold text-[#ff6600]">
                           {withdrawPreview ? formatXmr(withdrawPreview.receiveAmount) : '0.0000'} XMR
                         </span>
@@ -1028,7 +1028,7 @@ export default function Home() {
                         </span>
                       </div>
                       <div className="flex items-center justify-between gap-4 text-xs">
-                        <span className="text-[var(--muted)]">Solana XMR burned</span>
+                        <span className="text-[var(--muted)]">Total Solana XMR required</span>
                         <span className="text-white">
                           {withdrawPreview ? formatXmr(withdrawPreview.burnAmount) : '0.0000'} XMR
                         </span>
