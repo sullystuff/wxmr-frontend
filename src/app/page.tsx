@@ -77,25 +77,17 @@ function getGrossAmountForExactReceive(receiveAmount: bigint, feeBps: number): b
   return grossAmount;
 }
 
-function getWithdrawalPreview(amount: bigint | null, exactOut: boolean, feeBps: number) {
-  if (amount === null || amount <= BigInt(0)) return null;
+function getWithdrawalPreview(receiveAmount: bigint | null, exactOut: boolean, feeBps: number) {
+  if (receiveAmount === null || receiveAmount <= BigInt(0)) return null;
 
-  if (exactOut) {
-    const burnAmount = getGrossAmountForExactReceive(amount, feeBps);
-    if (burnAmount === null) return null;
+  const debitAmount = getGrossAmountForExactReceive(receiveAmount, feeBps);
+  if (debitAmount === null) return null;
 
-    return {
-      burnAmount,
-      receiveAmount: amount,
-      feeAmount: burnAmount - amount,
-    };
-  }
-
-  const feeAmount = calculateWithdrawalFee(amount, feeBps);
   return {
-    burnAmount: amount,
-    receiveAmount: amount > feeAmount ? amount - feeAmount : BigInt(0),
-    feeAmount,
+    requestAmount: exactOut ? receiveAmount : debitAmount,
+    burnAmount: debitAmount,
+    receiveAmount,
+    feeAmount: debitAmount - receiveAmount,
   };
 }
 
@@ -494,9 +486,7 @@ export default function Home() {
   const withdrawFeePercent = formatFeePercent(withdrawFeeBps);
   const parsedWithdrawAmount = parseXmrToPiconero(withdrawAmount);
   const withdrawPreview = getWithdrawalPreview(parsedWithdrawAmount, withdrawExactOut, withdrawFeeBps);
-  const maxWithdrawAmount = withdrawExactOut
-    ? getMaxExactReceiveAmount(wxmrBalance, withdrawFeeBps)
-    : wxmrBalance;
+  const maxWithdrawAmount = getMaxExactReceiveAmount(wxmrBalance, withdrawFeeBps);
   const isWithdrawAmountBelowMinimum = withdrawPreview !== null
     && withdrawPreview.receiveAmount > BigInt(0)
     && withdrawPreview.receiveAmount < MIN_WITHDRAW_PICONERO;
@@ -663,7 +653,7 @@ export default function Home() {
         throw new Error('Insufficient XMR balance');
       }
 
-      const result = await requestWithdrawal(preview.burnAmount, xmrAddress, withdrawExactOut);
+      const result = await requestWithdrawal(preview.requestAmount, xmrAddress, withdrawExactOut);
       if (result) {
         setSuccess(`Solana to Monero bridge request created! TX: ${result.signature.slice(0, 20)}...`);
         setWithdrawAmount('');
