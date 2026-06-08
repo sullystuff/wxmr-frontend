@@ -14,101 +14,6 @@ export type WxmrBridge = {
   },
   "instructions": [
     {
-      "name": "addLiquidity",
-      "docs": [
-        "Add liquidity to the AMM (authority only)"
-      ],
-      "discriminator": [
-        181,
-        157,
-        89,
-        67,
-        143,
-        182,
-        52,
-        72
-      ],
-      "accounts": [
-        {
-          "name": "pool",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  109,
-                  109,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "authority",
-          "writable": true,
-          "signer": true,
-          "relations": [
-            "pool"
-          ]
-        },
-        {
-          "name": "authorityWxmr",
-          "docs": [
-            "Authority's wXMR token account"
-          ],
-          "writable": true
-        },
-        {
-          "name": "authorityUsdc",
-          "docs": [
-            "Authority's USDC token account"
-          ],
-          "writable": true
-        },
-        {
-          "name": "poolWxmr",
-          "docs": [
-            "Pool's wXMR token account"
-          ],
-          "writable": true,
-          "relations": [
-            "pool"
-          ]
-        },
-        {
-          "name": "poolUsdc",
-          "docs": [
-            "Pool's USDC token account"
-          ],
-          "writable": true,
-          "relations": [
-            "pool"
-          ]
-        },
-        {
-          "name": "tokenProgram",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        }
-      ],
-      "args": [
-        {
-          "name": "wxmrAmount",
-          "type": "u64"
-        },
-        {
-          "name": "usdcAmount",
-          "type": "u64"
-        }
-      ]
-    },
-    {
       "name": "assignDepositAddress",
       "docs": [
         "admin function"
@@ -158,94 +63,6 @@ export type WxmrBridge = {
         {
           "name": "xmrAddress",
           "type": "string"
-        }
-      ]
-    },
-    {
-      "name": "buyWxmr",
-      "docs": [
-        "Buy wXMR with USDC"
-      ],
-      "discriminator": [
-        209,
-        134,
-        9,
-        71,
-        64,
-        91,
-        200,
-        53
-      ],
-      "accounts": [
-        {
-          "name": "pool",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  109,
-                  109,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "user",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "userWxmr",
-          "docs": [
-            "User's wXMR token account (receives wXMR)"
-          ],
-          "writable": true
-        },
-        {
-          "name": "userUsdc",
-          "docs": [
-            "User's USDC token account (pays USDC)"
-          ],
-          "writable": true
-        },
-        {
-          "name": "poolWxmr",
-          "docs": [
-            "Pool's wXMR token account"
-          ],
-          "writable": true,
-          "relations": [
-            "pool"
-          ]
-        },
-        {
-          "name": "poolUsdc",
-          "docs": [
-            "Pool's USDC token account"
-          ],
-          "writable": true,
-          "relations": [
-            "pool"
-          ]
-        },
-        {
-          "name": "tokenProgram",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        }
-      ],
-      "args": [
-        {
-          "name": "usdcAmount",
-          "type": "u64"
         }
       ]
     },
@@ -668,6 +485,13 @@ export type WxmrBridge = {
     {
       "name": "createAuditRecord",
       "docs": [
+        "Initialize the AMM pool (authority only)",
+        "Add liquidity to the AMM (authority only)",
+        "Remove liquidity from the AMM (authority only)",
+        "Update AMM prices (authority only - oracle)",
+        "Enable or disable AMM trading (authority only)",
+        "Buy wXMR with USDC",
+        "Sell wXMR for USDC",
         "Create an audit record for epoch consolidation (authority only)",
         "Account size is dynamic based on initial data length"
       ],
@@ -896,248 +720,6 @@ export type WxmrBridge = {
       ]
     },
     {
-      "name": "initialize",
-      "docs": [
-        "Initialize the bridge config and create the config-owned wXMR fee treasury."
-      ],
-      "discriminator": [
-        175,
-        175,
-        109,
-        31,
-        13,
-        152,
-        155,
-        237
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "wxmrMint",
-          "writable": true
-        },
-        {
-          "name": "feeTreasury",
-          "docs": [
-            "Treasury wXMR token account owned by the config PDA. Collects withdrawal fees."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  102,
-                  101,
-                  101,
-                  95,
-                  116,
-                  114,
-                  101,
-                  97,
-                  115,
-                  117,
-                  114,
-                  121
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "authority",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "tokenProgram",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        },
-        {
-          "name": "systemProgram",
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "rent",
-          "address": "SysvarRent111111111111111111111111111111111"
-        }
-      ],
-      "args": []
-    },
-    {
-      "name": "initializeAmm",
-      "docs": [
-        "Initialize the AMM pool (authority only)"
-      ],
-      "discriminator": [
-        44,
-        175,
-        253,
-        31,
-        47,
-        138,
-        50,
-        68
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "docs": [
-            "Bridge config (to validate wXMR mint)"
-          ],
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "pool",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  109,
-                  109,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "authority",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "wxmrMint",
-          "docs": [
-            "wXMR mint (must match bridge config mint)"
-          ]
-        },
-        {
-          "name": "usdcMint",
-          "docs": [
-            "USDC mint"
-          ]
-        },
-        {
-          "name": "poolWxmr",
-          "docs": [
-            "Pool's wXMR token account (created as PDA-owned ATA)"
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  109,
-                  109,
-                  95,
-                  119,
-                  120,
-                  109,
-                  114
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "pool"
-              }
-            ]
-          }
-        },
-        {
-          "name": "poolUsdc",
-          "docs": [
-            "Pool's USDC token account (created as PDA-owned ATA)"
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  109,
-                  109,
-                  95,
-                  117,
-                  115,
-                  100,
-                  99
-                ]
-              },
-              {
-                "kind": "account",
-                "path": "pool"
-              }
-            ]
-          }
-        },
-        {
-          "name": "tokenProgram",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        },
-        {
-          "name": "systemProgram",
-          "address": "11111111111111111111111111111111"
-        },
-        {
-          "name": "rent",
-          "address": "SysvarRent111111111111111111111111111111111"
-        }
-      ],
-      "args": [
-        {
-          "name": "initialBuyPrice",
-          "type": "u64"
-        },
-        {
-          "name": "initialSellPrice",
-          "type": "u64"
-        }
-      ]
-    },
-    {
       "name": "markWithdrawalSending",
       "docs": [
         "Backend marks withdrawal as sending BEFORE attempting XMR transfer",
@@ -1359,106 +941,15 @@ export type WxmrBridge = {
       ]
     },
     {
-      "name": "removeLiquidity",
-      "docs": [
-        "Remove liquidity from the AMM (authority only)"
-      ],
-      "discriminator": [
-        80,
-        85,
-        209,
-        72,
-        24,
-        206,
-        177,
-        108
-      ],
-      "accounts": [
-        {
-          "name": "pool",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  109,
-                  109,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "authority",
-          "writable": true,
-          "signer": true,
-          "relations": [
-            "pool"
-          ]
-        },
-        {
-          "name": "authorityWxmr",
-          "docs": [
-            "Authority's wXMR token account"
-          ],
-          "writable": true
-        },
-        {
-          "name": "authorityUsdc",
-          "docs": [
-            "Authority's USDC token account"
-          ],
-          "writable": true
-        },
-        {
-          "name": "poolWxmr",
-          "docs": [
-            "Pool's wXMR token account"
-          ],
-          "writable": true,
-          "relations": [
-            "pool"
-          ]
-        },
-        {
-          "name": "poolUsdc",
-          "docs": [
-            "Pool's USDC token account"
-          ],
-          "writable": true,
-          "relations": [
-            "pool"
-          ]
-        },
-        {
-          "name": "tokenProgram",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        }
-      ],
-      "args": [
-        {
-          "name": "wxmrAmount",
-          "type": "u64"
-        },
-        {
-          "name": "usdcAmount",
-          "type": "u64"
-        }
-      ]
-    },
-    {
       "name": "requestWithdrawal",
       "docs": [
-        "Request withdrawal - burns wXMR and creates a withdrawal PDA",
-        "If exact_out is true, the user receives exactly `amount` XMR and the bridge absorbs the network fee.",
-        "If exact_out is false (default), the network fee is subtracted from the output."
+        "Request withdrawal - burns wXMR and creates a withdrawal PDA.",
+        "`exact_out` selects how `amount` relates to the protocol fee:",
+        "- false (fee-inclusive): `amount` is the total wXMR debited; the fee is taken",
+        "out of it and the remaining net = amount - fee is burned and paid out as XMR.",
+        "- true  (fee-exclusive): `amount` is the exact net XMR the user receives (and",
+        "burns); the debit is grossed up so gross - fee == amount, i.e.",
+        "gross = amount / (1 - fee_bps/denom). The user spends `amount + fee` wXMR total."
       ],
       "discriminator": [
         251,
@@ -1728,148 +1219,17 @@ export type WxmrBridge = {
       ]
     },
     {
-      "name": "sellWxmr",
-      "docs": [
-        "Sell wXMR for USDC"
-      ],
-      "discriminator": [
-        46,
-        182,
-        39,
-        31,
-        193,
-        69,
-        175,
-        175
-      ],
-      "accounts": [
-        {
-          "name": "pool",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  109,
-                  109,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "user",
-          "writable": true,
-          "signer": true
-        },
-        {
-          "name": "userWxmr",
-          "docs": [
-            "User's wXMR token account (pays wXMR)"
-          ],
-          "writable": true
-        },
-        {
-          "name": "userUsdc",
-          "docs": [
-            "User's USDC token account (receives USDC)"
-          ],
-          "writable": true
-        },
-        {
-          "name": "poolWxmr",
-          "docs": [
-            "Pool's wXMR token account"
-          ],
-          "writable": true,
-          "relations": [
-            "pool"
-          ]
-        },
-        {
-          "name": "poolUsdc",
-          "docs": [
-            "Pool's USDC token account"
-          ],
-          "writable": true,
-          "relations": [
-            "pool"
-          ]
-        },
-        {
-          "name": "tokenProgram",
-          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
-        }
-      ],
-      "args": [
-        {
-          "name": "wxmrAmount",
-          "type": "u64"
-        }
-      ]
-    },
-    {
-      "name": "setAmmEnabled",
-      "docs": [
-        "Enable or disable AMM trading (authority only)"
-      ],
-      "discriminator": [
-        85,
-        51,
-        50,
-        10,
-        77,
-        216,
-        202,
-        217
-      ],
-      "accounts": [
-        {
-          "name": "pool",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  109,
-                  109,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "authority",
-          "signer": true,
-          "relations": [
-            "pool"
-          ]
-        }
-      ],
-      "args": [
-        {
-          "name": "enabled",
-          "type": "bool"
-        }
-      ]
-    },
-    {
       "name": "setFeeBps",
       "docs": [
+        "Initialize the bridge config and create the config-owned wXMR fee treasury.",
+        "admin function",
+        "Grow an existing BridgeConfig account that predates the `fee_bps` field so",
+        "the current program can deserialize it. Reallocs the account to the new size",
+        "and zero-fills the appended bytes (fee_bps = 0). Idempotent and authority-only.",
+        "admin function",
+        "Create the config-owned wXMR fee treasury for a deployment that was",
+        "initialized before the fee feature existed (initialize cannot be re-run).",
+        "Idempotent - a no-op if the treasury already exists.",
         "admin function",
         "Set the withdrawal fee in basis points (0 = disabled, 10_000 = 100%)."
       ],
@@ -2012,62 +1372,6 @@ export type WxmrBridge = {
       ]
     },
     {
-      "name": "updatePrice",
-      "docs": [
-        "Update AMM prices (authority only - oracle)"
-      ],
-      "discriminator": [
-        61,
-        34,
-        117,
-        155,
-        75,
-        34,
-        123,
-        208
-      ],
-      "accounts": [
-        {
-          "name": "pool",
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  97,
-                  109,
-                  109,
-                  95,
-                  112,
-                  111,
-                  111,
-                  108
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "authority",
-          "signer": true,
-          "relations": [
-            "pool"
-          ]
-        }
-      ],
-      "args": [
-        {
-          "name": "newBuyPrice",
-          "type": "u64"
-        },
-        {
-          "name": "newSellPrice",
-          "type": "u64"
-        }
-      ]
-    },
-    {
       "name": "updateTokenMetadata",
       "docs": [
         "admin function"
@@ -2140,19 +1444,6 @@ export type WxmrBridge = {
     }
   ],
   "accounts": [
-    {
-      "name": "ammPool",
-      "discriminator": [
-        54,
-        82,
-        185,
-        138,
-        179,
-        191,
-        211,
-        169
-      ]
-    },
     {
       "name": "auditRecord",
       "discriminator": [
@@ -2536,100 +1827,6 @@ export type WxmrBridge = {
       }
     },
     {
-      "name": "ammPool",
-      "type": {
-        "kind": "struct",
-        "fields": [
-          {
-            "name": "authority",
-            "docs": [
-              "Authority who can manage liquidity and prices"
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "wxmrMint",
-            "docs": [
-              "wXMR mint address"
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "usdcMint",
-            "docs": [
-              "USDC mint address"
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "poolWxmr",
-            "docs": [
-              "Pool's wXMR token account (PDA-owned)"
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "poolUsdc",
-            "docs": [
-              "Pool's USDC token account (PDA-owned)"
-            ],
-            "type": "pubkey"
-          },
-          {
-            "name": "buyPrice",
-            "docs": [
-              "Buy price: USDC (6 decimals) per 1 wXMR (1e12 piconero)",
-              "E.g., 150_000_000 = $150 per XMR"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "sellPrice",
-            "docs": [
-              "Sell price: USDC (6 decimals) per 1 wXMR (1e12 piconero)",
-              "Usually slightly lower than buy_price (spread)"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "lastPriceUpdate",
-            "docs": [
-              "Unix timestamp of last price update (for staleness check)"
-            ],
-            "type": "i64"
-          },
-          {
-            "name": "enabled",
-            "docs": [
-              "Whether trading is enabled"
-            ],
-            "type": "bool"
-          },
-          {
-            "name": "bump",
-            "docs": [
-              "Bump seed for PDA"
-            ],
-            "type": "u8"
-          },
-          {
-            "name": "totalWxmrVolume",
-            "docs": [
-              "Total wXMR volume traded (for stats)"
-            ],
-            "type": "u64"
-          },
-          {
-            "name": "totalUsdcVolume",
-            "docs": [
-              "Total USDC volume traded (for stats)"
-            ],
-            "type": "u64"
-          }
-        ]
-      }
-    },
-    {
       "name": "auditRecord",
       "docs": [
         "Audit record for epoch consolidation proof",
@@ -2724,15 +1921,17 @@ export type WxmrBridge = {
             "type": "u64"
           },
           {
-            "name": "feeBps",
-            "docs": [
-              "Withdrawal fee in basis points (0 = disabled). Fee is collected in wXMR."
-            ],
-            "type": "u16"
-          },
-          {
             "name": "bump",
             "type": "u8"
+          },
+          {
+            "name": "feeBps",
+            "docs": [
+              "Withdrawal fee in basis points (0 = disabled). Fee is collected in wXMR.",
+              "NOTE: kept LAST so the account can be grown in place via realloc + zero-fill",
+              "(migrate_config) for configs created before this field existed."
+            ],
+            "type": "u16"
           }
         ]
       }
