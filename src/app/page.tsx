@@ -48,23 +48,46 @@ function formatFeePercent(feeBps: number): string {
   })}%`;
 }
 
-function calculateWithdrawalFee(amount: bigint, feeBps: number, roundUp = false): bigint {
+function calculateWithdrawalFee(amount: bigint, feeBps: number): bigint {
   if (amount <= BigInt(0) || feeBps <= 0) return BigInt(0);
 
-  const numerator = amount * BigInt(feeBps);
-  if (!roundUp) return numerator / BASIS_POINTS;
-  return (numerator + BASIS_POINTS - BigInt(1)) / BASIS_POINTS;
+  return amount * BigInt(feeBps) / BASIS_POINTS;
+}
+
+function getGrossAmountForExactReceive(receiveAmount: bigint, feeBps: number): bigint | null {
+  if (receiveAmount <= BigInt(0)) return null;
+  if (feeBps <= 0) return receiveAmount;
+
+  const feeBpsBigInt = BigInt(feeBps);
+  const netBps = BASIS_POINTS - feeBpsBigInt;
+  if (netBps <= BigInt(0)) return null;
+
+  let grossAmount = (receiveAmount * BASIS_POINTS + netBps - BigInt(1)) / netBps;
+
+  while (grossAmount > BigInt(0)) {
+    const netAmount = grossAmount - calculateWithdrawalFee(grossAmount, feeBps);
+    if (netAmount <= receiveAmount) break;
+    grossAmount -= BigInt(1);
+  }
+
+  while (grossAmount - calculateWithdrawalFee(grossAmount, feeBps) < receiveAmount) {
+    grossAmount += BigInt(1);
+  }
+
+  return grossAmount;
 }
 
 function getWithdrawalPreview(amount: bigint | null, exactOut: boolean, feeBps: number) {
   if (amount === null || amount <= BigInt(0)) return null;
 
   if (exactOut) {
-    const feeAmount = calculateWithdrawalFee(amount, feeBps, true);
+    const burnAmount = getGrossAmountForExactReceive(amount, feeBps);
+    if (burnAmount === null) return null;
+
     return {
-      burnAmount: amount + feeAmount,
+      burnAmount,
       receiveAmount: amount,
-      feeAmount,
+      feeAmount: burnAmount - amount,
     };
   }
 
@@ -77,19 +100,11 @@ function getWithdrawalPreview(amount: bigint | null, exactOut: boolean, feeBps: 
 }
 
 function getMaxExactReceiveAmount(balance: bigint, feeBps: number): bigint {
-  if (balance <= BigInt(0) || feeBps <= 0) return balance;
+  if (balance <= BigInt(0)) return BigInt(0);
+  if (feeBps <= 0) return balance;
+  if (BigInt(feeBps) >= BASIS_POINTS) return BigInt(0);
 
-  const maxReceive = (balance * BASIS_POINTS) / (BASIS_POINTS + BigInt(feeBps));
-  let adjustedReceive = maxReceive;
-
-  while (
-    adjustedReceive > BigInt(0)
-    && adjustedReceive + calculateWithdrawalFee(adjustedReceive, feeBps, true) > balance
-  ) {
-    adjustedReceive -= BigInt(1);
-  }
-
-  return adjustedReceive;
+  return balance - calculateWithdrawalFee(balance, feeBps);
 }
 
 // Format timestamp
@@ -482,16 +497,16 @@ export default function Home() {
   const maxWithdrawAmount = withdrawExactOut
     ? getMaxExactReceiveAmount(wxmrBalance, withdrawFeeBps)
     : wxmrBalance;
-  const isWithdrawAmountBelowMinimum = parsedWithdrawAmount !== null
-    && parsedWithdrawAmount > BigInt(0)
-    && parsedWithdrawAmount < MIN_WITHDRAW_PICONERO;
+  const isWithdrawAmountBelowMinimum = withdrawPreview !== null
+    && withdrawPreview.receiveAmount > BigInt(0)
+    && withdrawPreview.receiveAmount < MIN_WITHDRAW_PICONERO;
   const isWithdrawAmountOverBalance = withdrawPreview !== null
     && withdrawPreview.burnAmount > wxmrBalance;
   const canRequestWithdrawal = !loading
     && Boolean(withdrawAmount && xmrAddress)
     && parsedWithdrawAmount !== null
-    && parsedWithdrawAmount >= MIN_WITHDRAW_PICONERO
     && withdrawPreview !== null
+    && withdrawPreview.receiveAmount >= MIN_WITHDRAW_PICONERO
     && !isWithdrawAmountOverBalance;
 
   // Modal states
@@ -628,14 +643,14 @@ export default function Home() {
       return;
     }
 
-    if (amountPiconero < MIN_WITHDRAW_PICONERO) {
-      setError(`Minimum Solana to Monero transfer is ${MIN_WITHDRAW_XMR} XMR`);
-      return;
-    }
-
     const preview = getWithdrawalPreview(amountPiconero, withdrawExactOut, withdrawFeeBps);
     if (!preview) {
       setError('Invalid amount');
+      return;
+    }
+
+    if (preview.receiveAmount < MIN_WITHDRAW_PICONERO) {
+      setError(`Minimum Solana to Monero transfer is ${MIN_WITHDRAW_XMR} XMR`);
       return;
     }
 
@@ -648,7 +663,7 @@ export default function Home() {
         throw new Error('Insufficient XMR balance');
       }
 
-      const result = await requestWithdrawal(amountPiconero, xmrAddress, withdrawExactOut);
+      const result = await requestWithdrawal(preview.burnAmount, xmrAddress, withdrawExactOut);
       if (result) {
         setSuccess(`Solana to Monero bridge request created! TX: ${result.signature.slice(0, 20)}...`);
         setWithdrawAmount('');
