@@ -55,9 +55,11 @@ Public deployment: [main site](https://wxmr.io) or [.onion](https://aefvno77q6d5
 1. Connect your Solana wallet
 2. Switch to the "Solana -> Monero" tab
 3. Enter amount and your XMR address
-4. Click "Bridge to Monero"
-5. Your XMR on Solana will be burned
-6. XMR will be sent to your address
+4. Review the 0.1% Solana -> Monero fee and receive preview
+5. Enable exact receive if you want to pay the fee on top and receive the entered amount
+6. Click "Bridge to Monero"
+7. Your XMR on Solana will be burned
+8. XMR will be sent to your address
 
 ### Swapping
 
