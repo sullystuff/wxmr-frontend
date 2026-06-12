@@ -59,7 +59,7 @@ Public deployment: [main site](https://wxmr.io) or [.onion](https://aefvno77q6d5
 5. Enable exact receive if you want to pay the fee on top and receive the entered amount
 6. Click "Bridge to Monero"
 7. Your XMR on Solana will be burned
-8. XMR will be sent to your address
+8. XMR on mainnet Monero network will be sent to your address
 
 ### Swapping
 
