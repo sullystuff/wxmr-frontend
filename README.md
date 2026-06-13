@@ -1,114 +1,79 @@
-# Monero Bridge Frontend
+# wXMR Monorepo
 
-A modern web interface for bridging native Monero (XMR) to and from the Monero token on Solana.
+Turborepo monorepo for the wXMR web apps: the Monero <-> Solana bridge and the standalone swap site.
 
-Public deployment: [main site](https://wxmr.io) or [.onion](https://aefvno77q6d5v6sbzjgqnpfzxvxfu64tub6txr4cohwmqu4vpzyoayad.onion)
+## Structure
 
-## Features
-
-- Connect Solana wallet (Phantom, Solflare)
-- Create bridge addresses for native XMR
-- View bridge status and balances
-- Bridge Solana XMR back to native XMR
-- Swap XMR ↔ USDC via AMM pool or Jupiter aggregator
-- QR code generation and scanning for addresses
-- Transparency page with reserve verification
-- Real-time balance updates
-
-## Getting Started
-
-1. **Install dependencies:**
-   ```bash
-   npm install
-   ```
-
-2. **Configure environment:**
-   ```bash
-   cp .env.example .env.local
-   ```
-   
-   Edit `.env.local` with your settings:
-   - `NEXT_PUBLIC_SOLANA_RPC_URL` - Solana RPC endpoint
-   - `NEXT_PUBLIC_JUPITER_API_KEY` - (Optional) Jupiter API key for swap routing
-   - `NEXT_PUBLIC_JUPITER_REFERRAL_ACCOUNT` - (Optional) Jupiter referral account for swap fees
-   - `NEXT_PUBLIC_JUPITER_REFERRAL_FEE` - (Optional) Jupiter referral fee percentage
-
-3. **Run development server:**
-   ```bash
-   npm run dev
-   ```
-
-4. Open [http://localhost:3000](http://localhost:3000)
-
-## Usage
-
-### Bridging Monero to Solana
-
-1. Connect your Solana wallet
-2. Click "Create Bridge Address"
-3. Send XMR to the provided address (minimum 0.01 XMR)
-4. Wait for confirmations (20 blocks)
-5. XMR on Solana will be minted to your wallet
-
-### Bridging Solana XMR to Monero
-
-1. Connect your Solana wallet
-2. Switch to the "Solana -> Monero" tab
-3. Enter amount and your XMR address
-4. Review the 0.1% Solana -> Monero fee and receive preview
-5. Enable exact receive if you want to pay the fee on top and receive the entered amount
-6. Click "Bridge to Monero"
-7. Your XMR on Solana will be burned
-8. XMR on mainnet Monero network will be sent to your address
-
-### Swapping
-
-1. Click "Swap" button
-2. Enter amount to swap
-3. Choose between AMM pool or Jupiter route (best rate auto-selected)
-4. Confirm the swap transaction
-
-## Scripts
-
-### Jupiter Referral Setup
-
-```bash
-npx tsx scripts/setup-jupiter-referral.ts
+```
+apps/
+  bridge/      # wxmr.io  - bridge UI + transparency page (Next.js, port 3000)
+  swap/        # swap.wxmr.io - lean Jupiter-only swap UI (Next.js, port 3001)
+packages/
+  shared/      # @wxmr/shared - wallet providers, mints, Jupiter hook, swap UI, design system
+deploy/        # docker-compose + nginx config for self-hosting
 ```
 
-Sets up a Jupiter referral account for earning swap fees.
+Both apps consume `@wxmr/shared`, so the wallet setup, token mints, Jupiter integration,
+swap component, and styling have a single source of truth.
 
-### Claim Jupiter Fees
+## Requirements
 
-```bash
-npx tsx scripts/claim-jupiter-fees.ts
-```
+- Node.js 20+
+- npm 11+ (workspaces)
 
-Claims accumulated referral fees from Jupiter swaps.
-
-## Development
+## Getting started
 
 ```bash
-# Run dev server
+# install all workspaces from the repo root
+npm install
+
+# run both apps (bridge on :3000, swap on :3001)
 npm run dev
 
-# Build for production
-npm run build
-
-# Start production server
-npm start
-
-# Lint code
-npm run lint
+# or run just one
+npm run dev:bridge
+npm run dev:swap
 ```
 
-## Tech Stack
+Each app reads its own `.env.local` (see `apps/<app>/.env.example`). Relevant vars:
 
-- Next.js 16 (App Router)
-- React 19
-- TypeScript
+- `NEXT_PUBLIC_SOLANA_RPC_URL` - Solana RPC endpoint
+- `NEXT_PUBLIC_BRIDGE_PROGRAM_ID` - bridge program id (bridge only)
+- `NEXT_PUBLIC_JUPITER_API_KEY` - (optional) Jupiter API key for swap routing
+- `NEXT_PUBLIC_JUPITER_REFERRAL_ACCOUNT` / `NEXT_PUBLIC_JUPITER_REFERRAL_FEE` - (optional, bridge)
+
+## Common commands
+
+```bash
+npm run build          # build every app via turbo
+npm run build:bridge   # build only the bridge app
+npm run build:swap     # build only the swap app
+npm run lint           # lint every app
+```
+
+Turborepo caches task outputs; re-running `build`/`lint` only rebuilds what changed.
+
+## Apps
+
+### Bridge (`apps/bridge`)
+
+The full bridge experience: deposit native XMR to mint wXMR on Solana, withdraw (burn) wXMR
+back to native XMR, an embedded swap modal, and the on-chain transparency/audit page.
+
+### Swap (`apps/swap`)
+
+A focused swap-only site for `swap.wxmr.io`. Renders the shared swap panel full-page with a
+wallet connect button. XMR <-> USDC routing is handled by the Jupiter Ultra API.
+
+## Deployment
+
+Self-hosted via per-app Docker images (Next.js standalone output) behind Nginx. See
+[deploy/README.md](deploy/README.md) for build, compose, Nginx, and Tor notes.
+
+## Tech stack
+
+- Turborepo + npm workspaces
+- Next.js 16 (App Router), React 19, TypeScript
 - Tailwind CSS 4
-- @solana/wallet-adapter
-- @coral-xyz/anchor
+- @solana/wallet-adapter, @coral-xyz/anchor (bridge)
 - Jupiter Ultra API
-- qrcode.react / html5-qrcode

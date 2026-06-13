@@ -1,0 +1,32 @@
+# Build + run both apps. Run from this directory: `docker compose up -d --build`.
+# NEXT_PUBLIC_* values are baked at build time via build args (see each Dockerfile);
+# set them in deploy/.env or the host environment before building for production.
+
+services:
+  bridge:
+    build:
+      context: ..
+      dockerfile: apps/bridge/Dockerfile
+      args:
+        NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
+        NEXT_PUBLIC_BRIDGE_PROGRAM_ID: ${NEXT_PUBLIC_BRIDGE_PROGRAM_ID:-EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8}
+        NEXT_PUBLIC_JUPITER_API_KEY: ${NEXT_PUBLIC_JUPITER_API_KEY:-}
+        NEXT_PUBLIC_JUPITER_REFERRAL_ACCOUNT: ${NEXT_PUBLIC_JUPITER_REFERRAL_ACCOUNT:-}
+        NEXT_PUBLIC_JUPITER_REFERRAL_FEE: ${NEXT_PUBLIC_JUPITER_REFERRAL_FEE:-}
+    image: wxmr-bridge
+    restart: unless-stopped
+    ports:
+      # Bind to loopback; Nginx (or Tor) on the host proxies to it.
+      - "127.0.0.1:3000:3000"
+
+  swap:
+    build:
+      context: ..
+      dockerfile: apps/swap/Dockerfile
+      args:
+        NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
+        NEXT_PUBLIC_JUPITER_API_KEY: ${NEXT_PUBLIC_JUPITER_API_KEY:-}
+    image: wxmr-swap
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3001:3001"
