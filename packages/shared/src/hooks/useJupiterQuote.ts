@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback } from 'react';
-import { USDC_MINT, XMR_MINT } from '@/constants';
+import { USDC_MINT, XMR_MINT } from '../constants';
 
 // Jupiter API config
 const JUPITER_API_KEY = process.env.NEXT_PUBLIC_JUPITER_API_KEY || '';

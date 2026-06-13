@@ -1,0 +1,22 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "ui": "tui",
+  "globalEnv": [
+    "NEXT_PUBLIC_SOLANA_RPC_URL",
+    "NEXT_PUBLIC_BRIDGE_PROGRAM_ID",
+    "NEXT_PUBLIC_JUPITER_API_KEY",
+    "NEXT_PUBLIC_JUPITER_REFERRAL_ACCOUNT",
+    "NEXT_PUBLIC_JUPITER_REFERRAL_FEE"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": [".next/**", "!.next/cache/**"]
+    },
+    "lint": {},
+    "dev": {
+      "cache": false,
+      "persistent": true
+    }
+  }
+}

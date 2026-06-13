@@ -5,7 +5,7 @@ import Link from 'next/link';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { useWxmrBridge, DepositAccountInfo, WithdrawalInfo, BridgeConfig } from '@/hooks/useWxmrBridge';
 import { QRCodeSVG } from 'qrcode.react';
-import { SwapModal } from '@/components/SwapModal';
+import { SwapModal } from '@wxmr/shared';
 
 const PICONERO_PER_XMR = BigInt('1000000000000');
 const BASIS_POINTS = BigInt(10000);
