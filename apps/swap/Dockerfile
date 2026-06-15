@@ -24,6 +24,9 @@ ARG NEXT_PUBLIC_JUPITER_API_KEY
 ENV NEXT_PUBLIC_SOLANA_RPC_URL=$NEXT_PUBLIC_SOLANA_RPC_URL \
     NEXT_PUBLIC_JUPITER_API_KEY=$NEXT_PUBLIC_JUPITER_API_KEY
 
+# Opt into Next standalone output (consumed by the runner stage below).
+ENV NEXT_OUTPUT_STANDALONE=1
+
 RUN npx turbo run build --filter=@wxmr/swap
 
 # 3) Minimal standalone runtime image.

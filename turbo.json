@@ -2,6 +2,7 @@
   "$schema": "https://turbo.build/schema.json",
   "ui": "tui",
   "globalEnv": [
+    "NEXT_OUTPUT_STANDALONE",
     "NEXT_PUBLIC_SOLANA_RPC_URL",
     "NEXT_PUBLIC_BRIDGE_PROGRAM_ID",
     "NEXT_PUBLIC_JUPITER_API_KEY",

@@ -9,7 +9,7 @@
   ],
   "scripts": {
     "dev": "turbo run dev",
-    "build": "turbo run build",
+    "build": "turbo run build --concurrency=1",
     "lint": "turbo run lint",
     "dev:bridge": "turbo run dev --filter=@wxmr/bridge",
     "dev:swap": "turbo run dev --filter=@wxmr/swap",
