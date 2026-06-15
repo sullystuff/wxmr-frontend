@@ -9,7 +9,7 @@ const standalone = process.env.NEXT_OUTPUT_STANDALONE === "1";
 
 const nextConfig: NextConfig = {
   reactCompiler: true,
-  transpilePackages: ["@wxmr/shared"],
+  transpilePackages: ["@wxmr/shared", "@wxmr/core"],
   ...(standalone
     ? {
         output: "standalone",

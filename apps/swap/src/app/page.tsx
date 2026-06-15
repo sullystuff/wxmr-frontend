@@ -1,12 +1,42 @@
 'use client';
 
+import { useEffect, useMemo, useState } from 'react';
+import { Buffer } from 'buffer';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
-import { SwapPanel } from '@wxmr/shared';
+import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import { PublicKey, Transaction, TransactionInstruction } from '@solana/web3.js';
+import {
+  TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountIdempotentInstruction,
+  createTransferInstruction,
+  getAssociatedTokenAddress,
+} from '@solana/spl-token';
+import {
+  CCTP_SOURCE_CHAINS,
+  CHAINS,
+  ERC20_APPROVE_ABI,
+  TOKEN_MESSENGER_V2_ABI,
+  isValidMoneroAddress,
+  type FundingInstructions,
+  type Order,
+  type Quote,
+  type SourceChainId,
+} from '@wxmr/core';
+import {
+  useAccount,
+  useConnect,
+  useDisconnect,
+  usePublicClient,
+  useSwitchChain,
+  useWriteContract,
+} from 'wagmi';
 
-// Monero Logo SVG (official logo)
-function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
+const ORCHESTRATOR_URL = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://127.0.0.1:3002';
+const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
+
+function MoneroLogo({ className = 'w-8 h-8' }: { className?: string }) {
   return (
-    <svg className={className} viewBox="0 0 3756.09 3756.49" xmlns="http://www.w3.org/2000/svg">
+    <svg className={className} viewBox="0 0 3756.09 3756.49" xmlns="http://www.w3.org/2000/svg" aria-hidden>
       <path d="M4128,2249.81C4128,3287,3287.26,4127.86,2250,4127.86S372,3287,372,2249.81,1212.76,371.75,2250,371.75,4128,1212.54,4128,2249.81Z" transform="translate(-371.96 -371.75)" fill="#fff"/>
       <path d="M2250,371.75c-1036.89,0-1879.12,842.06-1877.8,1878,0.26,207.26,33.31,406.63,95.34,593.12h561.88V1263L2250,2483.57,3470.52,1263v1579.9h562c62.12-186.48,95-385.85,95.37-593.12C4129.66,1212.76,3287,372,2250,372Z" transform="translate(-371.96 -371.75)" fill="#f26822"/>
       <path d="M1969.3,2764.17l-532.67-532.7v994.14H1029.38l-384.29.07c329.63,540.8,925.35,902.56,1604.91,902.56S3525.31,3766.4,3855,3225.6H3063.25V2231.47l-532.7,532.7-280.61,280.61-280.62-280.61h0Z" transform="translate(-371.96 -371.75)" fill="#4d4d4d"/>
@@ -15,42 +45,523 @@ function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
 }
 
 export default function SwapPage() {
+  const [sourceChain, setSourceChain] = useState<SourceChainId>('base');
+  const [amount, setAmount] = useState('');
+  const [xmrAddress, setXmrAddress] = useState('');
+  const [refundAddress, setRefundAddress] = useState('');
+  const [quote, setQuote] = useState<Quote | null>(null);
+  const [order, setOrder] = useState<Order | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!order || ['completed', 'failed', 'expired', 'refunded'].includes(order.status)) return;
+    const timer = setInterval(async () => {
+      const next = await api<Order>(`/orders/${order.id}`);
+      setOrder(next);
+    }, 3_000);
+    return () => clearInterval(timer);
+  }, [order]);
+
+  const parsedAmount = useMemo(() => parseUsdc(amount), [amount]);
+  const canQuote = parsedAmount > BigInt(0) && isValidMoneroAddress(xmrAddress);
+
+  const requestQuote = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const next = await api<Quote>('/quote', {
+        method: 'POST',
+        body: JSON.stringify({
+          sourceChain,
+          sourceToken: 'USDC',
+          amount: parsedAmount.toString(),
+          xmrAddress,
+          refundAddress: refundAddress || undefined,
+          slippageBps: 100,
+        }),
+      });
+      setQuote(next);
+      setOrder(null);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const createOrder = async () => {
+    if (!quote) return;
+    setIsLoading(true);
+    setError(null);
+    try {
+      const result = await api<{ order: Order; funding: FundingInstructions }>('/orders', {
+        method: 'POST',
+        body: JSON.stringify({ quoteId: quote.id, refundAddress: refundAddress || undefined }),
+      });
+      setOrder(result.order);
+    } catch (e) {
+      setError(errorMessage(e));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const reportDeposit = async (txHash: string) => {
+    if (!order) return;
+    const updated = await api<Order>(`/orders/${order.id}/deposit`, {
+      method: 'POST',
+      body: JSON.stringify({ txHash }),
+    });
+    setOrder(updated);
+  };
+
   return (
     <main className="min-h-screen flex flex-col xmr-pattern">
-      {/* Header */}
-      <header className="flex justify-between items-center gap-4 max-w-5xl w-full mx-auto px-4 md:px-8 py-5">
+      <header className="flex justify-between items-center gap-4 max-w-6xl w-full mx-auto px-4 md:px-8 py-5">
         <div className="flex items-center gap-3">
           <MoneroLogo className="w-9 h-9" />
           <div>
             <h1 className="text-xl font-bold bg-gradient-to-r from-[#ff6600] to-[#ff8533] bg-clip-text text-transparent">
-              wXMR Swap
+              Swap to native XMR
             </h1>
-            <p className="text-xs text-[var(--muted)]">XMR &harr; USDC on Solana</p>
+            <p className="text-xs text-[var(--muted)]">USDC on supported chains to Monero</p>
           </div>
         </div>
         <WalletMultiButton />
       </header>
 
-      {/* Swap card */}
-      <div className="flex-1 flex flex-col items-center justify-center px-4 py-10">
-        <SwapPanel />
-        <p className="text-xs text-[var(--muted)] mt-6">
-          Best-price routing powered by <span className="text-[#ff6600]">Jupiter</span>
-        </p>
-      </div>
+      <section className="flex-1 w-full max-w-6xl mx-auto px-4 md:px-8 py-6 grid lg:grid-cols-[1fr_360px] gap-6 items-start">
+        <div className="bg-[#1a1a2e] border border-[#2a2a4a] rounded-2xl shadow-2xl overflow-hidden">
+          <div className="p-5 border-b border-[#2a2a4a]">
+            <h2 className="text-lg font-semibold text-white">Cross-chain exchange</h2>
+          </div>
+          <div className="p-5 space-y-5">
+            <label className="block">
+              <span className="text-sm text-gray-400">Source chain</span>
+              <select
+                value={sourceChain}
+                onChange={(event) => {
+                  setSourceChain(event.target.value as SourceChainId);
+                  setQuote(null);
+                  setOrder(null);
+                }}
+                className="mt-2 w-full bg-[#12121f] border border-[#2a2a4a] rounded-xl px-3 py-3 text-white outline-none focus:border-[#ff6600]"
+              >
+                {CCTP_SOURCE_CHAINS.map((chain) => (
+                  <option key={chain} value={chain}>{CHAINS[chain].name} USDC</option>
+                ))}
+              </select>
+            </label>
 
-      {/* Footer */}
-      <footer className="border-t border-[var(--border)] py-6">
-        <div className="max-w-5xl mx-auto px-4 md:px-8 flex flex-col sm:flex-row justify-between items-center gap-3 text-sm text-[var(--muted)]">
-          <span>wXMR Bridge</span>
-          <a
-            href="https://wxmr.io"
-            className="hover:text-[#ff6600] transition-colors"
-          >
-            Bridge XMR &harr; Solana at wxmr.io &rarr;
-          </a>
+            <label className="block">
+              <span className="text-sm text-gray-400">Amount</span>
+              <div className="mt-2 flex items-center gap-3 bg-[#12121f] border border-[#2a2a4a] rounded-xl px-3 py-3">
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={amount}
+                  onChange={(event) => {
+                    setAmount(event.target.value);
+                    setQuote(null);
+                    setOrder(null);
+                  }}
+                  placeholder="0.00"
+                  className="flex-1 min-w-0 bg-transparent text-3xl font-medium text-white outline-none placeholder-gray-600"
+                />
+                <span className="text-sm font-semibold text-white bg-[#2a2a4a] rounded-lg px-3 py-2">USDC</span>
+              </div>
+            </label>
+
+            <label className="block">
+              <span className="text-sm text-gray-400">Monero address</span>
+              <textarea
+                value={xmrAddress}
+                onChange={(event) => {
+                  setXmrAddress(event.target.value.trim());
+                  setQuote(null);
+                  setOrder(null);
+                }}
+                rows={3}
+                className="mt-2 w-full resize-none bg-[#12121f] border border-[#2a2a4a] rounded-xl px-3 py-3 text-white outline-none focus:border-[#ff6600] text-sm"
+              />
+            </label>
+
+            <label className="block">
+              <span className="text-sm text-gray-400">Solana refund address</span>
+              <input
+                value={refundAddress}
+                onChange={(event) => setRefundAddress(event.target.value.trim())}
+                className="mt-2 w-full bg-[#12121f] border border-[#2a2a4a] rounded-xl px-3 py-3 text-white outline-none focus:border-[#ff6600] text-sm"
+              />
+            </label>
+
+            <div className="flex flex-col sm:flex-row gap-3">
+              <button
+                onClick={requestQuote}
+                disabled={!canQuote || isLoading}
+                className="flex-1 bg-[#ff6600] hover:bg-[#ff7a1a] disabled:bg-[#3a3a4f] disabled:text-gray-500 text-white font-semibold rounded-xl px-4 py-3 transition-colors"
+              >
+                {isLoading ? 'Working...' : 'Get quote'}
+              </button>
+              <button
+                onClick={createOrder}
+                disabled={!quote || Boolean(order) || isLoading}
+                className="flex-1 bg-[#2a2a4a] hover:bg-[#34345f] disabled:bg-[#202033] disabled:text-gray-600 text-white font-semibold rounded-xl px-4 py-3 transition-colors"
+              >
+                Create order
+              </button>
+            </div>
+
+            {error && <div className="border border-red-500/40 bg-red-500/10 rounded-xl p-3 text-sm text-red-200">{error}</div>}
+
+            {quote && <QuotePanel quote={quote} />}
+            {order && (
+              <FundingPanel
+                order={order}
+                onDeposit={reportDeposit}
+                onError={(message) => setError(message)}
+              />
+            )}
+          </div>
         </div>
-      </footer>
+
+        <OrderStatusPanel order={order} />
+      </section>
     </main>
   );
+}
+
+function QuotePanel({ quote }: { quote: Quote }) {
+  return (
+    <div className="border border-[#2a2a4a] bg-[#12121f] rounded-xl p-4 grid sm:grid-cols-3 gap-3 text-sm">
+      <Metric label="Estimated payout" value={`${formatXmr(quote.estimatedXmrOut)} XMR`} />
+      <Metric label="Minimum payout" value={`${formatXmr(quote.minXmrOut)} XMR`} />
+      <Metric label="Bridge fee" value={`${quote.bridgeFeeBps / 100}%`} />
+    </div>
+  );
+}
+
+function FundingPanel({
+  order,
+  onDeposit,
+  onError,
+}: {
+  order: Order;
+  onDeposit: (txHash: string) => Promise<void>;
+  onError: (message: string) => void;
+}) {
+  if (order.status !== 'awaiting_deposit') {
+    return null;
+  }
+  if (order.funding.type === 'evm-cctp-burn') {
+    return <EvmFunding funding={order.funding} onDeposit={onDeposit} onError={onError} />;
+  }
+  if (order.funding.type === 'solana-transfer') {
+    return <SolanaFunding funding={order.funding} onDeposit={onDeposit} onError={onError} />;
+  }
+  return (
+    <div className="border border-[#2a2a4a] rounded-xl p-4 text-sm text-gray-300">
+      <div className="text-white font-semibold">{order.funding.address}</div>
+      {order.funding.memo && <div className="mt-2">Memo: {order.funding.memo}</div>}
+    </div>
+  );
+}
+
+function EvmFunding({
+  funding,
+  onDeposit,
+  onError,
+}: {
+  funding: Extract<FundingInstructions, { type: 'evm-cctp-burn' }>;
+  onDeposit: (txHash: string) => Promise<void>;
+  onError: (message: string) => void;
+}) {
+  const { address, chainId } = useAccount();
+  const { connectors, connectAsync, isPending } = useConnect();
+  const { disconnect } = useDisconnect();
+  const { switchChainAsync } = useSwitchChain();
+  const publicClient = usePublicClient({ chainId: funding.chainNumericId });
+  const { writeContractAsync } = useWriteContract();
+  const [showConnect, setShowConnect] = useState(false);
+  const [isFunding, setIsFunding] = useState(false);
+
+  const fund = async () => {
+    setIsFunding(true);
+    try {
+      if (!address) {
+        setShowConnect(true);
+        return;
+      }
+      if (chainId !== funding.chainNumericId) {
+        await switchChainAsync({ chainId: funding.chainNumericId });
+      }
+      if (!publicClient) {
+        throw new Error('No EVM RPC client is configured for this chain');
+      }
+      const approveHash = await writeContractAsync({
+        address: funding.usdc,
+        abi: ERC20_APPROVE_ABI,
+        functionName: 'approve',
+        args: [funding.approve.spender, BigInt(funding.approve.amount)],
+        chainId: funding.chainNumericId,
+      });
+      await publicClient.waitForTransactionReceipt({ hash: approveHash });
+      const burnHash = await writeContractAsync({
+        address: funding.tokenMessenger,
+        abi: TOKEN_MESSENGER_V2_ABI,
+        functionName: 'depositForBurn',
+        args: [
+          BigInt(funding.depositForBurn.args[0]),
+          funding.depositForBurn.args[1],
+          funding.depositForBurn.args[2],
+          funding.depositForBurn.args[3],
+          funding.depositForBurn.args[4],
+          BigInt(funding.depositForBurn.args[5]),
+          funding.depositForBurn.args[6],
+        ],
+        chainId: funding.chainNumericId,
+      });
+      await publicClient.waitForTransactionReceipt({ hash: burnHash });
+      await onDeposit(burnHash);
+    } catch (e) {
+      onError(errorMessage(e));
+    } finally {
+      setIsFunding(false);
+    }
+  };
+
+  return (
+    <div className="border border-[#2a2a4a] bg-[#12121f] rounded-xl p-4 space-y-3">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-sm text-gray-400">EVM wallet</div>
+          <div className="text-white text-sm truncate">{address || 'Not connected'}</div>
+        </div>
+        <button
+          onClick={() => (address ? disconnect() : setShowConnect(true))}
+          className="bg-[#2a2a4a] hover:bg-[#34345f] text-white rounded-lg px-3 py-2 text-sm"
+        >
+          {address ? 'Disconnect' : 'Connect'}
+        </button>
+      </div>
+      <button
+        onClick={fund}
+        disabled={isFunding}
+        className="w-full bg-[#ff6600] hover:bg-[#ff7a1a] disabled:bg-[#3a3a4f] text-white font-semibold rounded-xl px-4 py-3"
+      >
+        {isFunding ? 'Waiting for wallet...' : 'Approve and burn USDC'}
+      </button>
+      {showConnect && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setShowConnect(false)}>
+          <div className="w-full max-w-sm bg-[#1a1a2e] border border-[#2a2a4a] rounded-2xl p-4" onClick={(event) => event.stopPropagation()}>
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-white font-semibold">Connect wallet</h3>
+              <button onClick={() => setShowConnect(false)} className="text-gray-400 hover:text-white">×</button>
+            </div>
+            <div className="space-y-2">
+              {connectors.map((connector) => (
+                <button
+                  key={connector.uid}
+                  disabled={isPending}
+                  onClick={async () => {
+                    await connectAsync({ connector });
+                    setShowConnect(false);
+                  }}
+                  className="w-full text-left bg-[#12121f] hover:bg-[#2a2a4a] border border-[#2a2a4a] rounded-xl px-3 py-3 text-white"
+                >
+                  {connector.name}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SolanaFunding({
+  funding,
+  onDeposit,
+  onError,
+}: {
+  funding: Extract<FundingInstructions, { type: 'solana-transfer' }>;
+  onDeposit: (txHash: string) => Promise<void>;
+  onError: (message: string) => void;
+}) {
+  const { connection } = useConnection();
+  const wallet = useWallet();
+  const [isFunding, setIsFunding] = useState(false);
+
+  const fund = async () => {
+    setIsFunding(true);
+    try {
+      if (!wallet.publicKey || !wallet.sendTransaction) {
+        throw new Error('Connect a Solana wallet');
+      }
+      const mint = new PublicKey(funding.mint);
+      const destination = new PublicKey(funding.destinationTokenAccount);
+      const source = await getAssociatedTokenAddress(mint, wallet.publicKey);
+      const transaction = new Transaction().add(
+        createAssociatedTokenAccountIdempotentInstruction(
+          wallet.publicKey,
+          destination,
+          new PublicKey(funding.destinationOwner),
+          mint,
+        ),
+        createTransferInstruction(
+          source,
+          destination,
+          wallet.publicKey,
+          BigInt(funding.amount),
+          [],
+          TOKEN_PROGRAM_ID,
+        ),
+        new TransactionInstruction({
+          programId: MEMO_PROGRAM_ID,
+          keys: [],
+          data: Buffer.from(funding.memo, 'utf8'),
+        }),
+      );
+      const signature = await wallet.sendTransaction(transaction, connection);
+      await connection.confirmTransaction(signature, 'confirmed');
+      await onDeposit(signature);
+    } catch (e) {
+      onError(errorMessage(e));
+    } finally {
+      setIsFunding(false);
+    }
+  };
+
+  return (
+    <div className="border border-[#2a2a4a] bg-[#12121f] rounded-xl p-4 space-y-3">
+      <div className="text-sm text-gray-400">Solana wallet</div>
+      <div className="text-white text-sm truncate">{wallet.publicKey?.toBase58() || 'Not connected'}</div>
+      <button
+        onClick={fund}
+        disabled={isFunding || !wallet.publicKey}
+        className="w-full bg-[#ff6600] hover:bg-[#ff7a1a] disabled:bg-[#3a3a4f] text-white font-semibold rounded-xl px-4 py-3"
+      >
+        {isFunding ? 'Waiting for wallet...' : 'Send USDC'}
+      </button>
+    </div>
+  );
+}
+
+function OrderStatusPanel({ order }: { order: Order | null }) {
+  const steps = [
+    ['Deposit', ['awaiting_deposit', 'attesting']],
+    ['Bridge', ['minted']],
+    ['Swap', ['swapping']],
+    ['Payout', ['withdrawing', 'completed']],
+  ] as const;
+
+  return (
+    <aside className="bg-[#1a1a2e] border border-[#2a2a4a] rounded-2xl shadow-2xl p-5">
+      <h2 className="text-lg font-semibold text-white mb-4">Order status</h2>
+      {!order ? (
+        <div className="text-sm text-gray-400">No active order</div>
+      ) : (
+        <div className="space-y-4">
+          <div className="text-sm">
+            <div className="text-gray-400">Order</div>
+            <div className="text-white break-all">{order.id}</div>
+          </div>
+          <div className="space-y-3">
+            {steps.map(([label, statuses]) => {
+              const isActive = statuses.includes(order.status as never);
+              const isDone = order.status === 'completed' || stepDone(label, order.status);
+              return (
+                <div key={label} className="flex items-center gap-3">
+                  <div className={`w-3 h-3 rounded-full ${isDone ? 'bg-[#ff6600]' : isActive ? 'bg-white' : 'bg-[#3a3a4f]'}`} />
+                  <span className={isDone || isActive ? 'text-white' : 'text-gray-500'}>{label}</span>
+                </div>
+              );
+            })}
+          </div>
+          <div className="text-sm">
+            <div className="text-gray-400">Current</div>
+            <div className="text-white">{order.status}</div>
+          </div>
+          {order.sourceTxHash && <ExplorerLink chain={order.sourceChain} hash={order.sourceTxHash} label="Source transaction" />}
+          {order.solanaMintSignature && <ExplorerLink chain="solana" hash={order.solanaMintSignature} label="CCTP mint" />}
+          {order.swapSignature && <ExplorerLink chain="solana" hash={order.swapSignature} label="Jupiter swap" />}
+          {order.withdrawalSignature && <ExplorerLink chain="solana" hash={order.withdrawalSignature} label="Withdrawal request" />}
+          {order.error && <div className="text-sm text-red-200 break-words">{order.error}</div>}
+        </div>
+      )}
+    </aside>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string }) {
+  return (
+    <div>
+      <div className="text-gray-400">{label}</div>
+      <div className="text-white font-semibold">{value}</div>
+    </div>
+  );
+}
+
+function ExplorerLink({ chain, hash, label }: { chain: SourceChainId; hash: string; label: string }) {
+  return (
+    <a
+      href={`${CHAINS[chain].explorerTxUrl}${hash}`}
+      target="_blank"
+      rel="noreferrer"
+      className="block text-sm text-[#ff8533] hover:text-[#ff6600] break-words"
+    >
+      {label}
+    </a>
+  );
+}
+
+function parseUsdc(value: string): bigint {
+  const trimmed = value.trim();
+  if (!trimmed) return BigInt(0);
+  const [whole, fraction = ''] = trimmed.split('.');
+  const safeWhole = whole.replace(/\D/g, '') || '0';
+  const safeFraction = fraction.replace(/\D/g, '').slice(0, 6).padEnd(6, '0');
+  return BigInt(safeWhole) * BigInt(1_000_000) + BigInt(safeFraction);
+}
+
+function formatXmr(value: string): string {
+  const amount = BigInt(value);
+  const unit = BigInt(1_000_000_000_000);
+  const whole = amount / unit;
+  const fraction = (amount % unit).toString().padStart(12, '0').slice(0, 6);
+  return `${whole}.${fraction}`;
+}
+
+function stepDone(label: string, status: Order['status']): boolean {
+  const order = ['Deposit', 'Bridge', 'Swap', 'Payout'];
+  const current = status === 'attesting' || status === 'minted'
+    ? 'Bridge'
+    : status === 'swapping'
+      ? 'Swap'
+      : status === 'withdrawing' || status === 'completed'
+        ? 'Payout'
+        : 'Deposit';
+  return order.indexOf(label) < order.indexOf(current);
+}
+
+async function api<T>(path: string, init?: RequestInit): Promise<T> {
+  const response = await fetch(`${ORCHESTRATOR_URL}${path}`, {
+    ...init,
+    headers: {
+      'Content-Type': 'application/json',
+      ...(init?.headers ?? {}),
+    },
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) {
+    throw new Error(data.error || `Request failed: ${response.status}`);
+  }
+  return data as T;
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
