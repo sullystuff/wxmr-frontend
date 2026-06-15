@@ -67,8 +67,8 @@ wallet connect button. XMR <-> USDC routing is handled by the Jupiter Ultra API.
 
 ## Deployment
 
-Self-hosted via per-app Docker images (Next.js standalone output) behind Nginx. See
-[deploy/README.md](deploy/README.md) for build, compose, Nginx, and Tor notes.
+Self-hosted with PM2 (see `ecosystem.config.js`) or Docker, behind Nginx. See
+[deploy/README.md](deploy/README.md) for build, PM2/Docker, Nginx, and Tor notes.
 
 ## Tech stack
 
