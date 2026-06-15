@@ -13,8 +13,10 @@
     "lint": "turbo run lint",
     "dev:bridge": "turbo run dev --filter=@wxmr/bridge",
     "dev:swap": "turbo run dev --filter=@wxmr/swap",
+    "dev:orchestrator": "turbo run dev --filter=@wxmr/orchestrator",
     "build:bridge": "turbo run build --filter=@wxmr/bridge",
-    "build:swap": "turbo run build --filter=@wxmr/swap"
+    "build:swap": "turbo run build --filter=@wxmr/swap",
+    "build:orchestrator": "turbo run build --filter=@wxmr/orchestrator"
   },
   "devDependencies": {
     "turbo": "^2.9.18"

@@ -17,6 +17,8 @@ const path = require('path');
 // `next` is hoisted to the workspace root by npm workspaces, so both apps
 // share this single binary; each app is started from its own cwd.
 const nextBin = path.resolve(__dirname, 'node_modules/next/dist/bin/next');
+const orchestratorServer = path.resolve(__dirname, 'apps/orchestrator/dist/server.js');
+const orchestratorWorker = path.resolve(__dirname, 'apps/orchestrator/dist/worker.js');
 
 module.exports = {
   apps: [
@@ -36,6 +38,24 @@ module.exports = {
       script: nextBin,
       interpreter: 'node',
       args: 'start -H 127.0.0.1 -p 3001',
+      env: { NODE_ENV: 'production' },
+      autorestart: true,
+      max_memory_restart: '512M',
+    },
+    {
+      name: 'wxmr-orchestrator',
+      cwd: path.resolve(__dirname, 'apps/orchestrator'),
+      script: orchestratorServer,
+      interpreter: 'node',
+      env: { NODE_ENV: 'production', ORCH_HOST: '127.0.0.1', ORCH_PORT: '3002' },
+      autorestart: true,
+      max_memory_restart: '512M',
+    },
+    {
+      name: 'wxmr-orchestrator-worker',
+      cwd: path.resolve(__dirname, 'apps/orchestrator'),
+      script: orchestratorWorker,
+      interpreter: 'node',
       env: { NODE_ENV: 'production' },
       autorestart: true,
       max_memory_restart: '512M',
