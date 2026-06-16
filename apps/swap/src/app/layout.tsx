@@ -7,7 +7,7 @@ const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: 'Swap to native XMR',
-  description: 'Move native USDC from supported chains into native XMR',
+  description: 'Move Mayan-supported tokens from source chains into native XMR',
   icons: {
     icon: '/favicon.svg',
     shortcut: '/favicon.svg',
