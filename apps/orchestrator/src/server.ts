@@ -2,12 +2,15 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { getSwapFromEvmTxPayload } from "@mayanfinance/swap-sdk";
 import type { Quote as MayanSdkQuote } from "@mayanfinance/swap-sdk";
+import { Connection } from "@solana/web3.js";
 import {
   BRIDGE_FEE_BPS,
   CHAINS,
   JupiterClient,
+  USDC_MINT_ADDRESS,
   assertValidMoneroAddress,
   buildMayanSwiftFunding,
+  type DepositAddressFunding,
   type MayanEvmTxPayload,
   MayanClient,
   type FundingInstructions,
@@ -19,11 +22,15 @@ import {
 } from "@wxmr/core";
 import { loadEnv } from "./env.js";
 import { Store } from "./db.js";
+import { SolanaExecutor } from "./chain/solana.js";
+import { deriveReverseDepositOwner } from "./reverse.js";
 
 const env = loadEnv();
 const store = new Store(env.dbPath);
+const connection = new Connection(env.solanaRpcUrl, "confirmed");
 const jupiter = new JupiterClient({ apiKey: env.jupiterApiKey });
 const mayan = new MayanClient({ apiKey: env.mayanApiKey });
+const solana = new SolanaExecutor(connection, env.solanaHotWallet, env.bridgeProgramId, env.jupiterApiKey, env.mayanApiKey);
 
 const app = Fastify({ logger: true });
 await app.register(cors, {
@@ -53,28 +60,57 @@ function registerRoutes(prefix: "" | "/api"): void {
 
   app.post(route("/quote"), async (request, reply) => {
     const body = request.body as Partial<QuoteRequest>;
+    const direction = body.direction ?? "mayan-to-xmr";
     const sourceChain = body.sourceChain as SourceChainId;
     if (!sourceChain || !CHAINS[sourceChain]) {
       return reply.code(400).send({ error: "unsupported sourceChain" });
     }
     if (!body.amount || BigInt(body.amount) <= 0n) {
-      return reply.code(400).send({ error: "amount must be a positive integer in USDC base units" });
-    }
-    assertValidMoneroAddress(body.xmrAddress ?? "");
-
-    const chain = CHAINS[sourceChain];
-    if (chain.kind !== "evm") {
-      return reply.code(400).send({ error: "this build supports Mayan Swift v2 EVM sources; Sui and Hyperliquid need separate wallet signing" });
+      return reply.code(400).send({ error: "amount must be a positive integer in base units" });
     }
     if (!body.sourceToken) {
       return reply.code(400).send({ error: "sourceToken is required" });
     }
 
-    const quote = await quoteUsdcToXmr({
+    if (direction === "mayan-to-xmr") {
+      assertValidMoneroAddress(body.xmrAddress ?? "");
+
+      const chain = CHAINS[sourceChain];
+      if (chain.kind !== "evm") {
+        return reply.code(400).send({ error: "this build supports Mayan Swift v2 EVM sources; Sui and Hyperliquid need separate wallet signing" });
+      }
+
+      const quote = await quoteUsdcToXmr({
+        direction,
+        sourceChain,
+        sourceToken: body.sourceToken,
+        amount: body.amount,
+        xmrAddress: body.xmrAddress!,
+        refundAddress: body.refundAddress,
+        slippageBps: body.slippageBps,
+      });
+      store.insertQuote(quote);
+      return quote;
+    }
+
+    if (direction !== "xmr-to-mayan") {
+      return reply.code(400).send({ error: "unsupported direction" });
+    }
+    assertValidMoneroAddress(body.xmrAddress ?? "");
+    if (!body.destinationAddress) {
+      return reply.code(400).send({ error: "destinationAddress is required" });
+    }
+    if (!CHAINS[sourceChain].mayanChain) {
+      return reply.code(400).send({ error: "destination chain is not supported by Mayan" });
+    }
+
+    const quote = await quoteXmrToMayan({
+      direction,
       sourceChain,
       sourceToken: body.sourceToken,
       amount: body.amount,
       xmrAddress: body.xmrAddress!,
+      destinationAddress: body.destinationAddress,
       refundAddress: body.refundAddress,
       slippageBps: body.slippageBps,
     });
@@ -98,15 +134,19 @@ function registerRoutes(prefix: "" | "/api"): void {
     const now = new Date().toISOString();
     const orderId = crypto.randomUUID();
     const refundAddress = body.refundAddress ?? quote.refundAddress;
-    const funding = buildFundingInstructions(orderId, quote);
+    const funding = await buildFundingInstructions(orderId, quote);
     const order: Order = {
       id: orderId,
       quoteId: quote.id,
+      direction: quote.direction,
       status: "awaiting_deposit",
       sourceChain: quote.sourceChain,
       sourceToken: quote.sourceToken,
       amount: quote.inputAmount,
       xmrAddress: quote.xmrAddress,
+      destinationAddress: quote.destinationAddress,
+      destinationTokenSymbol: quote.destinationTokenSymbol,
+      destinationTokenDecimals: quote.destinationTokenDecimals,
       refundAddress,
       funding,
       createdAt: now,
@@ -188,6 +228,7 @@ async function quoteUsdcToXmr(input: QuoteRequest): Promise<Quote> {
 
   return {
     id: crypto.randomUUID(),
+    direction: "mayan-to-xmr",
     sourceChain: input.sourceChain,
     sourceToken: mayanQuote.fromToken.contract ?? input.sourceToken,
     sourceTokenSymbol: mayanQuote.fromToken.symbol,
@@ -217,8 +258,81 @@ async function quoteUsdcToXmr(input: QuoteRequest): Promise<Quote> {
   };
 }
 
-function buildFundingInstructions(orderId: string, quote: Quote): FundingInstructions {
+async function quoteXmrToMayan(input: QuoteRequest): Promise<Quote> {
+  if (!input.destinationAddress) throw new Error("destinationAddress is required");
+  const slippageBps = Math.max(0, Math.min(input.slippageBps ?? 100, 2_000));
+  const inputAmount = BigInt(input.amount);
+  const afterService = applyBps(inputAmount, 10_000 - env.serviceFeeBps);
+  const expectedJupiterQuote = await jupiter.quoteWxmrToUsdc(afterService);
+  const expectedSolanaUsdcOut = expectedJupiterQuote.outAmount;
+  const minSolanaUsdcOut = applyBps(BigInt(expectedSolanaUsdcOut), 10_000 - slippageBps).toString();
+  const mayanQuote = await mayan.fetchSwiftQuoteForRoute({
+    fromChain: "solana",
+    fromToken: USDC_MINT_ADDRESS,
+    toChain: input.sourceChain,
+    toToken: input.sourceToken,
+    amount: expectedSolanaUsdcOut,
+    destinationAddress: input.destinationAddress,
+    slippageBps,
+  });
+
+  return {
+    id: crypto.randomUUID(),
+    direction: "xmr-to-mayan",
+    sourceChain: input.sourceChain,
+    sourceToken: mayanQuote.toToken.contract ?? input.sourceToken,
+    sourceTokenSymbol: mayanQuote.toToken.symbol,
+    sourceTokenDecimals: mayanQuote.toToken.decimals,
+    inputAmount: input.amount,
+    xmrAddress: input.xmrAddress,
+    destinationAddress: input.destinationAddress,
+    destinationTokenSymbol: mayanQuote.toToken.symbol,
+    destinationTokenDecimals: mayanQuote.toToken.decimals,
+    refundAddress: input.refundAddress,
+    estimatedWxmrOut: afterService.toString(),
+    estimatedXmrOut: input.amount,
+    minWxmrOut: afterService.toString(),
+    minXmrOut: input.amount,
+    estimatedDestinationOut: mayanQuote.expectedAmountOutBaseUnits,
+    minDestinationOut: mayanQuote.minReceivedBaseUnits,
+    bridgeFeeBps: 0,
+    serviceFeeBps: env.serviceFeeBps,
+    jupiterPriceImpactPct: expectedJupiterQuote.priceImpactPct ?? "0",
+    expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+    route: "mayan",
+    routeSummary: `native XMR -> XMR-SOL via Monero Bridge -> USDC-SOL via jup.ag -> ${mayanQuote.toToken.symbol ?? "Token"} on ${CHAINS[input.sourceChain].name} via Mayan Swift v2`,
+    mayan: {
+      quote: mayanQuote,
+      expectedSolanaUsdcOut,
+      minSolanaUsdcOut,
+      etaSeconds: mayanQuote.etaSeconds,
+      clientEta: mayanQuote.clientEta,
+      protocolBps: mayanQuote.protocolBps,
+      quoteId: mayanQuote.quoteId,
+    },
+  };
+}
+
+async function buildFundingInstructions(orderId: string, quote: Quote): Promise<FundingInstructions> {
   if (!quote.mayan) throw new Error("Mayan quote metadata is missing");
+
+  if (quote.direction === "xmr-to-mayan") {
+    const owner = deriveReverseDepositOwner(env.solanaHotWallet, orderId);
+    const created = await solana.createMoneroDepositAccount(owner);
+    const depositFunding: DepositAddressFunding = {
+      type: "deposit-address",
+      orderId,
+      chainId: "monero",
+      asset: "XMR",
+      address: created.deposit?.xmrDepositAddress ?? "",
+      expiresAt: quote.expiresAt,
+      expectedAmount: quote.inputAmount,
+      depositOwner: owner.publicKey.toBase58(),
+      depositPda: created.depositPda,
+      createSignature: created.signature || undefined,
+    };
+    return depositFunding;
+  }
 
   return buildMayanSwiftFunding({
     orderId,

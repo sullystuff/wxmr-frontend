@@ -5,11 +5,15 @@ import type { FundingInstructions, Order, OrderStatus, Quote } from "@wxmr/core"
 export interface OrderRow {
   id: string;
   quote_id: string;
+  direction: string | null;
   status: OrderStatus;
   source_chain: string;
   source_token: string;
   amount: string;
   xmr_address: string;
+  destination_address: string | null;
+  destination_token_symbol: string | null;
+  destination_token_decimals: number | null;
   refund_address: string | null;
   funding_json: string;
   source_tx_hash: string | null;
@@ -57,21 +61,27 @@ export class Store {
     this.db
       .prepare(
         `INSERT INTO orders (
-          id, quote_id, status, source_chain, source_token, amount, xmr_address,
+          id, quote_id, direction, status, source_chain, source_token, amount, xmr_address,
+          destination_address, destination_token_symbol, destination_token_decimals,
           refund_address, funding_json, created_at, updated_at, expires_at
         ) VALUES (
-          @id, @quote_id, @status, @source_chain, @source_token, @amount,
-          @xmr_address, @refund_address, @funding_json, @created_at, @updated_at, @expires_at
+          @id, @quote_id, @direction, @status, @source_chain, @source_token, @amount,
+          @xmr_address, @destination_address, @destination_token_symbol, @destination_token_decimals,
+          @refund_address, @funding_json, @created_at, @updated_at, @expires_at
         )`,
       )
       .run({
         id: order.id,
         quote_id: order.quoteId,
+        direction: order.direction,
         status: order.status,
         source_chain: order.sourceChain,
         source_token: order.sourceToken,
         amount: order.amount,
         xmr_address: order.xmrAddress,
+        destination_address: order.destinationAddress ?? null,
+        destination_token_symbol: order.destinationTokenSymbol ?? null,
+        destination_token_decimals: order.destinationTokenDecimals ?? null,
         refund_address: order.refundAddress ?? null,
         funding_json: JSON.stringify(order.funding),
         created_at: order.createdAt,
@@ -102,7 +112,11 @@ export class Store {
       .prepare(
         `UPDATE orders SET
           status = @status,
+          funding_json = @funding_json,
           source_tx_hash = @source_tx_hash,
+          destination_address = @destination_address,
+          destination_token_symbol = @destination_token_symbol,
+          destination_token_decimals = @destination_token_decimals,
           destination_amount = @destination_amount,
           solana_mint_signature = @solana_mint_signature,
           swap_signature = @swap_signature,
@@ -115,7 +129,11 @@ export class Store {
       .run({
         id,
         status: next.status,
+        funding_json: JSON.stringify(next.funding),
         source_tx_hash: next.sourceTxHash ?? null,
+        destination_address: next.destinationAddress ?? null,
+        destination_token_symbol: next.destinationTokenSymbol ?? null,
+        destination_token_decimals: next.destinationTokenDecimals ?? null,
         destination_amount: next.destinationAmount ?? null,
         solana_mint_signature: next.solanaMintSignature ?? null,
         swap_signature: next.swapSignature ?? null,
@@ -149,14 +167,18 @@ export class Store {
       );
 
       CREATE TABLE IF NOT EXISTS orders (
-        id TEXT PRIMARY KEY,
-        quote_id TEXT NOT NULL REFERENCES quotes(id),
-        status TEXT NOT NULL,
-        source_chain TEXT NOT NULL,
-        source_token TEXT NOT NULL,
-        amount TEXT NOT NULL,
-        xmr_address TEXT NOT NULL,
-        refund_address TEXT,
+          id TEXT PRIMARY KEY,
+          quote_id TEXT NOT NULL REFERENCES quotes(id),
+          direction TEXT NOT NULL DEFAULT 'mayan-to-xmr',
+          status TEXT NOT NULL,
+          source_chain TEXT NOT NULL,
+          source_token TEXT NOT NULL,
+          amount TEXT NOT NULL,
+          xmr_address TEXT NOT NULL,
+          destination_address TEXT,
+          destination_token_symbol TEXT,
+          destination_token_decimals INTEGER,
+          refund_address TEXT,
         funding_json TEXT NOT NULL,
         source_tx_hash TEXT,
         destination_amount TEXT,
@@ -185,6 +207,18 @@ export class Store {
     if (!columns.some((column) => column.name === "destination_amount")) {
       this.db.exec("ALTER TABLE orders ADD COLUMN destination_amount TEXT");
     }
+    if (!columns.some((column) => column.name === "direction")) {
+      this.db.exec("ALTER TABLE orders ADD COLUMN direction TEXT NOT NULL DEFAULT 'mayan-to-xmr'");
+    }
+    if (!columns.some((column) => column.name === "destination_address")) {
+      this.db.exec("ALTER TABLE orders ADD COLUMN destination_address TEXT");
+    }
+    if (!columns.some((column) => column.name === "destination_token_symbol")) {
+      this.db.exec("ALTER TABLE orders ADD COLUMN destination_token_symbol TEXT");
+    }
+    if (!columns.some((column) => column.name === "destination_token_decimals")) {
+      this.db.exec("ALTER TABLE orders ADD COLUMN destination_token_decimals INTEGER");
+    }
   }
 }
 
@@ -192,11 +226,15 @@ function rowToOrder(row: OrderRow): Order {
   return {
     id: row.id,
     quoteId: row.quote_id,
+    direction: (row.direction ?? "mayan-to-xmr") as Order["direction"],
     status: row.status,
     sourceChain: row.source_chain as Order["sourceChain"],
     sourceToken: row.source_token,
     amount: row.amount,
     xmrAddress: row.xmr_address,
+    destinationAddress: row.destination_address ?? undefined,
+    destinationTokenSymbol: row.destination_token_symbol ?? undefined,
+    destinationTokenDecimals: row.destination_token_decimals ?? undefined,
     refundAddress: row.refund_address ?? undefined,
     funding: JSON.parse(row.funding_json) as FundingInstructions,
     sourceTxHash: row.source_tx_hash ?? undefined,
