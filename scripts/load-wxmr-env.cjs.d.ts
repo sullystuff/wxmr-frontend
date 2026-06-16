@@ -1,5 +1,6 @@
 interface LoadWxmrEnvResult {
   rootEnvPath: string;
+  envPaths: string[];
   loaded: boolean;
 }
 

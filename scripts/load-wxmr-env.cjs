@@ -4,6 +4,7 @@ const dotenv = require("dotenv");
 
 const REPO_ROOT = path.resolve(__dirname, "..");
 const ROOT_ENV_PATH = path.join(REPO_ROOT, ".env");
+const ROOT_LOCAL_ENV_PATH = path.join(REPO_ROOT, ".env.local");
 
 const ENV_ALIASES = [
   ["NEXT_PUBLIC_SOLANA_RPC_URL", "SOLANA_RPC_URL"],
@@ -36,9 +37,19 @@ function firstDefined(names, sources) {
 }
 
 function loadWxmrEnv() {
-  const parsed = fs.existsSync(ROOT_ENV_PATH)
-    ? dotenv.parse(fs.readFileSync(ROOT_ENV_PATH))
-    : {};
+  const cwdEnvPath = path.join(process.cwd(), ".env");
+  const cwdLocalEnvPath = path.join(process.cwd(), ".env.local");
+  const envPaths = uniquePaths([
+    ROOT_ENV_PATH,
+    ROOT_LOCAL_ENV_PATH,
+    cwdEnvPath,
+    cwdLocalEnvPath,
+  ]);
+  const parsedByPath = envPaths.map((envPath) => ({
+    envPath,
+    parsed: parseEnvFile(envPath),
+  }));
+  const parsed = Object.assign({}, ...parsedByPath.map(({ parsed }) => parsed));
 
   for (const [key, value] of Object.entries(parsed)) {
     process.env[key] = value;
@@ -55,8 +66,22 @@ function loadWxmrEnv() {
 
   return {
     rootEnvPath: ROOT_ENV_PATH,
+    envPaths: parsedByPath
+      .filter(({ parsed }) => Object.keys(parsed).length > 0)
+      .map(({ envPath }) => envPath),
     loaded: Object.keys(parsed).length > 0,
   };
+}
+
+function uniquePaths(paths) {
+  return Array.from(new Set(paths.map((envPath) => path.resolve(envPath))));
+}
+
+function parseEnvFile(envPath) {
+  if (!fs.existsSync(envPath)) {
+    return {};
+  }
+  return dotenv.parse(fs.readFileSync(envPath));
 }
 
 module.exports = {
