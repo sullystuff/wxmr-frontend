@@ -31,7 +31,7 @@ import {
   useWriteContract,
 } from 'wagmi';
 
-const ORCHESTRATOR_URL = process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || 'http://127.0.0.1:3002';
+const ORCHESTRATOR_URL = (process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || '/api').replace(/\/$/, '');
 const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
 
 function MoneroLogo({ className = 'w-8 h-8' }: { className?: string }) {
@@ -548,7 +548,8 @@ function stepDone(label: string, status: Order['status']): boolean {
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${ORCHESTRATOR_URL}${path}`, {
+  const apiPath = path.startsWith('/') ? path : `/${path}`;
+  const response = await fetch(`${ORCHESTRATOR_URL}${apiPath}`, {
     ...init,
     headers: {
       'Content-Type': 'application/json',
