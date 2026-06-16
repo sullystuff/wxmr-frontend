@@ -124,6 +124,19 @@ export class CctpProvider {
       data: encodeReceiveMessageData(hexToBuffer(messageHex), hexToBuffer(attestationHex)),
     });
 
+    await this.ensureHotWalletUsdcAta();
+
+    const transaction = new Transaction().add(instruction);
+
+    return sendAndConfirmTransaction(this.connection, transaction, [this.hotWallet], {
+      commitment: "confirmed",
+    });
+  }
+
+  private async ensureHotWalletUsdcAta(): Promise<void> {
+    const account = await this.connection.getAccountInfo(this.hotWalletUsdcAta, "confirmed");
+    if (account) return;
+
     const transaction = new Transaction().add(
       createAssociatedTokenAccountIdempotentInstruction(
         this.hotWallet.publicKey,
@@ -133,10 +146,9 @@ export class CctpProvider {
         TOKEN_PROGRAM_ID,
         ASSOCIATED_TOKEN_PROGRAM_ID,
       ),
-      instruction,
     );
 
-    return sendAndConfirmTransaction(this.connection, transaction, [this.hotWallet], {
+    await sendAndConfirmTransaction(this.connection, transaction, [this.hotWallet], {
       commitment: "confirmed",
     });
   }
