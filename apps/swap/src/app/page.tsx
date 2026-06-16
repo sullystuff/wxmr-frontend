@@ -72,6 +72,33 @@ export default function SwapPage() {
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    const orderId = new URLSearchParams(window.location.search).get('order');
+    if (!orderId) return;
+    let cancelled = false;
+    setIsLoading(true);
+    setError(null);
+    api<Order>(`/orders/${orderId}`)
+      .then((next) => {
+        if (cancelled) return;
+        setOrder(next);
+        setQuote(null);
+        setSourceChain(next.sourceChain);
+        setAmount(formatUsdc(next.amount));
+        setXmrAddress(next.xmrAddress);
+        setRefundAddress(next.refundAddress ?? '');
+      })
+      .catch((e) => {
+        if (!cancelled) setError(errorMessage(e));
+      })
+      .finally(() => {
+        if (!cancelled) setIsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!order || ['completed', 'failed', 'expired', 'refunded'].includes(order.status)) return;
     const timer = setInterval(async () => {
       const next = await api<Order>(`/orders/${order.id}`);
@@ -100,6 +127,7 @@ export default function SwapPage() {
       });
       setQuote(next);
       setOrder(null);
+      clearOrderUrl();
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -117,6 +145,7 @@ export default function SwapPage() {
         body: JSON.stringify({ quoteId: quote.id, refundAddress: refundAddress || undefined }),
       });
       setOrder(result.order);
+      setOrderUrl(result.order.id);
     } catch (e) {
       setError(errorMessage(e));
     } finally {
@@ -131,6 +160,7 @@ export default function SwapPage() {
       body: JSON.stringify({ txHash }),
     });
     setOrder(updated);
+    setOrderUrl(updated.id);
   };
 
   return (
@@ -556,6 +586,14 @@ function parseUsdc(value: string): bigint {
   return BigInt(safeWhole) * BigInt(1_000_000) + BigInt(safeFraction);
 }
 
+function formatUsdc(value: string): string {
+  const amount = BigInt(value);
+  const unit = BigInt(1_000_000);
+  const whole = amount / unit;
+  const fraction = (amount % unit).toString().padStart(6, '0').replace(/0+$/, '');
+  return fraction ? `${whole}.${fraction}` : whole.toString();
+}
+
 function formatXmr(value: string): string {
   const amount = BigInt(value);
   const unit = BigInt(1_000_000_000_000);
@@ -574,6 +612,18 @@ function stepDone(label: string, status: Order['status']): boolean {
         ? 'Payout'
         : 'Deposit';
   return order.indexOf(label) < order.indexOf(current);
+}
+
+function setOrderUrl(orderId: string): void {
+  const url = new URL(window.location.href);
+  url.searchParams.set('order', orderId);
+  window.history.replaceState(null, '', url.toString());
+}
+
+function clearOrderUrl(): void {
+  const url = new URL(window.location.href);
+  url.searchParams.delete('order');
+  window.history.replaceState(null, '', url.toString());
 }
 
 async function api<T>(path: string, init?: RequestInit): Promise<T> {
