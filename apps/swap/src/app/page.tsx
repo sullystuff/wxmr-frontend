@@ -1,24 +1,15 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { Buffer } from 'buffer';
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
-import { useConnection, useWallet } from '@solana/wallet-adapter-react';
-import { PublicKey, Transaction, TransactionInstruction } from '@solana/web3.js';
 import {
-  TOKEN_PROGRAM_ID,
-  createAssociatedTokenAccountIdempotentInstruction,
-  createTransferInstruction,
-  getAssociatedTokenAddress,
-} from '@solana/spl-token';
-import {
-  CCTP_SOURCE_CHAINS,
   CHAINS,
   ERC20_ALLOWANCE_ABI,
   ERC20_APPROVE_ABI,
-  TOKEN_MESSENGER_V2_ABI,
+  MAYAN_SWIFT_EVM_SOURCE_CHAINS,
   isValidMoneroAddress,
   type FundingInstructions,
+  type MayanEvmTxPayload,
+  type MayanToken,
   type Order,
   type Quote,
   type SourceChainId,
@@ -28,13 +19,14 @@ import {
   useConnect,
   useDisconnect,
   usePublicClient,
+  useSendTransaction,
   useSwitchChain,
   useWriteContract,
 } from 'wagmi';
 import { EVM_RPC_ENV_BY_CHAIN, EVM_RPC_URL_BY_CHAIN } from './evm-rpc';
 
 const ORCHESTRATOR_URL = (process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || '/api').replace(/\/$/, '');
-const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
+const EVM_NATIVE_TOKEN = '0x0000000000000000000000000000000000000000';
 
 function MoneroLogo({ className = 'w-8 h-8' }: { className?: string }) {
   return (
@@ -48,6 +40,8 @@ function MoneroLogo({ className = 'w-8 h-8' }: { className?: string }) {
 
 export default function SwapPage() {
   const [sourceChain, setSourceChain] = useState<SourceChainId>('base');
+  const [sourceTokens, setSourceTokens] = useState<MayanToken[]>([]);
+  const [sourceToken, setSourceToken] = useState('');
   const [amount, setAmount] = useState('');
   const [xmrAddress, setXmrAddress] = useState('');
   const [refundAddress, setRefundAddress] = useState('');
@@ -68,7 +62,8 @@ export default function SwapPage() {
         setOrder(next);
         setQuote(null);
         setSourceChain(next.sourceChain);
-        setAmount(formatUsdc(next.amount));
+        setSourceToken(next.sourceToken);
+        setAmount(formatBaseUnits(next.amount, orderTokenDecimals(next)));
         setXmrAddress(next.xmrAddress);
         setRefundAddress(next.refundAddress ?? '');
       })
@@ -84,6 +79,26 @@ export default function SwapPage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    setSourceTokens([]);
+    api<MayanToken[]>(`/tokens/${sourceChain}`)
+      .then((tokens) => {
+        if (cancelled) return;
+        setSourceTokens(tokens);
+        const preferred = tokens.find((token) => token.symbol?.toUpperCase() === 'USDC') ?? tokens[0];
+        setSourceToken((current) =>
+          tokens.some((token) => token.contract === current) ? current : preferred?.contract ?? '',
+        );
+      })
+      .catch((e) => {
+        if (!cancelled) setError(errorMessage(e));
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [sourceChain]);
+
+  useEffect(() => {
     if (!order || ['completed', 'failed', 'expired', 'refunded'].includes(order.status)) return;
     const timer = setInterval(async () => {
       const next = await api<Order>(`/orders/${order.id}`);
@@ -92,8 +107,13 @@ export default function SwapPage() {
     return () => clearInterval(timer);
   }, [order]);
 
-  const parsedAmount = useMemo(() => parseUsdc(amount), [amount]);
-  const canQuote = parsedAmount > BigInt(0) && isValidMoneroAddress(xmrAddress);
+  const selectedToken = useMemo(
+    () => sourceTokens.find((token) => token.contract === sourceToken),
+    [sourceToken, sourceTokens],
+  );
+  const sourceTokenDecimals = selectedToken?.decimals ?? 6;
+  const parsedAmount = useMemo(() => parseTokenAmount(amount, sourceTokenDecimals), [amount, sourceTokenDecimals]);
+  const canQuote = Boolean(sourceToken) && parsedAmount > BigInt(0) && isValidMoneroAddress(xmrAddress);
 
   const requestQuote = async () => {
     setIsLoading(true);
@@ -103,7 +123,7 @@ export default function SwapPage() {
         method: 'POST',
         body: JSON.stringify({
           sourceChain,
-          sourceToken: 'USDC',
+          sourceToken,
           amount: parsedAmount.toString(),
           xmrAddress,
           refundAddress: refundAddress || undefined,
@@ -157,10 +177,10 @@ export default function SwapPage() {
             <h1 className="text-xl font-bold bg-gradient-to-r from-[#ff6600] to-[#ff8533] bg-clip-text text-transparent">
               Swap to native XMR
             </h1>
-            <p className="text-xs text-[var(--muted)]">USDC on supported chains to Monero</p>
+            <p className="text-xs text-[var(--muted)]">Mayan-supported tokens to Monero</p>
           </div>
         </div>
-        <WalletMultiButton />
+        <div className="hidden sm:block text-xs text-gray-500">Mayan Swift v2 route</div>
       </header>
 
       <section className="flex-1 w-full max-w-6xl mx-auto px-4 md:px-8 py-6 grid lg:grid-cols-[1fr_360px] gap-6 items-start">
@@ -180,8 +200,27 @@ export default function SwapPage() {
                 }}
                 className="mt-2 w-full bg-[#12121f] border border-[#2a2a4a] rounded-xl px-3 py-3 text-white outline-none focus:border-[#ff6600]"
               >
-                {CCTP_SOURCE_CHAINS.map((chain) => (
-                  <option key={chain} value={chain}>{CHAINS[chain].name} USDC</option>
+                {MAYAN_SWIFT_EVM_SOURCE_CHAINS.map((chain) => (
+                  <option key={chain} value={chain}>{CHAINS[chain].name}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="block">
+              <span className="text-sm text-gray-400">Source token</span>
+              <select
+                value={sourceToken}
+                onChange={(event) => {
+                  setSourceToken(event.target.value);
+                  setQuote(null);
+                  setOrder(null);
+                }}
+                className="mt-2 w-full bg-[#12121f] border border-[#2a2a4a] rounded-xl px-3 py-3 text-white outline-none focus:border-[#ff6600]"
+              >
+                {sourceTokens.map((token) => (
+                  <option key={token.contract} value={token.contract}>
+                    {token.symbol ?? token.contract} {token.name ? `- ${token.name}` : ''}
+                  </option>
                 ))}
               </select>
             </label>
@@ -202,7 +241,9 @@ export default function SwapPage() {
                   placeholder="0.00"
                   className="flex-1 min-w-0 bg-transparent text-3xl font-medium text-white outline-none placeholder-gray-600"
                 />
-                <span className="text-sm font-semibold text-white bg-[#2a2a4a] rounded-lg px-3 py-2">USDC</span>
+                <span className="text-sm font-semibold text-white bg-[#2a2a4a] rounded-lg px-3 py-2">
+                  {selectedToken?.symbol ?? 'TOKEN'}
+                </span>
               </div>
             </label>
 
@@ -266,11 +307,36 @@ export default function SwapPage() {
 }
 
 function QuotePanel({ quote }: { quote: Quote }) {
+  const mayan = quote.mayan;
+  const fromToken = mayan?.quote.fromToken.symbol ?? quote.sourceToken;
+  const toToken = mayan?.quote.toToken.symbol ?? 'USDC';
+  const routeTitle = mayan ? 'Mayan Swift v2' : quote.route;
+  const protocolFee = mayan?.protocolBps === undefined ? 'Included' : `${formatBps(mayan.protocolBps)}`;
+  const sourceDecimals = quote.sourceTokenDecimals ?? mayan?.quote.fromToken.decimals ?? 6;
+
   return (
-    <div className="border border-[#2a2a4a] bg-[#12121f] rounded-xl p-4 grid sm:grid-cols-3 gap-3 text-sm">
-      <Metric label="Estimated payout" value={`${formatXmr(quote.estimatedXmrOut)} XMR`} />
-      <Metric label="Minimum payout" value={`${formatXmr(quote.minXmrOut)} XMR`} />
-      <Metric label="Bridge fee" value={`${quote.bridgeFeeBps / 100}%`} />
+    <div className="border border-[#2a2a4a] bg-[#12121f] rounded-xl p-4 space-y-4 text-sm">
+      {quote.routeSummary && (
+        <div>
+          <div className="text-gray-400">Route</div>
+          <div className="text-white font-semibold">{quote.routeSummary}</div>
+        </div>
+      )}
+      <div className="grid sm:grid-cols-3 gap-3">
+        <Metric label="Router" value={routeTitle} />
+        <Metric label="ETA" value={mayan?.clientEta ?? (mayan?.etaSeconds ? `${mayan.etaSeconds}s` : 'Quoted live')} />
+        <Metric label="Mayan fee" value={protocolFee} />
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Metric label="Source" value={`${formatBaseUnits(quote.inputAmount, sourceDecimals)} ${fromToken} on ${CHAINS[quote.sourceChain].name}`} />
+        <Metric label="Solana delivery" value={`${formatUsdc(mayan?.expectedSolanaUsdcOut ?? quote.inputAmount)} ${toToken}`} />
+      </div>
+      <div className="grid sm:grid-cols-4 gap-3">
+        <Metric label="Min Solana USDC" value={`${formatUsdc(mayan?.minSolanaUsdcOut ?? quote.inputAmount)} ${toToken}`} />
+        <Metric label="Estimated payout" value={`${formatXmr(quote.estimatedXmrOut)} XMR`} />
+        <Metric label="Minimum payout" value={`${formatXmr(quote.minXmrOut)} XMR`} />
+        <Metric label="XMR bridge fee" value={formatBps(quote.bridgeFeeBps)} />
+      </div>
     </div>
   );
 }
@@ -287,26 +353,22 @@ function FundingPanel({
   if (order.status !== 'awaiting_deposit') {
     return null;
   }
-  if (order.funding.type === 'evm-cctp-burn') {
-    return <EvmFunding funding={order.funding} onDeposit={onDeposit} onError={onError} />;
-  }
-  if (order.funding.type === 'solana-transfer') {
-    return <SolanaFunding funding={order.funding} onDeposit={onDeposit} onError={onError} />;
+  if (order.funding.type === 'mayan-swift') {
+    return <MayanEvmFunding funding={order.funding} onDeposit={onDeposit} onError={onError} />;
   }
   return (
     <div className="border border-[#2a2a4a] rounded-xl p-4 text-sm text-gray-300">
-      <div className="text-white font-semibold">{order.funding.address}</div>
-      {order.funding.memo && <div className="mt-2">Memo: {order.funding.memo}</div>}
+      Unsupported funding route.
     </div>
   );
 }
 
-function EvmFunding({
+function MayanEvmFunding({
   funding,
   onDeposit,
   onError,
 }: {
-  funding: Extract<FundingInstructions, { type: 'evm-cctp-burn' }>;
+  funding: Extract<FundingInstructions, { type: 'mayan-swift' }>;
   onDeposit: (txHash: string) => Promise<void>;
   onError: (message: string) => void;
 }) {
@@ -316,6 +378,7 @@ function EvmFunding({
   const { switchChainAsync } = useSwitchChain();
   const publicClient = usePublicClient({ chainId: funding.chainNumericId });
   const { writeContractAsync } = useWriteContract();
+  const { sendTransactionAsync } = useSendTransaction();
   const [showConnect, setShowConnect] = useState(false);
   const [isFunding, setIsFunding] = useState(false);
 
@@ -337,38 +400,35 @@ function EvmFunding({
         throw new Error(`${CHAINS[funding.chainId].name} receipt polling RPC is not configured. Set ${rpcEnv} and rebuild the swap app.`);
       }
       const requiredAllowance = BigInt(funding.approve.amount);
-      const currentAllowance = await publicClient.readContract({
-        address: funding.usdc,
-        abi: ERC20_ALLOWANCE_ABI,
-        functionName: 'allowance',
-        args: [address, funding.approve.spender],
-      });
-      if (currentAllowance < requiredAllowance) {
-        const approveHash = await writeContractAsync({
-          address: funding.usdc,
-          abi: ERC20_APPROVE_ABI,
-          functionName: 'approve',
-          args: [funding.approve.spender, requiredAllowance],
-          chainId: funding.chainNumericId,
+      if (funding.token.toLowerCase() !== EVM_NATIVE_TOKEN) {
+        const currentAllowance = await publicClient.readContract({
+          address: funding.token,
+          abi: ERC20_ALLOWANCE_ABI,
+          functionName: 'allowance',
+          args: [address, funding.approve.spender],
         });
-        await publicClient.waitForTransactionReceipt({ hash: approveHash });
+        if (currentAllowance < requiredAllowance) {
+          const approveHash = await writeContractAsync({
+            address: funding.token,
+            abi: ERC20_APPROVE_ABI,
+            functionName: 'approve',
+            args: [funding.approve.spender, requiredAllowance],
+            chainId: funding.chainNumericId,
+          });
+          await publicClient.waitForTransactionReceipt({ hash: approveHash });
+        }
       }
-      const burnHash = await writeContractAsync({
-        address: funding.tokenMessenger,
-        abi: TOKEN_MESSENGER_V2_ABI,
-        functionName: 'depositForBurn',
-        args: [
-          BigInt(funding.depositForBurn.args[0]),
-          funding.depositForBurn.args[1],
-          funding.depositForBurn.args[2],
-          funding.depositForBurn.args[3],
-          funding.depositForBurn.args[4],
-          BigInt(funding.depositForBurn.args[5]),
-          funding.depositForBurn.args[6],
-        ],
+      const payload = await api<MayanEvmTxPayload>(`/orders/${funding.orderId}/mayan/evm-payload`, {
+        method: 'POST',
+        body: JSON.stringify({ swapperAddress: address }),
+      });
+      const swapHash = await sendTransactionAsync({
+        to: payload.to,
+        data: payload.data,
+        value: BigInt(payload.value),
         chainId: funding.chainNumericId,
       });
-      await onDeposit(burnHash);
+      await onDeposit(swapHash);
     } catch (e) {
       onError(errorMessage(e));
     } finally {
@@ -395,7 +455,7 @@ function EvmFunding({
         disabled={isFunding}
         className="w-full bg-[#ff6600] hover:bg-[#ff7a1a] disabled:bg-[#3a3a4f] text-white font-semibold rounded-xl px-4 py-3"
       >
-        {isFunding ? 'Waiting for wallet...' : 'Approve and burn USDC'}
+        {isFunding ? 'Waiting for wallet...' : 'Start Mayan Swift swap'}
       </button>
       {showConnect && (
         <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={() => setShowConnect(false)}>
@@ -426,78 +486,10 @@ function EvmFunding({
   );
 }
 
-function SolanaFunding({
-  funding,
-  onDeposit,
-  onError,
-}: {
-  funding: Extract<FundingInstructions, { type: 'solana-transfer' }>;
-  onDeposit: (txHash: string) => Promise<void>;
-  onError: (message: string) => void;
-}) {
-  const { connection } = useConnection();
-  const wallet = useWallet();
-  const [isFunding, setIsFunding] = useState(false);
-
-  const fund = async () => {
-    setIsFunding(true);
-    try {
-      if (!wallet.publicKey || !wallet.sendTransaction) {
-        throw new Error('Connect a Solana wallet');
-      }
-      const mint = new PublicKey(funding.mint);
-      const destination = new PublicKey(funding.destinationTokenAccount);
-      const source = await getAssociatedTokenAddress(mint, wallet.publicKey);
-      const transaction = new Transaction().add(
-        createAssociatedTokenAccountIdempotentInstruction(
-          wallet.publicKey,
-          destination,
-          new PublicKey(funding.destinationOwner),
-          mint,
-        ),
-        createTransferInstruction(
-          source,
-          destination,
-          wallet.publicKey,
-          BigInt(funding.amount),
-          [],
-          TOKEN_PROGRAM_ID,
-        ),
-        new TransactionInstruction({
-          programId: MEMO_PROGRAM_ID,
-          keys: [],
-          data: Buffer.from(funding.memo, 'utf8'),
-        }),
-      );
-      const signature = await wallet.sendTransaction(transaction, connection);
-      await connection.confirmTransaction(signature, 'confirmed');
-      await onDeposit(signature);
-    } catch (e) {
-      onError(errorMessage(e));
-    } finally {
-      setIsFunding(false);
-    }
-  };
-
-  return (
-    <div className="border border-[#2a2a4a] bg-[#12121f] rounded-xl p-4 space-y-3">
-      <div className="text-sm text-gray-400">Solana wallet</div>
-      <div className="text-white text-sm truncate">{wallet.publicKey?.toBase58() || 'Not connected'}</div>
-      <button
-        onClick={fund}
-        disabled={isFunding || !wallet.publicKey}
-        className="w-full bg-[#ff6600] hover:bg-[#ff7a1a] disabled:bg-[#3a3a4f] text-white font-semibold rounded-xl px-4 py-3"
-      >
-        {isFunding ? 'Waiting for wallet...' : 'Send USDC'}
-      </button>
-    </div>
-  );
-}
-
 function OrderStatusPanel({ order }: { order: Order | null }) {
   const steps = [
-    ['Deposit', ['awaiting_deposit', 'attesting']],
-    ['Bridge', ['minted']],
+    ['Deposit', ['awaiting_deposit']],
+    ['Bridge', ['bridging', 'minted']],
     ['Swap', ['swapping']],
     ['Payout', ['withdrawing', 'completed']],
   ] as const;
@@ -530,7 +522,7 @@ function OrderStatusPanel({ order }: { order: Order | null }) {
             <div className="text-white">{order.status}</div>
           </div>
           {order.sourceTxHash && <ExplorerLink chain={order.sourceChain} hash={order.sourceTxHash} label="Source transaction" />}
-          {order.solanaMintSignature && <ExplorerLink chain="solana" hash={order.solanaMintSignature} label="CCTP mint" />}
+          {order.solanaMintSignature && <ExplorerLink chain="solana" hash={order.solanaMintSignature} label="Mayan delivery" />}
           {order.swapSignature && <ExplorerLink chain="solana" hash={order.swapSignature} label="Jupiter swap" />}
           {order.withdrawalSignature && <ExplorerLink chain="solana" hash={order.withdrawalSignature} label="Withdrawal request" />}
           {order.error && <div className="text-sm text-red-200 break-words">{order.error}</div>}
@@ -562,20 +554,24 @@ function ExplorerLink({ chain, hash, label }: { chain: SourceChainId; hash: stri
   );
 }
 
-function parseUsdc(value: string): bigint {
+function parseTokenAmount(value: string, decimals: number): bigint {
   const trimmed = value.trim();
   if (!trimmed) return BigInt(0);
   const [whole, fraction = ''] = trimmed.split('.');
   const safeWhole = whole.replace(/\D/g, '') || '0';
-  const safeFraction = fraction.replace(/\D/g, '').slice(0, 6).padEnd(6, '0');
-  return BigInt(safeWhole) * BigInt(1_000_000) + BigInt(safeFraction);
+  const safeFraction = fraction.replace(/\D/g, '').slice(0, decimals).padEnd(decimals, '0');
+  return BigInt(safeWhole) * BigInt(10) ** BigInt(decimals) + BigInt(safeFraction || '0');
 }
 
 function formatUsdc(value: string): string {
+  return formatBaseUnits(value, 6);
+}
+
+function formatBaseUnits(value: string, decimals: number, maxFractionDigits = 6): string {
   const amount = BigInt(value);
-  const unit = BigInt(1_000_000);
+  const unit = BigInt(10) ** BigInt(decimals);
   const whole = amount / unit;
-  const fraction = (amount % unit).toString().padStart(6, '0').replace(/0+$/, '');
+  const fraction = (amount % unit).toString().padStart(decimals, '0').slice(0, maxFractionDigits).replace(/0+$/, '');
   return fraction ? `${whole}.${fraction}` : whole.toString();
 }
 
@@ -587,9 +583,18 @@ function formatXmr(value: string): string {
   return `${whole}.${fraction}`;
 }
 
+function formatBps(value: number): string {
+  const percent = value / 100;
+  return `${percent.toFixed(4).replace(/\.?0+$/, '')}%`;
+}
+
+function orderTokenDecimals(order: Order): number {
+  return order.funding.type === 'mayan-swift' ? order.funding.tokenDecimals ?? 6 : 6;
+}
+
 function stepDone(label: string, status: Order['status']): boolean {
   const order = ['Deposit', 'Bridge', 'Swap', 'Payout'];
-  const current = status === 'attesting' || status === 'minted'
+  const current = status === 'bridging' || status === 'minted'
     ? 'Bridge'
     : status === 'swapping'
       ? 'Swap'
