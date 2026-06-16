@@ -1,6 +1,7 @@
 import type { Address } from "viem";
 
 export type SourceChainId =
+  | "monero"
   | "ethereum"
   | "bsc"
   | "base"
@@ -16,6 +17,8 @@ export type SourceChainId =
   | "solana"
   | "bitcoin";
 
+export type SwapDirection = "mayan-to-xmr" | "xmr-to-mayan";
+
 export type OrderStatus =
   | "created"
   | "awaiting_deposit"
@@ -30,22 +33,30 @@ export type OrderStatus =
   | "refunded";
 
 export interface QuoteRequest {
+  direction?: SwapDirection;
   sourceChain: SourceChainId;
   sourceToken: string;
   amount: string;
   xmrAddress: string;
+  destinationAddress?: string;
   refundAddress?: string;
   slippageBps?: number;
 }
 
 export interface Quote {
   id: string;
+  direction: SwapDirection;
   sourceChain: SourceChainId;
   sourceToken: string;
   sourceTokenSymbol?: string;
   sourceTokenDecimals?: number;
   inputAmount: string;
   xmrAddress: string;
+  destinationAddress?: string;
+  destinationTokenSymbol?: string;
+  destinationTokenDecimals?: number;
+  estimatedDestinationOut?: string;
+  minDestinationOut?: string;
   refundAddress?: string;
   estimatedWxmrOut: string;
   estimatedXmrOut: string;
@@ -188,16 +199,24 @@ export interface DepositAddressFunding {
   address: string;
   memo?: string;
   expiresAt: string;
+  expectedAmount?: string;
+  depositOwner?: string;
+  depositPda?: string;
+  createSignature?: string;
 }
 
 export interface Order {
   id: string;
   quoteId: string;
+  direction: SwapDirection;
   status: OrderStatus;
   sourceChain: SourceChainId;
   sourceToken: string;
   amount: string;
   xmrAddress: string;
+  destinationAddress?: string;
+  destinationTokenSymbol?: string;
+  destinationTokenDecimals?: number;
   refundAddress?: string;
   funding: FundingInstructions;
   sourceTxHash?: string;

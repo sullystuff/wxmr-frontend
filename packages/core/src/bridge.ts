@@ -11,7 +11,12 @@ import {
   VersionedTransaction,
   sendAndConfirmTransaction,
 } from "@solana/web3.js";
-import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from "@solana/spl-token";
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountIdempotentInstruction,
+  getAssociatedTokenAddress,
+} from "@solana/spl-token";
 import IDL from "./idl/wxmr_bridge.json" with { type: "json" };
 import type { WxmrBridge } from "./idl/wxmr_bridge.js";
 import { BRIDGE_PROGRAM_ID } from "./constants.js";
@@ -48,6 +53,22 @@ export interface RequestWithdrawalResult {
   nonce: bigint;
 }
 
+export interface DepositAccountInfo {
+  depositPda: string;
+  owner: string;
+  xmrDepositAddress: string;
+  totalDeposited: bigint;
+  status: "pending" | "active" | "closed";
+  createdAt: number;
+}
+
+export interface DepositAccountOptions {
+  connection: Connection;
+  signer: Keypair;
+  programId?: PublicKey | string;
+  commitment?: Commitment;
+}
+
 const PRIORITY_FEE_MICROLAMPORTS = 50_000;
 const COMPUTE_UNIT_LIMIT = 100_000;
 
@@ -74,6 +95,17 @@ export function getWithdrawalPda(
       user.toBuffer(),
       new BN(nonce.toString()).toArrayLike(Buffer, "le", 8),
     ],
+    getBridgeProgramId(programId),
+  );
+  return pda;
+}
+
+export function getDepositPda(
+  owner: PublicKey,
+  programId: PublicKey | string = BRIDGE_PROGRAM_ID,
+): PublicKey {
+  const [pda] = PublicKey.findProgramAddressSync(
+    [Buffer.from("deposit"), owner.toBuffer()],
     getBridgeProgramId(programId),
   );
   return pda;
@@ -133,6 +165,92 @@ export async function fetchBridgeConfig(
   };
 }
 
+export async function createDepositAccountWithKeypair(
+  options: DepositAccountOptions,
+): Promise<{ signature: string; depositPda: string }> {
+  const programId = getBridgeProgramId(options.programId);
+  const wallet = createKeypairWallet(options.signer);
+  const program = createBridgeProgram(options.connection, wallet, options.commitment ?? "confirmed");
+  const config = await program.account.bridgeConfig.fetch(getBridgeConfigPda(programId));
+  const wxmrMint = config.wxmrMint as PublicKey;
+  const ownerTokenAccount = await getAssociatedTokenAddress(wxmrMint, options.signer.publicKey);
+  const createTokenAccountInstruction = createAssociatedTokenAccountIdempotentInstruction(
+    options.signer.publicKey,
+    ownerTokenAccount,
+    options.signer.publicKey,
+    wxmrMint,
+    TOKEN_PROGRAM_ID,
+  );
+  const signature = await program.methods
+    .createDepositAccount()
+    .accountsPartial({
+      config: getBridgeConfigPda(programId),
+      user: options.signer.publicKey,
+      systemProgram: SystemProgram.programId,
+    })
+    .preInstructions([createTokenAccountInstruction, ...getPriorityFeeInstructions()])
+    .rpc();
+
+  return {
+    signature,
+    depositPda: getDepositPda(options.signer.publicKey, programId).toBase58(),
+  };
+}
+
+export async function fetchDepositAccount(
+  connection: Connection,
+  owner: PublicKey,
+  programId: PublicKey | string = BRIDGE_PROGRAM_ID,
+): Promise<DepositAccountInfo | null> {
+  const wallet = createKeypairWallet(Keypair.generate());
+  const program = createBridgeProgram(connection, wallet);
+  const depositPda = getDepositPda(owner, programId);
+  try {
+    const deposit = await program.account.depositRecord.fetch(depositPda);
+    return decodeDepositAccount(depositPda, deposit);
+  } catch {
+    return null;
+  }
+}
+
+export async function claimPendingMintWithKeypair(
+  options: DepositAccountOptions,
+): Promise<string> {
+  const programId = getBridgeProgramId(options.programId);
+  const wallet = createKeypairWallet(options.signer);
+  const program = createBridgeProgram(options.connection, wallet, options.commitment ?? "confirmed");
+  const config = await program.account.bridgeConfig.fetch(getBridgeConfigPda(programId));
+  const wxmrMint = config.wxmrMint as PublicKey;
+  const authority = config.authority as PublicKey;
+  const depositPda = getDepositPda(options.signer.publicKey, programId);
+  const pendingTokenAccount = await getAssociatedTokenAddress(wxmrMint, depositPda, true, TOKEN_PROGRAM_ID);
+  const ownerTokenAccount = await getAssociatedTokenAddress(wxmrMint, options.signer.publicKey, false, TOKEN_PROGRAM_ID);
+  const createOwnerTokenAccountInstruction = createAssociatedTokenAccountIdempotentInstruction(
+    options.signer.publicKey,
+    ownerTokenAccount,
+    options.signer.publicKey,
+    wxmrMint,
+    TOKEN_PROGRAM_ID,
+  );
+
+  return program.methods
+    .claimPendingMint()
+    .accountsPartial({
+      config: getBridgeConfigPda(programId),
+      deposit: depositPda,
+      owner: options.signer.publicKey,
+      pendingTokenAccount,
+      ownerTokenAccount,
+      wxmrMint,
+      authority,
+      tokenProgram: TOKEN_PROGRAM_ID,
+      associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+      systemProgram: SystemProgram.programId,
+    })
+    .preInstructions([createOwnerTokenAccountInstruction, ...getPriorityFeeInstructions()])
+    .rpc();
+}
+
 export async function requestWithdrawalWithKeypair(
   options: RequestWithdrawalOptions,
 ): Promise<RequestWithdrawalResult> {
@@ -170,6 +288,27 @@ export async function requestWithdrawalWithKeypair(
     signature,
     withdrawalPda: withdrawalPda.toBase58(),
     nonce,
+  };
+}
+
+function decodeDepositAccount(depositPda: PublicKey, deposit: {
+  owner: PublicKey;
+  xmrDepositAddress?: string;
+  totalDeposited?: { toString(): string };
+  status: Record<string, unknown>;
+  createdAt: { toNumber(): number };
+}): DepositAccountInfo {
+  let status: DepositAccountInfo["status"] = "pending";
+  if ("active" in deposit.status) status = "active";
+  else if ("closed" in deposit.status) status = "closed";
+
+  return {
+    depositPda: depositPda.toBase58(),
+    owner: deposit.owner.toBase58(),
+    xmrDepositAddress: deposit.xmrDepositAddress || "",
+    totalDeposited: BigInt(deposit.totalDeposited?.toString() ?? "0"),
+    status,
+    createdAt: deposit.createdAt.toNumber(),
   };
 }
 

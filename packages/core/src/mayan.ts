@@ -40,9 +40,37 @@ export class MayanClient {
     referrer?: string;
     referrerBps?: number;
   }): Promise<MayanSwiftQuote> {
-    const chain = CHAINS[params.sourceChain];
-    if (!chain?.mayanChain) {
-      throw new Error(`Chain ${params.sourceChain} is not a Mayan Swift source`);
+    return this.fetchSwiftQuoteForRoute({
+      fromChain: params.sourceChain,
+      fromToken: params.sourceToken,
+      toChain: "solana",
+      toToken: USDC_MINT_ADDRESS,
+      amount: params.amount,
+      destinationAddress: params.destinationAddress,
+      slippageBps: params.slippageBps,
+      referrer: params.referrer,
+      referrerBps: params.referrerBps,
+    });
+  }
+
+  async fetchSwiftQuoteForRoute(params: {
+    fromChain: SourceChainId;
+    fromToken: string;
+    toChain: SourceChainId;
+    toToken: string;
+    amount: bigint | string;
+    destinationAddress: string;
+    slippageBps: number;
+    referrer?: string;
+    referrerBps?: number;
+  }): Promise<MayanSwiftQuote> {
+    const fromChain = CHAINS[params.fromChain];
+    const toChain = CHAINS[params.toChain];
+    if (!fromChain?.mayanChain) {
+      throw new Error(`Chain ${params.fromChain} is not a Mayan Swift source`);
+    }
+    if (!toChain?.mayanChain) {
+      throw new Error(`Chain ${params.toChain} is not a Mayan Swift destination`);
     }
 
     const url = new URL(`${this.priceUrl.replace(/\/$/, "")}/quote`);
@@ -64,10 +92,10 @@ export class MayanClient {
         solanaProgram: MAYAN.solanaProgram,
         forwarderAddress: MAYAN.forwarderContract,
         amountIn64: params.amount.toString(),
-        fromToken: params.sourceToken,
-        fromChain: chain.mayanChain,
-        toToken: USDC_MINT_ADDRESS,
-        toChain: "solana",
+        fromToken: params.fromToken,
+        fromChain: fromChain.mayanChain,
+        toToken: params.toToken,
+        toChain: toChain.mayanChain,
         slippageBps: params.slippageBps,
         referrer: params.referrer,
         referrerBps: params.referrerBps,

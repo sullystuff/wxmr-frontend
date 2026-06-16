@@ -4,7 +4,7 @@ import type { SourceChainId } from "./orders.js";
 export interface ChainConfig {
   id: SourceChainId;
   name: string;
-  kind: "evm" | "sui" | "hypercore" | "solana" | "bitcoin";
+  kind: "evm" | "sui" | "hypercore" | "solana" | "bitcoin" | "monero";
   chainId?: number;
   mayanChain?: string;
   usdc?: Address | string;
@@ -14,6 +14,13 @@ export interface ChainConfig {
 }
 
 export const CHAINS: Record<SourceChainId, ChainConfig> = {
+  monero: {
+    id: "monero",
+    name: "Monero",
+    kind: "monero",
+    nativeCurrency: "XMR",
+    explorerTxUrl: "",
+  },
   ethereum: {
     id: "ethereum",
     name: "Ethereum",

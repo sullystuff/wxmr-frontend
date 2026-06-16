@@ -65,6 +65,15 @@ export class JupiterClient {
     });
   }
 
+  quoteWxmrToUsdc(amount: bigint | string, taker?: string): Promise<JupiterQuote> {
+    return this.quote({
+      inputMint: WXMR_MINT_ADDRESS,
+      outputMint: USDC_MINT_ADDRESS,
+      amount,
+      taker,
+    });
+  }
+
   async execute(signedTransactionBase64: string, requestId: string): Promise<{
     status: string;
     signature?: string;
