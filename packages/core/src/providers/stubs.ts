@@ -2,7 +2,7 @@ import { UnsupportedRouteProvider } from "../routes.js";
 
 export class MayanProvider extends UnsupportedRouteProvider {
   constructor() {
-    super("mayan", "Mayan routing is scaffolded but not active in v1");
+    super("mayan", "Mayan routing is handled by the orchestrator");
   }
 }
 

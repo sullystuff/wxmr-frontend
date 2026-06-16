@@ -1,7 +1,7 @@
 import type { DepositReference, FundingInstructions, Order, Quote, QuoteRequest } from "./orders.js";
 
 export interface RouteProvider {
-  readonly id: "cctp" | "mayan" | "thorchain";
+  readonly id: "mayan" | "thorchain";
   quote(input: QuoteRequest): Promise<Quote>;
   buildFunding(order: Order): Promise<FundingInstructions>;
   confirmDeposit(order: Order, ref: DepositReference): Promise<Order>;
@@ -13,7 +13,6 @@ export class RouteSelector {
 
   select(input: QuoteRequest): RouteProvider {
     const provider = this.providers.find((candidate) => {
-      if (input.sourceToken === "USDC" && candidate.id === "cctp") return true;
       if (candidate.id === "mayan") return true;
       return candidate.id === "thorchain";
     });

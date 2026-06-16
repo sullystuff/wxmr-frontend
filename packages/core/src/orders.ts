@@ -2,18 +2,24 @@ import type { Address } from "viem";
 
 export type SourceChainId =
   | "ethereum"
+  | "bsc"
   | "base"
   | "arbitrum"
   | "optimism"
   | "polygon"
   | "avalanche"
+  | "linea"
+  | "hyperevm"
+  | "monad"
+  | "sui"
+  | "hyperliquid"
   | "solana"
   | "bitcoin";
 
 export type OrderStatus =
   | "created"
   | "awaiting_deposit"
-  | "attesting"
+  | "bridging"
   | "minted"
   | "swapping"
   | "withdrawing"
@@ -25,7 +31,7 @@ export type OrderStatus =
 
 export interface QuoteRequest {
   sourceChain: SourceChainId;
-  sourceToken: "USDC" | string;
+  sourceToken: string;
   amount: string;
   xmrAddress: string;
   refundAddress?: string;
@@ -36,6 +42,8 @@ export interface Quote {
   id: string;
   sourceChain: SourceChainId;
   sourceToken: string;
+  sourceTokenSymbol?: string;
+  sourceTokenDecimals?: number;
   inputAmount: string;
   xmrAddress: string;
   refundAddress?: string;
@@ -47,44 +55,118 @@ export interface Quote {
   serviceFeeBps: number;
   jupiterPriceImpactPct: string;
   expiresAt: string;
-  route: "cctp" | "mayan" | "thorchain";
+  route: "mayan" | "thorchain";
+  routeSummary?: string;
+  mayan?: MayanQuoteMetadata;
 }
 
 export type FundingInstructions =
-  | EvmCctpBurnFunding
+  | MayanSwiftFunding
   | SolanaTransferFunding
   | DepositAddressFunding;
 
-export interface EvmCctpBurnFunding {
-  type: "evm-cctp-burn";
+export interface MayanQuoteMetadata {
+  quote: MayanSwiftQuote;
+  expectedSolanaUsdcOut: string;
+  minSolanaUsdcOut: string;
+  etaSeconds?: number;
+  clientEta?: string;
+  protocolBps?: number;
+  quoteId?: string;
+}
+
+export interface MayanSwiftFunding {
+  type: "mayan-swift";
   orderId: string;
   chainId: SourceChainId;
   chainNumericId: number;
-  tokenMessenger: Address;
-  usdc: Address;
+  token: Address;
+  tokenSymbol?: string;
+  tokenDecimals?: number;
+  tokenStandard?: string;
   amount: string;
-  destinationDomain: number;
-  mintRecipient: `0x${string}`;
-  destinationCaller: `0x${string}`;
-  maxFee: string;
-  minFinalityThreshold: number;
+  forwarder: Address;
+  destinationAddress: string;
+  mayanQuote: MayanSwiftQuote;
   approve: {
     spender: Address;
     amount: string;
   };
-  depositForBurn: {
-    abi: readonly unknown[];
-    functionName: "depositForBurn";
-    args: readonly [
-      string,
-      number,
-      `0x${string}`,
-      Address,
-      `0x${string}`,
-      string,
-      number,
-    ];
-  };
+}
+
+export interface MayanToken {
+  name?: string;
+  symbol?: string;
+  contract?: string;
+  mint?: string;
+  standard?: string;
+  verified?: boolean;
+  decimals?: number;
+  logoURI?: string;
+  chainId?: number;
+  wChainId?: number;
+  realOriginContractAddress?: string;
+  realOriginChainId?: number;
+}
+
+export interface MayanSwiftQuote {
+  type: "SWIFT";
+  swiftVersion: "V1" | "V2";
+  gasless: boolean;
+  quoteId?: string;
+  fromChain: string;
+  toChain: string;
+  fromToken: MayanToken;
+  toToken: MayanToken;
+  effectiveAmountIn64: string;
+  expectedAmountOutBaseUnits: string;
+  minAmountOutBaseUnits?: string;
+  minReceivedBaseUnits: string;
+  expectedAmountOut: number;
+  minAmountOut: number;
+  minReceived: number;
+  slippageBps: number;
+  etaSeconds?: number;
+  clientEta?: string;
+  protocolBps?: number;
+  bridgeFee?: number;
+  priceImpact?: number | null;
+  priceStat?: { status?: string; ratio?: number };
+  deadline64: string;
+  refundRelayerFee64?: string | null;
+  cancelRelayerFee64?: string | null;
+  submitRelayerFee64?: string | null;
+  swiftMayanContract?: string;
+  swiftAuctionMode?: number;
+  swiftInputContract: string;
+  swiftInputDecimals: number;
+  swiftWrapAndLock: boolean;
+  swiftInputContractStandard?: string;
+  minMiddleAmount?: number;
+  gasDrop?: number;
+  signature?: string;
+  [key: string]: unknown;
+}
+
+export interface MayanSwapDetails {
+  id?: string;
+  clientStatus?: string;
+  status?: string;
+  sourceTxHash?: string;
+  destinationTxHash?: string;
+  destTxHash?: string;
+  redeemTxHash?: string;
+  fulfillTxHash?: string;
+  settleTxHash?: string;
+  swapTxHash?: string;
+  destAddress?: string;
+  toTokenAddress?: string;
+  toTokenSymbol?: string;
+  toAmount?: string;
+  toAmount64?: string;
+  toAmountBaseUnits?: string;
+  error?: string;
+  [key: string]: unknown;
 }
 
 export interface SolanaTransferFunding {
@@ -119,8 +201,7 @@ export interface Order {
   refundAddress?: string;
   funding: FundingInstructions;
   sourceTxHash?: string;
-  cctpMessage?: string;
-  cctpAttestation?: string;
+  destinationAmount?: string;
   solanaMintSignature?: string;
   swapSignature?: string;
   withdrawalSignature?: string;
