@@ -1,13 +1,17 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import { getSwapFromEvmTxPayload } from "@mayanfinance/swap-sdk";
+import type { Quote as MayanSdkQuote } from "@mayanfinance/swap-sdk";
 import {
   BRIDGE_FEE_BPS,
   CHAINS,
   JupiterClient,
-  USDC_MINT_ADDRESS,
   assertValidMoneroAddress,
-  buildEvmCctpBurnFunding,
+  buildMayanSwiftFunding,
+  type MayanEvmTxPayload,
+  MayanClient,
   type FundingInstructions,
+  type MayanSwiftFunding,
   type Order,
   type Quote,
   type QuoteRequest,
@@ -19,6 +23,7 @@ import { Store } from "./db.js";
 const env = loadEnv();
 const store = new Store(env.dbPath);
 const jupiter = new JupiterClient({ apiKey: env.jupiterApiKey });
+const mayan = new MayanClient({ apiKey: env.mayanApiKey });
 
 const app = Fastify({ logger: true });
 await app.register(cors, {
@@ -36,6 +41,16 @@ function registerRoutes(prefix: "" | "/api"): void {
 
   app.get(route("/health"), async () => ({ ok: true }));
 
+  app.get(route("/tokens/:sourceChain"), async (request, reply) => {
+    const { sourceChain } = request.params as { sourceChain: SourceChainId };
+    const chain = CHAINS[sourceChain];
+    if (!chain?.mayanChain) {
+      return reply.code(404).send({ error: "unsupported sourceChain" });
+    }
+    const tokens = await mayan.fetchTokens(sourceChain);
+    return tokens.filter((token) => token.verified !== false);
+  });
+
   app.post(route("/quote"), async (request, reply) => {
     const body = request.body as Partial<QuoteRequest>;
     const sourceChain = body.sourceChain as SourceChainId;
@@ -48,13 +63,16 @@ function registerRoutes(prefix: "" | "/api"): void {
     assertValidMoneroAddress(body.xmrAddress ?? "");
 
     const chain = CHAINS[sourceChain];
-    if (chain.kind !== "evm" && chain.kind !== "solana") {
-      return reply.code(400).send({ error: "v1 supports native USDC on EVM chains and Solana only" });
+    if (chain.kind !== "evm") {
+      return reply.code(400).send({ error: "this build supports Mayan Swift v2 EVM sources; Sui and Hyperliquid need separate wallet signing" });
+    }
+    if (!body.sourceToken) {
+      return reply.code(400).send({ error: "sourceToken is required" });
     }
 
     const quote = await quoteUsdcToXmr({
       sourceChain,
-      sourceToken: "USDC",
+      sourceToken: body.sourceToken,
       amount: body.amount,
       xmrAddress: body.xmrAddress!,
       refundAddress: body.refundAddress,
@@ -113,8 +131,28 @@ function registerRoutes(prefix: "" | "/api"): void {
     if (order.status !== "awaiting_deposit") {
       return reply.code(409).send({ error: `order is ${order.status}` });
     }
-    const nextStatus = order.sourceChain === "solana" ? "minted" : "attesting";
+    const nextStatus = "bridging";
     return store.updateOrder(id, { sourceTxHash: body.txHash, status: nextStatus }, "deposit reported");
+  });
+
+  app.post(route("/orders/:id/mayan/evm-payload"), async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as { swapperAddress?: string };
+    if (!body.swapperAddress) {
+      return reply.code(400).send({ error: "swapperAddress is required" });
+    }
+    const order = store.getOrder(id);
+    if (!order) {
+      return reply.code(404).send({ error: "order not found" });
+    }
+    if (order.status !== "awaiting_deposit") {
+      return reply.code(409).send({ error: `order is ${order.status}` });
+    }
+    if (order.funding.type !== "mayan-swift") {
+      return reply.code(400).send({ error: "order is not a Mayan Swift order" });
+    }
+
+    return buildMayanPayload(order.funding, body.swapperAddress);
   });
 
   app.get(route("/orders/:id"), async (request, reply) => {
@@ -129,17 +167,31 @@ function registerRoutes(prefix: "" | "/api"): void {
 
 async function quoteUsdcToXmr(input: QuoteRequest): Promise<Quote> {
   const slippageBps = Math.max(0, Math.min(input.slippageBps ?? 100, 2_000));
-  const jupiterQuote = await jupiter.quoteUsdcToWxmr(input.amount);
-  const grossWxmr = BigInt(jupiterQuote.outAmount);
+  const mayanQuote = await mayan.fetchSwiftQuote({
+    sourceChain: input.sourceChain,
+    sourceToken: input.sourceToken,
+    amount: input.amount,
+    destinationAddress: env.solanaHotWallet.publicKey.toBase58(),
+    slippageBps,
+  });
+  const expectedSolanaUsdcOut = mayanQuote.expectedAmountOutBaseUnits;
+  const minSolanaUsdcOut = mayanQuote.minReceivedBaseUnits;
+  const expectedJupiterQuote = await jupiter.quoteUsdcToWxmr(expectedSolanaUsdcOut);
+  const minJupiterQuote = await jupiter.quoteUsdcToWxmr(minSolanaUsdcOut);
+  const grossWxmr = BigInt(expectedJupiterQuote.outAmount);
+  const minGrossWxmr = BigInt(minJupiterQuote.outAmount);
   const afterService = applyBps(grossWxmr, 10_000 - env.serviceFeeBps);
-  const minWxmrOut = applyBps(afterService, 10_000 - slippageBps);
+  const minAfterService = applyBps(minGrossWxmr, 10_000 - env.serviceFeeBps);
+  const minWxmrOut = applyBps(minAfterService, 10_000 - slippageBps);
   const estimatedXmrOut = applyBps(afterService, 10_000 - BRIDGE_FEE_BPS);
   const minXmrOut = applyBps(minWxmrOut, 10_000 - BRIDGE_FEE_BPS);
 
   return {
     id: crypto.randomUUID(),
     sourceChain: input.sourceChain,
-    sourceToken: "USDC",
+    sourceToken: mayanQuote.fromToken.contract ?? input.sourceToken,
+    sourceTokenSymbol: mayanQuote.fromToken.symbol,
+    sourceTokenDecimals: mayanQuote.fromToken.decimals,
     inputAmount: input.amount,
     xmrAddress: input.xmrAddress,
     refundAddress: input.refundAddress,
@@ -149,33 +201,52 @@ async function quoteUsdcToXmr(input: QuoteRequest): Promise<Quote> {
     minXmrOut: minXmrOut.toString(),
     bridgeFeeBps: BRIDGE_FEE_BPS,
     serviceFeeBps: env.serviceFeeBps,
-    jupiterPriceImpactPct: jupiterQuote.priceImpactPct ?? "0",
+    jupiterPriceImpactPct: expectedJupiterQuote.priceImpactPct ?? "0",
     expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-    route: "cctp",
+    route: "mayan",
+    routeSummary: `${mayanQuote.fromToken.symbol ?? "Token"} on ${CHAINS[input.sourceChain].name} -> USDC-SOL via Mayan Swift v2 -> XMR-SOL via jup.ag -> native XMR via Monero Bridge`,
+    mayan: {
+      quote: mayanQuote,
+      expectedSolanaUsdcOut,
+      minSolanaUsdcOut,
+      etaSeconds: mayanQuote.etaSeconds,
+      clientEta: mayanQuote.clientEta,
+      protocolBps: mayanQuote.protocolBps,
+      quoteId: mayanQuote.quoteId,
+    },
   };
 }
 
 function buildFundingInstructions(orderId: string, quote: Quote): FundingInstructions {
-  if (quote.sourceChain === "solana") {
-    return {
-      type: "solana-transfer",
-      orderId,
-      chainId: "solana",
-      mint: USDC_MINT_ADDRESS,
-      amount: quote.inputAmount,
-      destinationTokenAccount: env.hotWalletUsdcAta.toBase58(),
-      destinationOwner: env.solanaHotWallet.publicKey.toBase58(),
-      memo: orderId,
-    };
-  }
+  if (!quote.mayan) throw new Error("Mayan quote metadata is missing");
 
-  return buildEvmCctpBurnFunding({
+  return buildMayanSwiftFunding({
     orderId,
     sourceChain: quote.sourceChain,
     amount: quote.inputAmount,
-    mintRecipient: env.hotWalletUsdcAta,
-    destinationCaller: env.solanaHotWallet.publicKey,
+    destinationAddress: env.solanaHotWallet.publicKey.toBase58(),
+    quote: quote.mayan.quote,
   });
+}
+
+async function buildMayanPayload(funding: MayanSwiftFunding, swapperAddress: string): Promise<MayanEvmTxPayload> {
+  const payload = await getSwapFromEvmTxPayload(
+    funding.mayanQuote as unknown as MayanSdkQuote,
+    swapperAddress,
+    funding.destinationAddress,
+    null,
+    swapperAddress,
+    funding.chainNumericId,
+    null,
+    null,
+    { apiKey: env.mayanApiKey },
+  );
+  return {
+    to: payload.to as MayanEvmTxPayload["to"],
+    data: payload.data as MayanEvmTxPayload["data"],
+    value: (payload.value ?? "0x0") as MayanEvmTxPayload["value"],
+    chainId: Number(payload.chainId),
+  };
 }
 
 function applyBps(amount: bigint, bps: number): bigint {

@@ -13,8 +13,7 @@ export interface OrderRow {
   refund_address: string | null;
   funding_json: string;
   source_tx_hash: string | null;
-  cctp_message: string | null;
-  cctp_attestation: string | null;
+  destination_amount: string | null;
   solana_mint_signature: string | null;
   swap_signature: string | null;
   withdrawal_signature: string | null;
@@ -104,8 +103,7 @@ export class Store {
         `UPDATE orders SET
           status = @status,
           source_tx_hash = @source_tx_hash,
-          cctp_message = @cctp_message,
-          cctp_attestation = @cctp_attestation,
+          destination_amount = @destination_amount,
           solana_mint_signature = @solana_mint_signature,
           swap_signature = @swap_signature,
           withdrawal_signature = @withdrawal_signature,
@@ -118,8 +116,7 @@ export class Store {
         id,
         status: next.status,
         source_tx_hash: next.sourceTxHash ?? null,
-        cctp_message: next.cctpMessage ?? null,
-        cctp_attestation: next.cctpAttestation ?? null,
+        destination_amount: next.destinationAmount ?? null,
         solana_mint_signature: next.solanaMintSignature ?? null,
         swap_signature: next.swapSignature ?? null,
         withdrawal_signature: next.withdrawalSignature ?? null,
@@ -162,8 +159,7 @@ export class Store {
         refund_address TEXT,
         funding_json TEXT NOT NULL,
         source_tx_hash TEXT,
-        cctp_message TEXT,
-        cctp_attestation TEXT,
+        destination_amount TEXT,
         solana_mint_signature TEXT,
         swap_signature TEXT,
         withdrawal_signature TEXT,
@@ -185,6 +181,10 @@ export class Store {
       CREATE INDEX IF NOT EXISTS idx_orders_status_updated ON orders(status, updated_at);
       CREATE INDEX IF NOT EXISTS idx_order_events_order ON order_events(order_id, created_at);
     `);
+    const columns = this.db.prepare("PRAGMA table_info(orders)").all() as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === "destination_amount")) {
+      this.db.exec("ALTER TABLE orders ADD COLUMN destination_amount TEXT");
+    }
   }
 }
 
@@ -200,8 +200,7 @@ function rowToOrder(row: OrderRow): Order {
     refundAddress: row.refund_address ?? undefined,
     funding: JSON.parse(row.funding_json) as FundingInstructions,
     sourceTxHash: row.source_tx_hash ?? undefined,
-    cctpMessage: row.cctp_message ?? undefined,
-    cctpAttestation: row.cctp_attestation ?? undefined,
+    destinationAmount: row.destination_amount ?? undefined,
     solanaMintSignature: row.solana_mint_signature ?? undefined,
     swapSignature: row.swap_signature ?? undefined,
     withdrawalSignature: row.withdrawal_signature ?? undefined,

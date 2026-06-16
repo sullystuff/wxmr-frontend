@@ -2,7 +2,7 @@ import "dotenv/config";
 import bs58 from "bs58";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
-import { BRIDGE_PROGRAM_ID, CCTP_V2, USDC_MINT } from "@wxmr/core";
+import { BRIDGE_PROGRAM_ID, USDC_MINT } from "@wxmr/core";
 
 export interface Env {
   host: string;
@@ -12,9 +12,9 @@ export interface Env {
   solanaHotWallet: Keypair;
   hotWalletUsdcAta: PublicKey;
   bridgeProgramId: string;
-  circleAttestationUrl: string;
   serviceFeeBps: number;
   jupiterApiKey?: string;
+  mayanApiKey?: string;
 }
 
 export function loadEnv(): Env {
@@ -27,9 +27,9 @@ export function loadEnv(): Env {
     solanaHotWallet,
     hotWalletUsdcAta: getAssociatedTokenAddressSync(USDC_MINT, solanaHotWallet.publicKey),
     bridgeProgramId: process.env.BRIDGE_PROGRAM_ID ?? BRIDGE_PROGRAM_ID,
-    circleAttestationUrl: process.env.CIRCLE_ATTESTATION_URL ?? CCTP_V2.attestationUrl,
     serviceFeeBps: Number(process.env.SERVICE_FEE_BPS ?? 0),
     jupiterApiKey: process.env.JUPITER_API_KEY,
+    mayanApiKey: process.env.MAYAN_API_KEY,
   };
 }
 
