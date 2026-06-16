@@ -27,6 +27,45 @@ import { EVM_RPC_ENV_BY_CHAIN, EVM_RPC_URL_BY_CHAIN } from './evm-rpc';
 
 const ORCHESTRATOR_URL = (process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || '/api').replace(/\/$/, '');
 const EVM_NATIVE_TOKEN = '0x0000000000000000000000000000000000000000';
+const TOKEN_RELEVANCE_BY_CHAIN = {
+  ethereum: ['ETH', 'WETH', 'USDC', 'USDT', 'WBTC', 'DAI', 'LINK', 'UNI', 'AAVE', 'ENA', 'PEPE', 'SHIB'],
+  base: ['ETH', 'WETH', 'USDC', 'cbBTC', 'USDT', 'EURC', 'AERO', 'VIRTUAL', 'MORPHO', 'DEGEN', 'BRETT'],
+  arbitrum: ['ETH', 'WETH', 'USDC', 'USDT', 'WBTC', 'ARB', 'GMX', 'LINK', 'PENDLE', 'DAI'],
+  optimism: ['ETH', 'WETH', 'USDC', 'USDT', 'OP', 'WLD', 'SNX', 'VELO', 'DAI'],
+  polygon: ['POL', 'MATIC', 'USDC', 'WETH', 'USDT', 'WBTC', 'DAI', 'AAVE', 'LINK'],
+  avalanche: ['AVAX', 'WAVAX', 'USDC', 'USDT', 'BTC.b', 'WETH.e', 'JOE', 'QI'],
+  bsc: ['BNB', 'WBNB', 'USDT', 'USDC', 'BTCB', 'ETH', 'FDUSD', 'CAKE'],
+  linea: ['ETH', 'WETH', 'USDC', 'USDT', 'DAI', 'ZERO'],
+  hyperevm: ['HYPE', 'WHYPE', 'USDC', 'UBTC', 'PURR'],
+  monad: ['MON', 'WMON', 'USDC', 'USDT', 'WETH', 'WBTC'],
+  sui: ['SUI', 'USDC', 'USDT', 'WAL', 'DEEP', 'CETUS'],
+  hyperliquid: ['USDC', 'HYPE', 'PURR'],
+} as const satisfies Partial<Record<SourceChainId, readonly string[]>>;
+const STABLE_TOKEN_SYMBOLS = new Set(['USDC', 'USDC.E', 'USDCE', 'USDT', 'DAI', 'USDE', 'USDS', 'FRAX', 'FDUSD', 'PYUSD', 'EURC']);
+const BLUE_CHIP_TOKEN_SYMBOLS = new Set([
+  'ETH',
+  'WETH',
+  'BTC',
+  'WBTC',
+  'CBBTC',
+  'BTCB',
+  'SOL',
+  'WSOL',
+  'BNB',
+  'WBNB',
+  'AVAX',
+  'WAVAX',
+  'POL',
+  'MATIC',
+  'LINK',
+  'AAVE',
+  'UNI',
+  'HYPE',
+  'WHYPE',
+  'MON',
+  'WMON',
+  'SUI',
+]);
 
 type RouteLeg = {
   title: string;
@@ -94,10 +133,11 @@ export default function SwapPage() {
     api<MayanToken[]>(`/tokens/${sourceChain}`)
       .then((tokens) => {
         if (cancelled) return;
-        setSourceTokens(tokens);
-        const preferred = tokens.find((token) => token.symbol?.toUpperCase() === 'USDC') ?? tokens[0];
+        const sortedTokens = sortTokensByRelevance(tokens, sourceChain);
+        setSourceTokens(sortedTokens);
+        const preferred = sortedTokens[0];
         setSourceToken((current) =>
-          tokens.some((token) => token.contract === current) ? current : preferred?.contract ?? '',
+          sortedTokens.some((token) => token.contract === current) ? current : preferred?.contract ?? '',
         );
       })
       .catch((e) => {
@@ -903,6 +943,61 @@ function buildRouteLegs({
       detail: 'The bridge withdrawal request pays the final Monero address.',
     },
   ];
+}
+
+function sortTokensByRelevance(tokens: MayanToken[], chainId: SourceChainId): MayanToken[] {
+  return [...tokens].sort((left, right) => {
+    const scoreDiff = tokenRelevanceScore(left, chainId) - tokenRelevanceScore(right, chainId);
+    if (scoreDiff !== 0) return scoreDiff;
+    return tokenSortLabel(left).localeCompare(tokenSortLabel(right), undefined, { sensitivity: 'base' });
+  });
+}
+
+function tokenRelevanceScore(token: MayanToken, chainId: SourceChainId): number {
+  const symbol = normalizedTokenSymbol(token);
+  const priorityIndex = TOKEN_RELEVANCE_BY_CHAIN[chainId]?.findIndex((candidate) => candidate.toUpperCase() === symbol) ?? -1;
+  let score = priorityIndex >= 0 ? priorityIndex * 100 : 10_000;
+
+  if (isConfiguredUsdc(token, chainId)) score -= 500;
+  if (isNativeToken(token, chainId)) score -= 350;
+  if (STABLE_TOKEN_SYMBOLS.has(symbol)) score -= 300;
+  if (BLUE_CHIP_TOKEN_SYMBOLS.has(symbol)) score -= 220;
+  if (token.verified) score -= 80;
+  else score += 150;
+  if (token.logoURI) score -= 20;
+  if (!token.symbol && !token.name) score += 200;
+
+  return score;
+}
+
+function isConfiguredUsdc(token: MayanToken, chainId: SourceChainId): boolean {
+  const configuredUsdc = CHAINS[chainId].usdc;
+  return Boolean(
+    configuredUsdc &&
+      token.contract &&
+      token.contract.toLowerCase() === String(configuredUsdc).toLowerCase(),
+  );
+}
+
+function isNativeToken(token: MayanToken, chainId: SourceChainId): boolean {
+  const nativeSymbol = CHAINS[chainId].nativeCurrency?.toUpperCase();
+  const symbol = normalizedTokenSymbol(token);
+  const standard = token.standard?.toLowerCase();
+  return Boolean(
+    nativeSymbol &&
+      (symbol === nativeSymbol ||
+        symbol === `W${nativeSymbol}` ||
+        token.contract?.toLowerCase() === EVM_NATIVE_TOKEN ||
+        standard === 'native'),
+  );
+}
+
+function normalizedTokenSymbol(token: MayanToken): string {
+  return (token.symbol ?? '').trim().toUpperCase();
+}
+
+function tokenSortLabel(token: MayanToken): string {
+  return token.symbol ?? token.name ?? token.contract ?? '';
 }
 
 function getPrimaryLabel({
