@@ -465,6 +465,7 @@ function ConfirmModal({
 export default function Home() {
   const {
     isConnected,
+    isWalletConnecting,
     publicKey,
     createDepositAccount,
     closeDepositAccount,
@@ -514,14 +515,19 @@ export default function Home() {
   const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [showSwapModal, setShowSwapModal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const loadRequestRef = useRef(0);
 
   // Load data — bridge config always, wallet-specific data only when connected
   const loadData = useCallback(async () => {
+    const requestId = ++loadRequestRef.current;
+
     try {
       const [snapshot, myWithdrawals] = await Promise.all([
         fetchPageSnapshot(),
         isConnected ? fetchMyWithdrawals() : Promise.resolve([]),
       ]);
+
+      if (requestId !== loadRequestRef.current) return;
 
       setBridgeConfig(snapshot.bridgeConfig);
       setCirculatingSupply(snapshot.circulatingSupply);
@@ -545,8 +551,11 @@ export default function Home() {
   }, [isConnected]);
 
   useEffect(() => {
-    loadData();
-  }, [loadData]);
+    if (isWalletConnecting) return;
+
+    const timeout = window.setTimeout(loadData, isConnected ? 0 : 150);
+    return () => window.clearTimeout(timeout);
+  }, [isConnected, isWalletConnecting, loadData]);
 
   // Handle create deposit account
   const handleCreateDepositAccount = async () => {

@@ -482,6 +482,7 @@ export function useWxmrBridge() {
   return {
     program,
     isConnected: !!wallet.publicKey,
+    isWalletConnecting: wallet.connecting,
     publicKey: wallet.publicKey,
     createDepositAccount,
     closeDepositAccount,
