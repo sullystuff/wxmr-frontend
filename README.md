@@ -35,7 +35,11 @@ npm run dev:bridge
 npm run dev:swap
 ```
 
-Each app reads its own `.env.local` (see `apps/<app>/.env.example`). Relevant vars:
+Create a repo-root `.env` from `.env.example`. All workspaces load that same file.
+The loader normalizes public/server aliases,
+so `NEXT_PUBLIC_SOLANA_RPC_URL` and `SOLANA_RPC_URL` resolve to the same endpoint.
+App-local `.env.local` files can still exist for ad hoc local testing, but root `.env`
+wins for the shared deployment keys. Relevant vars:
 
 - `NEXT_PUBLIC_SOLANA_RPC_URL` - Solana RPC endpoint
 - `NEXT_PUBLIC_BRIDGE_PROGRAM_ID` - bridge program id (bridge only)

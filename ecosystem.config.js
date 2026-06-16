@@ -2,8 +2,8 @@
 //
 // Prereqs (from the repo root):
 //   npm install
-//   npm run build         # builds both apps. NEXT_PUBLIC_* are inlined at build
-//                         # time from each app's .env / .env.local.
+//   npm run build         # builds both apps. root .env values are normalized
+//                         # into both NEXT_PUBLIC_* and server-side aliases.
 //
 // Start / persist:
 //   pm2 start ecosystem.config.js

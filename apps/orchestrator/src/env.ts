@@ -1,8 +1,15 @@
-import "dotenv/config";
+import { createRequire } from "module";
 import bs58 from "bs58";
 import { Keypair, PublicKey } from "@solana/web3.js";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { BRIDGE_PROGRAM_ID, USDC_MINT } from "@wxmr/core";
+
+const require = createRequire(import.meta.url);
+const envLoader = require("../../../scripts/load-wxmr-env.cjs") as {
+  loadWxmrEnv(): void;
+};
+
+envLoader.loadWxmrEnv();
 
 export interface Env {
   host: string;

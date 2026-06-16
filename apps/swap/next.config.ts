@@ -1,5 +1,8 @@
 import type { NextConfig } from "next";
 import path from "path";
+import envLoader from "../../scripts/load-wxmr-env.cjs";
+
+envLoader.loadWxmrEnv();
 
 // Standalone output (used only by the Docker image) runs heavy @vercel/nft
 // dependency tracing across the whole monorepo, which can peg CPU and OOM-kill

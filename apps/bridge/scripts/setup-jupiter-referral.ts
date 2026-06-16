@@ -10,8 +10,11 @@
 
 import { ReferralProvider } from '@jup-ag/referral-sdk';
 import { Connection, Keypair, PublicKey, sendAndConfirmTransaction } from '@solana/web3.js';
+import envLoader from '../../../scripts/load-wxmr-env.cjs';
 import * as fs from 'fs';
 import * as path from 'path';
+
+envLoader.loadWxmrEnv();
 
 // Configuration
 const RPC_URL = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
@@ -94,7 +97,7 @@ async function main() {
   console.log(`NEXT_PUBLIC_JUPITER_REFERRAL_ACCOUNT=${referralAccountPubKey.toBase58()}`);
   console.log(`NEXT_PUBLIC_JUPITER_REFERRAL_FEE=50  // 50 bps (0.5%) - minimum allowed`);
   
-  console.log('\n--- Add to .env.local ---');
+  console.log('\n--- Add to repo-root .env ---');
   console.log(`
 # Jupiter Referral (swap fees)
 NEXT_PUBLIC_JUPITER_REFERRAL_ACCOUNT=${referralAccountPubKey.toBase58()}

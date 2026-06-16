@@ -1,6 +1,7 @@
-# Build + run both apps. Run from this directory: `docker compose up -d --build`.
+# Build + run both apps. Run from this directory:
+# `docker compose --env-file ../.env up -d --build`.
 # NEXT_PUBLIC_* values are baked at build time via build args (see each Dockerfile);
-# set them in deploy/.env or the host environment before building for production.
+# set them in the repo-root .env or the host environment before building for production.
 
 services:
   bridge:
@@ -49,6 +50,8 @@ services:
       dockerfile: apps/orchestrator/Dockerfile
     image: wxmr-orchestrator
     restart: unless-stopped
+    env_file:
+      - ../.env
     environment:
       ORCH_HOST: 0.0.0.0
       ORCH_PORT: 3002
@@ -77,6 +80,8 @@ services:
   orchestrator-worker:
     image: wxmr-orchestrator
     restart: unless-stopped
+    env_file:
+      - ../.env
     command: ["node", "dist/worker.js"]
     depends_on:
       - orchestrator

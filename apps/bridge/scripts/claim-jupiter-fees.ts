@@ -6,8 +6,11 @@
 
 import { ReferralProvider } from '@jup-ag/referral-sdk';
 import { Connection, Keypair, PublicKey, sendAndConfirmRawTransaction } from '@solana/web3.js';
+import envLoader from '../../../scripts/load-wxmr-env.cjs';
 import * as fs from 'fs';
 import * as path from 'path';
+
+envLoader.loadWxmrEnv();
 
 // Configuration
 const RPC_URL = process.env.SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';

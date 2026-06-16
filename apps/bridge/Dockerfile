@@ -17,6 +17,7 @@ WORKDIR /app
 COPY --from=pruner /app/out/json/ .
 RUN npm ci
 COPY --from=pruner /app/out/full/ .
+COPY --from=pruner /app/scripts ./scripts
 
 # NEXT_PUBLIC_* are inlined at build time, so they must be present during `next build`.
 ARG NEXT_PUBLIC_SOLANA_RPC_URL
