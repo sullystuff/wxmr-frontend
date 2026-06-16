@@ -468,13 +468,9 @@ export default function Home() {
     publicKey,
     createDepositAccount,
     closeDepositAccount,
-    fetchMyDepositAccount,
     requestWithdrawal,
     fetchMyWithdrawals,
-    fetchBridgeConfig,
-    getXmrCirculatingSupply,
-    getWxmrBalance,
-    getPendingBalance,
+    fetchPageSnapshot,
     claimPendingMint,
   } = useWxmrBridge();
 
@@ -522,32 +518,21 @@ export default function Home() {
   // Load data — bridge config always, wallet-specific data only when connected
   const loadData = useCallback(async () => {
     try {
-      // Bridge config can be fetched without a wallet
-      const [config, supply] = await Promise.all([
-        fetchBridgeConfig(),
-        getXmrCirculatingSupply(),
-      ]);
-      setBridgeConfig(config);
-      setCirculatingSupply(supply);
-
-      if (!isConnected) return;
-
-      // Wallet-specific data
-      const [balance, pending, myDepositAccount, myWithdrawals] = await Promise.all([
-        getWxmrBalance(),
-        getPendingBalance(),
-        fetchMyDepositAccount(),
-        fetchMyWithdrawals(),
+      const [snapshot, myWithdrawals] = await Promise.all([
+        fetchPageSnapshot(),
+        isConnected ? fetchMyWithdrawals() : Promise.resolve([]),
       ]);
 
-      setWxmrBalance(balance);
-      setPendingBalance(pending);
-      setDepositAccount(myDepositAccount);
+      setBridgeConfig(snapshot.bridgeConfig);
+      setCirculatingSupply(snapshot.circulatingSupply);
+      setWxmrBalance(snapshot.wxmrBalance);
+      setPendingBalance(snapshot.pendingBalance);
+      setDepositAccount(snapshot.depositAccount);
       setWithdrawals(myWithdrawals.sort((a, b) => b.createdAt - a.createdAt));
     } catch (err) {
       console.error('Error loading data:', err);
     }
-  }, [isConnected, fetchBridgeConfig, getXmrCirculatingSupply, getWxmrBalance, getPendingBalance, fetchMyDepositAccount, fetchMyWithdrawals]);
+  }, [isConnected, fetchPageSnapshot, fetchMyWithdrawals]);
 
   // Reset wallet-specific state when disconnected
   useEffect(() => {
@@ -561,8 +546,6 @@ export default function Home() {
 
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 10000);
-    return () => clearInterval(interval);
   }, [loadData]);
 
   // Handle create deposit account

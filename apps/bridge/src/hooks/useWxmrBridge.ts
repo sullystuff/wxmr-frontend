@@ -5,7 +5,15 @@ import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, ComputeBudgetProgram, SystemProgram } from '@solana/web3.js';
 import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
 import type { Wallet as AnchorProviderWallet } from '@coral-xyz/anchor/dist/cjs/provider';
-import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddress, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token';
+import {
+  createAssociatedTokenAccountIdempotentInstruction,
+  getAssociatedTokenAddress,
+  getAssociatedTokenAddressSync,
+  TOKEN_PROGRAM_ID,
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  unpackAccount,
+  unpackMint,
+} from '@solana/spl-token';
 import IDL from '@wxmr/core/idl/wxmr_bridge.json';
 import type { WxmrBridge } from '@wxmr/core/idl/wxmr_bridge';
 import { XMR_MINT } from '@wxmr/shared';
@@ -61,6 +69,14 @@ export interface BridgeConfig {
   totalWithdrawals: bigint;
 }
 
+export interface BridgePageSnapshot {
+  bridgeConfig: BridgeConfig | null;
+  circulatingSupply: bigint;
+  wxmrBalance: bigint;
+  pendingBalance: bigint;
+  depositAccount: DepositAccountInfo | null;
+}
+
 export function useWxmrBridge() {
   const { connection } = useConnection();
   const wallet = useWallet();
@@ -82,6 +98,16 @@ export function useWxmrBridge() {
     return new Program<WxmrBridge>(IDL as WxmrBridge, provider);
   }, [connection, wallet]);
 
+  const readProgram = useMemo(() => {
+    const readProvider = new AnchorProvider(
+      connection,
+      createReadonlyWallet(PublicKey.default),
+      { commitment: 'confirmed' }
+    );
+
+    return new Program<WxmrBridge>(IDL as WxmrBridge, readProvider);
+  }, [connection]);
+
   // Get bridge config PDA
   const getBridgeConfigPDA = useCallback(() => {
     const [pda] = PublicKey.findProgramAddressSync(
@@ -99,6 +125,34 @@ export function useWxmrBridge() {
     );
     return pda;
   }, []);
+
+  const decodeBridgeConfig = useCallback((data: Buffer): BridgeConfig => {
+    const config = readProgram.coder.accounts.decode('bridgeConfig', data);
+    return {
+      authority: config.authority.toBase58(),
+      wxmrMint: config.wxmrMint.toBase58(),
+      totalDeposits: BigInt(config.totalDeposits.toString()),
+      totalWithdrawals: BigInt(config.totalWithdrawals.toString()),
+    };
+  }, [readProgram]);
+
+  const decodeDepositAccount = useCallback((depositPda: PublicKey, data: Buffer): DepositAccountInfo => {
+    const deposit = readProgram.coder.accounts.decode('depositRecord', data);
+
+    let status: DepositAccountInfo['status'] = 'pending';
+    if ('pending' in deposit.status) status = 'pending';
+    else if ('active' in deposit.status) status = 'active';
+    else if ('closed' in deposit.status) status = 'closed';
+
+    return {
+      depositPda: depositPda.toBase58(),
+      owner: deposit.owner.toBase58(),
+      xmrDepositAddress: deposit.xmrDepositAddress || '',
+      totalDeposited: BigInt((deposit.totalDeposited || 0).toString()),
+      status,
+      createdAt: deposit.createdAt.toNumber(),
+    };
+  }, [readProgram]);
 
   // Get withdrawal PDA for a specific nonce
   const getWithdrawalPDA = useCallback((user: PublicKey, nonce: bigint) => {
@@ -133,38 +187,66 @@ export function useWxmrBridge() {
       const accountInfo = await connection.getAccountInfo(configPda);
       if (!accountInfo) return null;
 
-      // Use a throwaway read-only program to decode
-      const readProvider = new AnchorProvider(
-        connection,
-        // Minimal wallet stub — never signs, only used for deserialization
-        createReadonlyWallet(PublicKey.default),
-        { commitment: 'confirmed' }
-      );
-      const readProgram = new Program<WxmrBridge>(IDL as WxmrBridge, readProvider);
-      const config = readProgram.coder.accounts.decode('bridgeConfig', accountInfo.data);
-
-      return {
-        authority: config.authority.toBase58(),
-        wxmrMint: config.wxmrMint.toBase58(),
-        totalDeposits: BigInt(config.totalDeposits.toString()),
-        totalWithdrawals: BigInt(config.totalWithdrawals.toString()),
-      };
+      return decodeBridgeConfig(accountInfo.data);
     } catch (error) {
       console.error('Error fetching bridge config:', error);
       return null;
     }
-  }, [program, connection, getBridgeConfigPDA]);
+  }, [program, connection, getBridgeConfigPDA, decodeBridgeConfig]);
 
-  // Get live Solana XMR mint supply
-  const getXmrCirculatingSupply = useCallback(async (): Promise<bigint> => {
+  // Fetch all deterministic homepage accounts in one RPC request.
+  const fetchPageSnapshot = useCallback(async (): Promise<BridgePageSnapshot> => {
+    const snapshot: BridgePageSnapshot = {
+      bridgeConfig: null,
+      circulatingSupply: BigInt(0),
+      wxmrBalance: BigInt(0),
+      pendingBalance: BigInt(0),
+      depositAccount: null,
+    };
+
     try {
-      const supply = await connection.getTokenSupply(XMR_MINT);
-      return BigInt(supply.value.amount);
+      const configPda = getBridgeConfigPDA();
+      const accountKeys = [configPda, XMR_MINT];
+      const userTokenAccount = wallet.publicKey
+        ? getAssociatedTokenAddressSync(XMR_MINT, wallet.publicKey, false, TOKEN_PROGRAM_ID)
+        : null;
+      const depositPda = wallet.publicKey ? getDepositPDA(wallet.publicKey) : null;
+      const pendingTokenAccount = depositPda
+        ? getAssociatedTokenAddressSync(XMR_MINT, depositPda, true, TOKEN_PROGRAM_ID)
+        : null;
+
+      if (userTokenAccount && pendingTokenAccount && depositPda) {
+        accountKeys.push(userTokenAccount, pendingTokenAccount, depositPda);
+      }
+
+      const [configInfo, mintInfo, userTokenInfo, pendingTokenInfo, depositInfo] =
+        await connection.getMultipleAccountsInfo(accountKeys, 'confirmed');
+
+      if (configInfo) {
+        snapshot.bridgeConfig = decodeBridgeConfig(configInfo.data);
+      }
+
+      if (mintInfo) {
+        snapshot.circulatingSupply = unpackMint(XMR_MINT, mintInfo, TOKEN_PROGRAM_ID).supply;
+      }
+
+      if (userTokenAccount && userTokenInfo) {
+        snapshot.wxmrBalance = unpackAccount(userTokenAccount, userTokenInfo, TOKEN_PROGRAM_ID).amount;
+      }
+
+      if (pendingTokenAccount && pendingTokenInfo) {
+        snapshot.pendingBalance = unpackAccount(pendingTokenAccount, pendingTokenInfo, TOKEN_PROGRAM_ID).amount;
+      }
+
+      if (depositPda && depositInfo) {
+        snapshot.depositAccount = decodeDepositAccount(depositPda, depositInfo.data);
+      }
     } catch (error) {
-      console.error('Error fetching XMR circulating supply:', error);
-      return BigInt(0);
+      console.error('Error fetching bridge page snapshot:', error);
     }
-  }, [connection]);
+
+    return snapshot;
+  }, [connection, wallet.publicKey, getBridgeConfigPDA, getDepositPDA, decodeBridgeConfig, decodeDepositAccount]);
 
   // Create deposit account (one per wallet - permanent)
   const createDepositAccount = useCallback(async (): Promise<{ signature: string; depositPda: string } | null> => {
@@ -356,44 +438,10 @@ export function useWxmrBridge() {
     }
   }, [program, wallet.publicKey]);
 
-  // Get Solana XMR balance for current user
-  const getWxmrBalance = useCallback(async (): Promise<bigint> => {
-    if (!connection || !wallet.publicKey) return BigInt(0);
-
-    try {
-      const config = await fetchBridgeConfig();
-      if (!config) return BigInt(0);
-
-      const wxmrMint = new PublicKey(config.wxmrMint);
-      const tokenAccount = await getAssociatedTokenAddress(wxmrMint, wallet.publicKey);
-      
-      const accountInfo = await connection.getTokenAccountBalance(tokenAccount);
-      return BigInt(accountInfo.value.amount);
-    } catch {
-      return BigInt(0);
-    }
-  }, [connection, wallet.publicKey, fetchBridgeConfig]);
-
   // Get pending token account address (ATA owned by deposit PDA)
   const getPendingTokenAccount = useCallback((depositPda: PublicKey) => {
     return getAssociatedTokenAddress(XMR_MINT, depositPda, true, TOKEN_PROGRAM_ID);
   }, []);
-
-  // Get pending XMR balance (tokens minted before user had an ATA)
-  const getPendingBalance = useCallback(async (): Promise<bigint> => {
-    if (!connection || !wallet.publicKey) return BigInt(0);
-
-    try {
-      const depositPda = getDepositPDA(wallet.publicKey);
-      const pendingAccount = await getPendingTokenAccount(depositPda);
-      
-      const accountInfo = await connection.getTokenAccountBalance(pendingAccount);
-      return BigInt(accountInfo.value.amount);
-    } catch {
-      // Account doesn't exist = no pending tokens
-      return BigInt(0);
-    }
-  }, [connection, wallet.publicKey, getDepositPDA, getPendingTokenAccount]);
 
   // Claim pending tokens (transfer from pending account to user's ATA)
   const claimPendingMint = useCallback(async (): Promise<string | null> => {
@@ -441,10 +489,8 @@ export function useWxmrBridge() {
     requestWithdrawal,
     fetchWithdrawal,
     fetchMyWithdrawals,
+    fetchPageSnapshot,
     fetchBridgeConfig,
-    getXmrCirculatingSupply,
-    getWxmrBalance,
-    getPendingBalance,
     claimPendingMint,
   };
 }
