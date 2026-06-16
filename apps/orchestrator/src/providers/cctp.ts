@@ -119,6 +119,8 @@ export class CctpProvider {
         writable(pdas.usedNonce),
         readonly(tokenMessengerMinterProgram),
         readonly(SystemProgram.programId),
+        readonly(pdas.messageTransmitterEventAuthority.publicKey),
+        readonly(messageTransmitterProgram),
         ...remainingAccounts,
       ],
       data: encodeReceiveMessageData(hexToBuffer(messageHex), hexToBuffer(attestationHex)),
@@ -173,6 +175,7 @@ export class CctpProvider {
       messageTransmitterProgram,
       [tokenMessengerMinterProgram],
     ).publicKey;
+    const messageTransmitterEventAuthority = findProgramAddress("__event_authority", messageTransmitterProgram);
     const tokenMessengerEventAuthority = findProgramAddress("__event_authority", tokenMessengerMinterProgram);
     const usedNonce = findProgramAddress("used_nonce", messageTransmitterProgram, [nonce]).publicKey;
     const feeRecipient = await this.fetchTokenMessengerFeeRecipient(tokenMessengerAccount.publicKey);
@@ -187,6 +190,7 @@ export class CctpProvider {
       tokenPair,
       custodyTokenAccount,
       authorityPda,
+      messageTransmitterEventAuthority,
       tokenMessengerEventAuthority,
       usedNonce,
       feeRecipientTokenAccount,
