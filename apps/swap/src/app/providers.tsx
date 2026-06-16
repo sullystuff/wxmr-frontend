@@ -6,6 +6,7 @@ import { WagmiProvider, createConfig, http } from 'wagmi';
 import { arbitrum, avalanche, base, mainnet, optimism, polygon } from 'wagmi/chains';
 import { injected, walletConnect } from 'wagmi/connectors';
 import { Providers as SolanaProviders } from '@wxmr/shared';
+import { EVM_RPC_URL_BY_CHAIN } from './evm-rpc';
 
 const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
 
@@ -18,12 +19,12 @@ const config = createConfig({
       : []),
   ],
   transports: {
-    [mainnet.id]: http(process.env.NEXT_PUBLIC_ETHEREUM_RPC_URL),
-    [base.id]: http(process.env.NEXT_PUBLIC_BASE_RPC_URL),
-    [arbitrum.id]: http(process.env.NEXT_PUBLIC_ARBITRUM_RPC_URL),
-    [optimism.id]: http(process.env.NEXT_PUBLIC_OPTIMISM_RPC_URL),
-    [polygon.id]: http(process.env.NEXT_PUBLIC_POLYGON_RPC_URL),
-    [avalanche.id]: http(process.env.NEXT_PUBLIC_AVALANCHE_RPC_URL),
+    [mainnet.id]: http(EVM_RPC_URL_BY_CHAIN.ethereum),
+    [base.id]: http(EVM_RPC_URL_BY_CHAIN.base),
+    [arbitrum.id]: http(EVM_RPC_URL_BY_CHAIN.arbitrum),
+    [optimism.id]: http(EVM_RPC_URL_BY_CHAIN.optimism),
+    [polygon.id]: http(EVM_RPC_URL_BY_CHAIN.polygon),
+    [avalanche.id]: http(EVM_RPC_URL_BY_CHAIN.avalanche),
   },
   ssr: true,
 });
