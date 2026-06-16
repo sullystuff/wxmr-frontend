@@ -27,7 +27,7 @@ import { EVM_RPC_ENV_BY_CHAIN, EVM_RPC_URL_BY_CHAIN } from './evm-rpc';
 
 const ORCHESTRATOR_URL = (process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || '/api').replace(/\/$/, '');
 const EVM_NATIVE_TOKEN = '0x0000000000000000000000000000000000000000';
-const TOKEN_RELEVANCE_BY_CHAIN = {
+const TOKEN_RELEVANCE_BY_CHAIN: Partial<Record<SourceChainId, readonly string[]>> = {
   ethereum: ['ETH', 'WETH', 'USDC', 'USDT', 'WBTC', 'DAI', 'LINK', 'UNI', 'AAVE', 'ENA', 'PEPE', 'SHIB'],
   base: ['ETH', 'WETH', 'USDC', 'cbBTC', 'USDT', 'EURC', 'AERO', 'VIRTUAL', 'MORPHO', 'DEGEN', 'BRETT'],
   arbitrum: ['ETH', 'WETH', 'USDC', 'USDT', 'WBTC', 'ARB', 'GMX', 'LINK', 'PENDLE', 'DAI'],
@@ -40,7 +40,7 @@ const TOKEN_RELEVANCE_BY_CHAIN = {
   monad: ['MON', 'WMON', 'USDC', 'USDT', 'WETH', 'WBTC'],
   sui: ['SUI', 'USDC', 'USDT', 'WAL', 'DEEP', 'CETUS'],
   hyperliquid: ['USDC', 'HYPE', 'PURR'],
-} as const satisfies Partial<Record<SourceChainId, readonly string[]>>;
+} as const;
 const STABLE_TOKEN_SYMBOLS = new Set(['USDC', 'USDC.E', 'USDCE', 'USDT', 'DAI', 'USDE', 'USDS', 'FRAX', 'FDUSD', 'PYUSD', 'EURC']);
 const BLUE_CHIP_TOKEN_SYMBOLS = new Set([
   'ETH',
