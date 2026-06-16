@@ -6,8 +6,8 @@ import { PublicKey, ComputeBudgetProgram, SystemProgram } from '@solana/web3.js'
 import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
 import type { Wallet as AnchorProviderWallet } from '@coral-xyz/anchor/dist/cjs/provider';
 import { createAssociatedTokenAccountIdempotentInstruction, getAssociatedTokenAddress, TOKEN_PROGRAM_ID, ASSOCIATED_TOKEN_PROGRAM_ID } from '@solana/spl-token';
-import { WXMR_BRIDGE_IDL as IDL } from '@wxmr/core';
-import type { WxmrBridge } from '@wxmr/core';
+import IDL from '@wxmr/core/idl/wxmr_bridge.json';
+import type { WxmrBridge } from '@wxmr/core/idl/wxmr_bridge';
 import { XMR_MINT } from '@wxmr/shared';
 
 // Program ID - should match deployed program

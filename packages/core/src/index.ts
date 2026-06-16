@@ -1,4 +1,3 @@
-export * from "./bridge.js";
 export * from "./cctp.js";
 export * from "./chains.js";
 export * from "./constants.js";

@@ -15,9 +15,9 @@ import {
 import {
   JupiterClient,
   USDC_MINT,
-  requestWithdrawalWithKeypair,
   type JupiterQuote,
 } from "@wxmr/core";
+import { requestWithdrawalWithKeypair } from "@wxmr/core/bridge";
 
 export class SolanaExecutor {
   private readonly jupiter: JupiterClient;

@@ -1,5 +1,7 @@
-import { AnchorProvider, BN, Program } from "@coral-xyz/anchor";
+import anchor from "@coral-xyz/anchor";
+import type { Program as AnchorProgram } from "@coral-xyz/anchor";
 import {
+  type Commitment,
   ComputeBudgetProgram,
   Connection,
   Keypair,
@@ -13,6 +15,8 @@ import { getAssociatedTokenAddress, TOKEN_PROGRAM_ID } from "@solana/spl-token";
 import IDL from "./idl/wxmr_bridge.json" with { type: "json" };
 import type { WxmrBridge } from "./idl/wxmr_bridge.js";
 import { BRIDGE_PROGRAM_ID } from "./constants.js";
+
+const { AnchorProvider, BN, Program } = anchor;
 
 export interface AnchorProviderWallet {
   publicKey: PublicKey;
@@ -35,7 +39,7 @@ export interface RequestWithdrawalOptions {
   exactOut?: boolean;
   programId?: PublicKey | string;
   nonce?: bigint;
-  commitment?: AnchorProvider["opts"]["commitment"];
+  commitment?: Commitment;
 }
 
 export interface RequestWithdrawalResult {
@@ -108,8 +112,8 @@ export function createKeypairWallet(signer: Keypair): AnchorProviderWallet {
 export function createBridgeProgram(
   connection: Connection,
   wallet: AnchorProviderWallet,
-  commitment: AnchorProvider["opts"]["commitment"] = "confirmed",
-): Program<WxmrBridge> {
+  commitment: Commitment = "confirmed",
+): AnchorProgram<WxmrBridge> {
   const provider = new AnchorProvider(connection, wallet, { commitment });
   return new Program<WxmrBridge>(IDL as WxmrBridge, provider);
 }

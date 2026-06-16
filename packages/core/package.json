@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./dist/index.js",
+    "./bridge": "./dist/bridge.js",
     "./idl/wxmr_bridge.json": "./dist/idl/wxmr_bridge.json",
     "./idl/wxmr_bridge": "./dist/idl/wxmr_bridge.js"
   },
