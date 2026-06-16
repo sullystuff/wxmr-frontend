@@ -264,7 +264,7 @@ export default function SwapPage() {
             {error && <div className="border border-red-500/40 bg-red-500/10 rounded-xl p-3 text-sm text-red-200">{error}</div>}
 
             {quote && <QuotePanel quote={quote} />}
-            {order && (
+            {order?.status === 'awaiting_deposit' && (
               <FundingPanel
                 order={order}
                 onDeposit={reportDeposit}
