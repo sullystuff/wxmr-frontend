@@ -61,6 +61,9 @@ export class CctpProvider {
     const data = (await response.json().catch(() => ({}))) as CctpAttestationResponse;
     const message = data.messages?.[0];
 
+    if (!response.ok && isTransientAttestationMiss(data.error)) {
+      throw new Error(`Circle attestation pending: ${data.error}`);
+    }
     if (!response.ok) {
       throw new Error(data.error || `Circle attestation request failed: ${response.status}`);
     }
@@ -228,6 +231,10 @@ function evmAddressToBytes32(address: string): Buffer {
 
 function hexToBuffer(hex: string): Buffer {
   return Buffer.from(hex.replace(/^0x/, ""), "hex");
+}
+
+function isTransientAttestationMiss(error?: string): boolean {
+  return Boolean(error?.toLowerCase().includes("message not found"));
 }
 
 function writable(pubkey: PublicKey): AccountMeta {
