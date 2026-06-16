@@ -14,6 +14,7 @@ import {
 import {
   CCTP_SOURCE_CHAINS,
   CHAINS,
+  ERC20_ALLOWANCE_ABI,
   ERC20_APPROVE_ABI,
   TOKEN_MESSENGER_V2_ABI,
   isValidMoneroAddress,
@@ -320,14 +321,23 @@ function EvmFunding({
       if (!EVM_RPC_URL_BY_CHAIN[funding.chainId]) {
         throw new Error(`${CHAINS[funding.chainId].name} receipt polling RPC is not configured. Set ${rpcEnv} and rebuild the swap app.`);
       }
-      const approveHash = await writeContractAsync({
+      const requiredAllowance = BigInt(funding.approve.amount);
+      const currentAllowance = await publicClient.readContract({
         address: funding.usdc,
-        abi: ERC20_APPROVE_ABI,
-        functionName: 'approve',
-        args: [funding.approve.spender, BigInt(funding.approve.amount)],
-        chainId: funding.chainNumericId,
+        abi: ERC20_ALLOWANCE_ABI,
+        functionName: 'allowance',
+        args: [address, funding.approve.spender],
       });
-      await publicClient.waitForTransactionReceipt({ hash: approveHash });
+      if (currentAllowance < requiredAllowance) {
+        const approveHash = await writeContractAsync({
+          address: funding.usdc,
+          abi: ERC20_APPROVE_ABI,
+          functionName: 'approve',
+          args: [funding.approve.spender, requiredAllowance],
+          chainId: funding.chainNumericId,
+        });
+        await publicClient.waitForTransactionReceipt({ hash: approveHash });
+      }
       const burnHash = await writeContractAsync({
         address: funding.tokenMessenger,
         abi: TOKEN_MESSENGER_V2_ABI,

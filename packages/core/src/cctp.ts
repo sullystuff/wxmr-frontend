@@ -32,6 +32,19 @@ export const ERC20_APPROVE_ABI = [
   },
 ] as const;
 
+export const ERC20_ALLOWANCE_ABI = [
+  {
+    type: "function",
+    name: "allowance",
+    stateMutability: "view",
+    inputs: [
+      { name: "owner", type: "address" },
+      { name: "spender", type: "address" },
+    ],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;
+
 export const TOKEN_MESSENGER_V2_ABI = [
   {
     type: "function",
