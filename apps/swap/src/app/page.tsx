@@ -33,6 +33,22 @@ import {
 
 const ORCHESTRATOR_URL = (process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || '/api').replace(/\/$/, '');
 const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr');
+const EVM_RPC_ENV_BY_CHAIN: Partial<Record<SourceChainId, string>> = {
+  ethereum: 'NEXT_PUBLIC_ETHEREUM_RPC_URL',
+  base: 'NEXT_PUBLIC_BASE_RPC_URL',
+  arbitrum: 'NEXT_PUBLIC_ARBITRUM_RPC_URL',
+  optimism: 'NEXT_PUBLIC_OPTIMISM_RPC_URL',
+  polygon: 'NEXT_PUBLIC_POLYGON_RPC_URL',
+  avalanche: 'NEXT_PUBLIC_AVALANCHE_RPC_URL',
+};
+const EVM_RPC_URL_BY_CHAIN: Partial<Record<SourceChainId, string | undefined>> = {
+  ethereum: process.env.NEXT_PUBLIC_ETHEREUM_RPC_URL,
+  base: process.env.NEXT_PUBLIC_BASE_RPC_URL,
+  arbitrum: process.env.NEXT_PUBLIC_ARBITRUM_RPC_URL,
+  optimism: process.env.NEXT_PUBLIC_OPTIMISM_RPC_URL,
+  polygon: process.env.NEXT_PUBLIC_POLYGON_RPC_URL,
+  avalanche: process.env.NEXT_PUBLIC_AVALANCHE_RPC_URL,
+};
 
 function MoneroLogo({ className = 'w-8 h-8' }: { className?: string }) {
   return (
@@ -300,6 +316,10 @@ function EvmFunding({
       if (!publicClient) {
         throw new Error('No EVM RPC client is configured for this chain');
       }
+      const rpcEnv = EVM_RPC_ENV_BY_CHAIN[funding.chainId];
+      if (!EVM_RPC_URL_BY_CHAIN[funding.chainId]) {
+        throw new Error(`${CHAINS[funding.chainId].name} receipt polling RPC is not configured. Set ${rpcEnv} and rebuild the swap app.`);
+      }
       const approveHash = await writeContractAsync({
         address: funding.usdc,
         abi: ERC20_APPROVE_ABI,
@@ -323,7 +343,6 @@ function EvmFunding({
         ],
         chainId: funding.chainNumericId,
       });
-      await publicClient.waitForTransactionReceipt({ hash: burnHash });
       await onDeposit(burnHash);
     } catch (e) {
       onError(errorMessage(e));
