@@ -6,6 +6,8 @@ import {
   ERC20_ALLOWANCE_ABI,
   ERC20_APPROVE_ABI,
   MAYAN_SWIFT_EVM_SOURCE_CHAINS,
+  MAYAN_SWIFT_SOURCE_CHAINS,
+  XMR_DECIMALS,
   isValidMoneroAddress,
   type FundingInstructions,
   type MayanEvmTxPayload,
@@ -13,6 +15,7 @@ import {
   type Order,
   type Quote,
   type SourceChainId,
+  type SwapDirection,
 } from '@wxmr/core';
 import {
   useAccount,
@@ -27,6 +30,8 @@ import { EVM_RPC_ENV_BY_CHAIN, EVM_RPC_URL_BY_CHAIN } from './evm-rpc';
 
 const ORCHESTRATOR_URL = (process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || '/api').replace(/\/$/, '');
 const EVM_NATIVE_TOKEN = '0x0000000000000000000000000000000000000000';
+const FORWARD_DIRECTION: SwapDirection = 'mayan-to-xmr';
+const REVERSE_DIRECTION: SwapDirection = 'xmr-to-mayan';
 const TOKEN_RELEVANCE_BY_CHAIN: Partial<Record<SourceChainId, readonly string[]>> = {
   ethereum: ['ETH', 'WETH', 'USDC', 'USDT', 'WBTC', 'DAI', 'LINK', 'UNI', 'AAVE', 'ENA', 'PEPE', 'SHIB'],
   base: ['ETH', 'WETH', 'USDC', 'cbBTC', 'USDT', 'EURC', 'AERO', 'VIRTUAL', 'MORPHO', 'DEGEN', 'BRETT'],
@@ -85,11 +90,13 @@ function MoneroLogo({ className = 'w-8 h-8' }: { className?: string }) {
 }
 
 export default function SwapPage() {
+  const [direction, setDirection] = useState<SwapDirection>(FORWARD_DIRECTION);
   const [sourceChain, setSourceChain] = useState<SourceChainId>('base');
   const [sourceTokens, setSourceTokens] = useState<MayanToken[]>([]);
   const [sourceToken, setSourceToken] = useState('');
   const [amount, setAmount] = useState('');
   const [xmrAddress, setXmrAddress] = useState('');
+  const [destinationAddress, setDestinationAddress] = useState('');
   const [refundAddress, setRefundAddress] = useState('');
   const [quote, setQuote] = useState<Quote | null>(null);
   const [order, setOrder] = useState<Order | null>(null);
@@ -109,10 +116,12 @@ export default function SwapPage() {
         if (cancelled) return;
         setOrder(next);
         setQuote(null);
+        setDirection(next.direction ?? FORWARD_DIRECTION);
         setSourceChain(next.sourceChain);
         setSourceToken(next.sourceToken);
-        setAmount(formatBaseUnits(next.amount, orderTokenDecimals(next)));
+        setAmount(formatBaseUnits(next.amount, orderInputDecimals(next)));
         setXmrAddress(next.xmrAddress);
+        setDestinationAddress(next.destinationAddress ?? '');
         setRefundAddress(next.refundAddress ?? '');
       })
       .catch((e) => {
@@ -125,6 +134,13 @@ export default function SwapPage() {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    const chains = selectableMayanChains(direction);
+    if (chains.includes(sourceChain)) return;
+    setSourceChain(chains[0]);
+    resetTrade();
+  }, [direction, sourceChain]);
 
   useEffect(() => {
     let cancelled = false;
@@ -162,14 +178,19 @@ export default function SwapPage() {
     [sourceToken, sourceTokens],
   );
   const sourceTokenDecimals = selectedToken?.decimals ?? 6;
-  const parsedAmount = useMemo(() => parseTokenAmount(amount, sourceTokenDecimals), [amount, sourceTokenDecimals]);
-  const canQuote = Boolean(sourceToken) && parsedAmount > BigInt(0) && isValidMoneroAddress(xmrAddress);
+  const inputDecimals = direction === FORWARD_DIRECTION ? sourceTokenDecimals : XMR_DECIMALS;
+  const parsedAmount = useMemo(() => parseTokenAmount(amount, inputDecimals), [amount, inputDecimals]);
+  const canQuote = Boolean(sourceToken) &&
+    parsedAmount > BigInt(0) &&
+    (direction === FORWARD_DIRECTION
+      ? isValidMoneroAddress(xmrAddress)
+      : Boolean(destinationAddress.trim()) && isValidMoneroAddress(xmrAddress));
   const quoteExpiresIn = useCountdown(quote?.expiresAt);
   const quoteExpired = quoteExpiresIn === 0;
-  const routeLegs = buildRouteLegs({ quote, selectedToken, sourceChain, amount, sourceTokenDecimals });
+  const routeLegs = buildRouteLegs({ direction, quote, selectedToken, sourceChain, amount, sourceTokenDecimals });
   const primaryLabel = getPrimaryLabel({ quote, order, isLoading, quoteExpired });
   const primaryDisabled = getPrimaryDisabled({ canQuote, quote, order, isLoading, quoteExpired });
-  const receivePreview = quote ? formatXmr(quote.estimatedXmrOut) : '0.000000';
+  const receivePreview = formatReceivePreview({ direction, quote, token: selectedToken });
 
   const resetTrade = () => {
     setQuote(null);
@@ -184,10 +205,12 @@ export default function SwapPage() {
       const next = await api<Quote>('/quote', {
         method: 'POST',
         body: JSON.stringify({
+          direction,
           sourceChain,
           sourceToken,
           amount: parsedAmount.toString(),
           xmrAddress,
+          destinationAddress: direction === REVERSE_DIRECTION ? destinationAddress.trim() : undefined,
           refundAddress: refundAddress || undefined,
           slippageBps: 100,
         }),
@@ -244,7 +267,7 @@ export default function SwapPage() {
         <div className="flex min-w-0 items-center gap-3">
           <MoneroLogo className="h-9 w-9 shrink-0" />
           <div className="min-w-0">
-            <h1 className="truncate text-xl font-semibold text-white">Swap to native XMR</h1>
+            <h1 className="truncate text-xl font-semibold text-white">Swap XMR</h1>
             <p className="text-xs text-[var(--muted)]">Mayan Swift v2, Jupiter, Monero Bridge</p>
           </div>
         </div>
@@ -260,45 +283,82 @@ export default function SwapPage() {
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-medium text-white">Exchange</div>
-                <div className="text-xs text-[var(--muted)]">No account. One wallet transaction.</div>
+                <div className="text-xs text-[var(--muted)]">
+                  {direction === FORWARD_DIRECTION ? 'One wallet transaction into native Monero.' : 'Native Monero into Mayan-supported assets.'}
+                </div>
               </div>
-              <div className="grid grid-cols-2 rounded-xl bg-[#0b0c10] p-1 text-xs">
-                <button className="rounded-lg bg-[#f26822] px-3 py-2 font-semibold text-white">Market</button>
-                <button className="rounded-lg px-3 py-2 text-[#8f949d]" disabled>
-                  Fixed
-                </button>
-              </div>
+              <DirectionToggle
+                value={direction}
+                onChange={(next) => {
+                  setDirection(next);
+                  resetTrade();
+                }}
+              />
             </div>
           </div>
 
           <div className="space-y-4 p-4 md:p-5">
-            <TradeAmountPanel
-              amount={amount}
-              chainId={sourceChain}
-              token={selectedToken}
-              tokenCount={sourceTokens.length}
-              onAmountChange={(next) => {
-                setAmount(next);
-                resetTrade();
-              }}
-              onChainChange={(next) => {
-                setSourceChain(next);
-                resetTrade();
-              }}
-              onOpenTokenPicker={() => setIsTokenPickerOpen(true)}
-            />
+            {direction === FORWARD_DIRECTION ? (
+              <TradeAmountPanel
+                amount={amount}
+                chainId={sourceChain}
+                chains={selectableMayanChains(direction)}
+                token={selectedToken}
+                tokenCount={sourceTokens.length}
+                label="You send"
+                onAmountChange={(next) => {
+                  setAmount(next);
+                  resetTrade();
+                }}
+                onChainChange={(next) => {
+                  setSourceChain(next);
+                  resetTrade();
+                }}
+                onOpenTokenPicker={() => setIsTokenPickerOpen(true)}
+              />
+            ) : (
+              <XmrAmountPanel
+                amount={amount}
+                onAmountChange={(next) => {
+                  setAmount(next);
+                  resetTrade();
+                }}
+              />
+            )}
 
             <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full border border-[#2d3037] bg-[#15161b] text-lg text-[#f26822]">
               v
             </div>
 
-            <ReceivePanel value={receivePreview} quote={quote} />
+            {direction === FORWARD_DIRECTION ? (
+              <ReceivePanel value={receivePreview} quote={quote} />
+            ) : (
+              <MayanReceivePanel
+                value={receivePreview}
+                chainId={sourceChain}
+                chains={selectableMayanChains(direction)}
+                token={selectedToken}
+                tokenCount={sourceTokens.length}
+                quote={quote}
+                onChainChange={(next) => {
+                  setSourceChain(next);
+                  resetTrade();
+                }}
+                onOpenTokenPicker={() => setIsTokenPickerOpen(true)}
+              />
+            )}
 
             <RecipientPanel
+              direction={direction}
               xmrAddress={xmrAddress}
+              destinationAddress={destinationAddress}
               refundAddress={refundAddress}
               onXmrAddressChange={(next) => {
                 setXmrAddress(next);
+                resetTrade();
+              }}
+              onDestinationAddressChange={(next) => {
+                setDestinationAddress(next);
                 resetTrade();
               }}
               onRefundAddressChange={setRefundAddress}
@@ -357,19 +417,52 @@ export default function SwapPage() {
   );
 }
 
+function DirectionToggle({
+  value,
+  onChange,
+}: {
+  value: SwapDirection;
+  onChange: (value: SwapDirection) => void;
+}) {
+  return (
+    <div className="grid grid-cols-2 rounded-xl bg-[#0b0c10] p-1 text-xs">
+      <button
+        onClick={() => onChange(FORWARD_DIRECTION)}
+        className={`rounded-lg px-3 py-2 font-semibold transition-colors ${
+          value === FORWARD_DIRECTION ? 'bg-[#f26822] text-white' : 'text-[#8f949d] hover:text-white'
+        }`}
+      >
+        To XMR
+      </button>
+      <button
+        onClick={() => onChange(REVERSE_DIRECTION)}
+        className={`rounded-lg px-3 py-2 font-semibold transition-colors ${
+          value === REVERSE_DIRECTION ? 'bg-[#f26822] text-white' : 'text-[#8f949d] hover:text-white'
+        }`}
+      >
+        From XMR
+      </button>
+    </div>
+  );
+}
+
 function TradeAmountPanel({
   amount,
   chainId,
+  chains,
   token,
   tokenCount,
+  label,
   onAmountChange,
   onChainChange,
   onOpenTokenPicker,
 }: {
   amount: string;
   chainId: SourceChainId;
+  chains: readonly SourceChainId[];
   token?: MayanToken;
   tokenCount: number;
+  label: string;
   onAmountChange: (value: string) => void;
   onChainChange: (value: SourceChainId) => void;
   onOpenTokenPicker: () => void;
@@ -377,8 +470,8 @@ function TradeAmountPanel({
   return (
     <div className="rounded-2xl border border-[#292b31] bg-[#0c0d11] p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
-        <div className="text-sm text-[#9aa0aa]">You send</div>
-        <ChainSelect value={chainId} onChange={onChainChange} />
+        <div className="text-sm text-[#9aa0aa]">{label}</div>
+        <ChainSelect value={chainId} chains={chains} onChange={onChainChange} />
       </div>
       <div className="flex items-center gap-3">
         <input
@@ -401,6 +494,43 @@ function TradeAmountPanel({
           </span>
           <span className="text-[#8f949d]">v</span>
         </button>
+      </div>
+    </div>
+  );
+}
+
+function XmrAmountPanel({
+  amount,
+  onAmountChange,
+}: {
+  amount: string;
+  onAmountChange: (value: string) => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-[#292b31] bg-[#0c0d11] p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="text-sm text-[#9aa0aa]">You send</div>
+        <div className="rounded-full border border-[#30333b] bg-[#17191f] px-3 py-1 text-xs text-[#9aa0aa]">
+          Native Monero
+        </div>
+      </div>
+      <div className="flex items-center gap-3">
+        <input
+          type="number"
+          min="0"
+          step="0.000001"
+          value={amount}
+          onChange={(event) => onAmountChange(event.target.value)}
+          placeholder="0.000000"
+          className="min-w-0 flex-1 bg-transparent text-4xl font-semibold text-white outline-none placeholder:text-[#3e424b] md:text-5xl"
+        />
+        <div className="flex min-w-[132px] items-center gap-2 rounded-2xl border border-[#30333b] bg-[#17191f] px-3 py-3">
+          <MoneroLogo className="h-8 w-8 shrink-0" />
+          <span>
+            <span className="block text-sm font-semibold text-white">XMR</span>
+            <span className="block text-[11px] text-[#8f949d]">Native</span>
+          </span>
+        </div>
       </div>
     </div>
   );
@@ -429,11 +559,56 @@ function ReceivePanel({ value, quote }: { value: string; quote: Quote | null }) 
   );
 }
 
+function MayanReceivePanel({
+  value,
+  chainId,
+  chains,
+  token,
+  tokenCount,
+  quote,
+  onChainChange,
+  onOpenTokenPicker,
+}: {
+  value: string;
+  chainId: SourceChainId;
+  chains: readonly SourceChainId[];
+  token?: MayanToken;
+  tokenCount: number;
+  quote: Quote | null;
+  onChainChange: (value: SourceChainId) => void;
+  onOpenTokenPicker: () => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-[#292b31] bg-[#0c0d11] p-4">
+      <div className="mb-3 flex items-center justify-between gap-3">
+        <div className="text-sm text-[#9aa0aa]">You get</div>
+        <ChainSelect value={chainId} chains={chains} onChange={onChainChange} />
+      </div>
+      <div className="flex items-center gap-3">
+        <div className="min-w-0 flex-1 text-4xl font-semibold text-white md:text-5xl">{value}</div>
+        <button
+          onClick={onOpenTokenPicker}
+          className="flex min-w-[132px] items-center justify-between gap-2 rounded-2xl border border-[#30333b] bg-[#17191f] px-3 py-3 text-left text-white transition-colors hover:border-[#f26822]"
+        >
+          <TokenLogo token={token} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold">{token?.symbol ?? 'Token'}</span>
+            <span className="block truncate text-[11px] text-[#8f949d]">{quote ? 'Estimated' : `${tokenCount || 0} assets`}</span>
+          </span>
+          <span className="text-[#8f949d]">v</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ChainSelect({
   value,
+  chains,
   onChange,
 }: {
   value: SourceChainId;
+  chains: readonly SourceChainId[];
   onChange: (value: SourceChainId) => void;
 }) {
   return (
@@ -444,7 +619,7 @@ function ChainSelect({
         onChange={(event) => onChange(event.target.value as SourceChainId)}
         className="appearance-none rounded-full border border-[#30333b] bg-[#17191f] py-2 pl-3 pr-8 text-xs font-medium text-white outline-none transition-colors hover:border-[#f26822] focus:border-[#f26822]"
       >
-        {MAYAN_SWIFT_EVM_SOURCE_CHAINS.map((chain) => (
+        {chains.map((chain) => (
           <option key={chain} value={chain}>{CHAINS[chain].name}</option>
         ))}
       </select>
@@ -454,44 +629,82 @@ function ChainSelect({
 }
 
 function RecipientPanel({
+  direction,
   xmrAddress,
+  destinationAddress,
   refundAddress,
   onXmrAddressChange,
+  onDestinationAddressChange,
   onRefundAddressChange,
 }: {
+  direction: SwapDirection;
   xmrAddress: string;
+  destinationAddress: string;
   refundAddress: string;
   onXmrAddressChange: (value: string) => void;
+  onDestinationAddressChange: (value: string) => void;
   onRefundAddressChange: (value: string) => void;
 }) {
   const addressOk = !xmrAddress || isValidMoneroAddress(xmrAddress);
 
   return (
     <div className="grid gap-3 rounded-2xl border border-[#292b31] bg-[#0f1015] p-4">
-      <label>
-        <div className="mb-2 flex items-center justify-between gap-3">
-          <span className="text-sm text-[#9aa0aa]">XMR receive address</span>
-          <span className={addressOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff7777]'}>
-            {addressOk ? 'Ready' : 'Invalid'}
-          </span>
-        </div>
-        <textarea
-          value={xmrAddress}
-          onChange={(event) => onXmrAddressChange(event.target.value.trim())}
-          rows={3}
-          placeholder="4..."
-          className="w-full resize-none rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
-        />
-      </label>
-      <label>
-        <div className="mb-2 text-sm text-[#9aa0aa]">Solana refund address</div>
-        <input
-          value={refundAddress}
-          onChange={(event) => onRefundAddressChange(event.target.value.trim())}
-          placeholder="Optional"
-          className="w-full rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
-        />
-      </label>
+      {direction === FORWARD_DIRECTION ? (
+        <>
+          <label>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <span className="text-sm text-[#9aa0aa]">XMR receive address</span>
+              <span className={addressOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff7777]'}>
+                {addressOk ? 'Ready' : 'Invalid'}
+              </span>
+            </div>
+            <textarea
+              value={xmrAddress}
+              onChange={(event) => onXmrAddressChange(event.target.value.trim())}
+              rows={3}
+              placeholder="4..."
+              className="w-full resize-none rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
+            />
+          </label>
+          <label>
+            <div className="mb-2 text-sm text-[#9aa0aa]">Solana refund address</div>
+            <input
+              value={refundAddress}
+              onChange={(event) => onRefundAddressChange(event.target.value.trim())}
+              placeholder="Optional"
+              className="w-full rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
+            />
+          </label>
+        </>
+      ) : (
+        <>
+          <label>
+            <div className="mb-2 text-sm text-[#9aa0aa]">Destination address</div>
+            <textarea
+              value={destinationAddress}
+              onChange={(event) => onDestinationAddressChange(event.target.value.trim())}
+              rows={2}
+              placeholder="Wallet on the destination chain"
+              className="w-full resize-none rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
+            />
+          </label>
+          <label>
+            <div className="mb-2 flex items-center justify-between gap-3">
+              <span className="text-sm text-[#9aa0aa]">XMR refund address</span>
+              <span className={addressOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff7777]'}>
+                {addressOk ? 'Ready' : 'Invalid'}
+              </span>
+            </div>
+            <textarea
+              value={xmrAddress}
+              onChange={(event) => onXmrAddressChange(event.target.value.trim())}
+              rows={3}
+              placeholder="4..."
+              className="w-full resize-none rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
+            />
+          </label>
+        </>
+      )}
     </div>
   );
 }
@@ -587,8 +800,11 @@ function QuoteSummary({
   quoteExpired: boolean;
 }) {
   const mayan = quote.mayan;
-  const sourceDecimals = quote.sourceTokenDecimals ?? mayan?.quote.fromToken.decimals ?? 6;
-  const sourceSymbol = quote.sourceTokenSymbol ?? mayan?.quote.fromToken.symbol ?? 'Token';
+  const isReverse = quote.direction === REVERSE_DIRECTION;
+  const sourceDecimals = isReverse ? XMR_DECIMALS : quote.sourceTokenDecimals ?? mayan?.quote.fromToken.decimals ?? 6;
+  const sourceSymbol = isReverse ? 'XMR' : quote.sourceTokenSymbol ?? mayan?.quote.fromToken.symbol ?? 'Token';
+  const destinationSymbol = quote.destinationTokenSymbol ?? quote.sourceTokenSymbol ?? mayan?.quote.toToken.symbol ?? 'Token';
+  const destinationDecimals = quote.destinationTokenDecimals ?? quote.sourceTokenDecimals ?? mayan?.quote.toToken.decimals ?? 6;
 
   return (
     <div className="rounded-2xl border border-[#292b31] bg-[#101116] p-4">
@@ -603,8 +819,13 @@ function QuoteSummary({
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Metric label="Sending" value={`${formatBaseUnits(quote.inputAmount, sourceDecimals)} ${sourceSymbol}`} />
-        <Metric label="Mayan delivers" value={`${formatUsdc(mayan?.expectedSolanaUsdcOut ?? quote.inputAmount)} USDC-SOL`} />
-        <Metric label="Minimum XMR" value={`${formatXmr(quote.minXmrOut)} XMR`} />
+        <Metric label={isReverse ? 'Jupiter output' : 'Mayan delivers'} value={`${formatUsdc(mayan?.expectedSolanaUsdcOut ?? quote.inputAmount)} USDC-SOL`} />
+        <Metric
+          label={isReverse ? `Minimum ${destinationSymbol}` : 'Minimum XMR'}
+          value={isReverse
+            ? `${formatBaseUnits(quote.minDestinationOut ?? '0', destinationDecimals)} ${destinationSymbol}`
+            : `${formatXmr(quote.minXmrOut)} XMR`}
+        />
         <Metric label="Fees" value={`${formatBps(mayan?.protocolBps ?? 0)} Mayan + ${formatBps(quote.bridgeFeeBps)} bridge`} />
       </div>
     </div>
@@ -664,9 +885,54 @@ function FundingPanel({
   if (order.funding.type === 'mayan-swift') {
     return <MayanEvmFunding funding={order.funding} onDeposit={onDeposit} onError={onError} />;
   }
+  if (order.funding.type === 'deposit-address') {
+    return <XmrDepositFunding order={order} funding={order.funding} />;
+  }
   return (
     <div className="rounded-2xl border border-[#292b31] bg-[#101116] p-4 text-sm text-[#c8cbd1]">
       Unsupported funding route.
+    </div>
+  );
+}
+
+function XmrDepositFunding({
+  order,
+  funding,
+}: {
+  order: Order;
+  funding: Extract<FundingInstructions, { type: 'deposit-address' }>;
+}) {
+  const addressReady = Boolean(funding.address);
+  const amount = formatXmr(funding.expectedAmount ?? order.amount);
+  const copyAddress = () => {
+    if (funding.address) void navigator.clipboard?.writeText(funding.address);
+  };
+
+  return (
+    <div className="rounded-2xl border border-[#f26822]/40 bg-[#1a120c] p-4">
+      <div className="mb-4 flex items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-semibold text-white">Send native XMR</div>
+          <div className="text-xs text-[#c59a7c]">Order {shortId(order.id)}</div>
+        </div>
+        <StatusBadge status={addressReady ? 'awaiting_deposit' : 'created'} />
+      </div>
+      <div className="space-y-3">
+        <Metric label="Amount" value={`${amount} XMR`} />
+        <div className="rounded-xl border border-[#493424] bg-[#120d09] p-3">
+          <div className="mb-2 text-xs uppercase tracking-[0.08em] text-[#a8846d]">Deposit address</div>
+          <div className="break-all font-mono text-sm text-white">
+            {addressReady ? funding.address : 'Preparing deposit address...'}
+          </div>
+        </div>
+        <button
+          onClick={copyAddress}
+          disabled={!addressReady}
+          className="w-full rounded-2xl border border-[#493424] bg-[#23170e] px-4 py-3 text-sm font-semibold text-white transition-colors hover:border-[#f26822] disabled:text-[#7b6859]"
+        >
+          Copy XMR address
+        </button>
+      </div>
     </div>
   );
 }
@@ -797,12 +1063,19 @@ function MayanEvmFunding({
 }
 
 function OrderStatusPanel({ order }: { order: Order | null }) {
-  const steps = [
-    { label: 'Deposit', statuses: ['awaiting_deposit'] as Order['status'][] },
-    { label: 'Bridge', statuses: ['bridging', 'minted'] as Order['status'][] },
-    { label: 'Swap', statuses: ['swapping'] as Order['status'][] },
-    { label: 'Payout', statuses: ['withdrawing', 'completed'] as Order['status'][] },
-  ];
+  const steps = order?.direction === REVERSE_DIRECTION
+    ? [
+        { label: 'XMR deposit', statuses: ['awaiting_deposit'] as Order['status'][] },
+        { label: 'Bridge mint', statuses: ['minted'] as Order['status'][] },
+        { label: 'Swap', statuses: ['swapping'] as Order['status'][] },
+        { label: 'Mayan payout', statuses: ['withdrawing', 'completed'] as Order['status'][] },
+      ]
+    : [
+        { label: 'Deposit', statuses: ['awaiting_deposit'] as Order['status'][] },
+        { label: 'Bridge', statuses: ['bridging', 'minted'] as Order['status'][] },
+        { label: 'Swap', statuses: ['swapping'] as Order['status'][] },
+        { label: 'Payout', statuses: ['withdrawing', 'completed'] as Order['status'][] },
+      ];
 
   return (
     <div className="rounded-[24px] border border-[#26272d] bg-[#111216] p-4 shadow-xl shadow-black/30">
@@ -820,9 +1093,10 @@ function OrderStatusPanel({ order }: { order: Order | null }) {
       ) : (
         <div className="space-y-4">
           <div className="space-y-3">
-            {steps.map((step) => {
+            {steps.map((step, index) => {
+              const currentIndex = steps.findIndex((candidate) => candidate.statuses.includes(order.status));
               const isActive = step.statuses.includes(order.status);
-              const isDone = order.status === 'completed' || stepDone(step.label, order.status);
+              const isDone = order.status === 'completed' || (currentIndex >= 0 && index < currentIndex);
               return (
                 <div key={step.label} className="flex items-center gap-3">
                   <div className={`h-3 w-3 rounded-full ${isDone ? 'bg-[#f26822]' : isActive ? 'bg-[#35d071]' : 'bg-[#343842]'}`} />
@@ -832,10 +1106,10 @@ function OrderStatusPanel({ order }: { order: Order | null }) {
             })}
           </div>
           <div className="grid gap-2 rounded-2xl border border-[#292b31] bg-[#0c0d11] p-3 text-sm">
-            {order.sourceTxHash && <ExplorerLink chain={order.sourceChain} hash={order.sourceTxHash} label="Source transaction" />}
-            {order.solanaMintSignature && <ExplorerLink chain="solana" hash={order.solanaMintSignature} label="Mayan delivery" />}
+            {order.sourceTxHash && <ExplorerLink chain={order.sourceChain} hash={order.sourceTxHash} label={order.direction === REVERSE_DIRECTION ? 'Destination transaction' : 'Source transaction'} />}
+            {order.solanaMintSignature && <ExplorerLink chain="solana" hash={order.solanaMintSignature} label={order.direction === REVERSE_DIRECTION ? 'Bridge claim' : 'Mayan delivery'} />}
             {order.swapSignature && <ExplorerLink chain="solana" hash={order.swapSignature} label="Jupiter swap" />}
-            {order.withdrawalSignature && <ExplorerLink chain="solana" hash={order.withdrawalSignature} label="Withdrawal request" />}
+            {order.withdrawalSignature && <ExplorerLink chain="solana" hash={order.withdrawalSignature} label={order.direction === REVERSE_DIRECTION ? 'Mayan payout' : 'Withdrawal request'} />}
             {order.error && <div className="text-sm text-[#ff9b9b]">{order.error}</div>}
           </div>
         </div>
@@ -885,9 +1159,13 @@ function ErrorBanner({ message }: { message: string }) {
 }
 
 function ExplorerLink({ chain, hash, label }: { chain: SourceChainId; hash: string; label: string }) {
+  const explorer = CHAINS[chain].explorerTxUrl;
+  if (!explorer) {
+    return <div className="truncate text-[#f2a269]" title={hash}>{label}: {shortId(hash)}</div>;
+  }
   return (
     <a
-      href={`${CHAINS[chain].explorerTxUrl}${hash}`}
+      href={`${explorer}${hash}`}
       target="_blank"
       rel="noreferrer"
       className="block truncate text-[#f2a269] transition-colors hover:text-[#f26822]"
@@ -899,12 +1177,14 @@ function ExplorerLink({ chain, hash, label }: { chain: SourceChainId; hash: stri
 }
 
 function buildRouteLegs({
+  direction,
   quote,
   selectedToken,
   sourceChain,
   amount,
   sourceTokenDecimals,
 }: {
+  direction: SwapDirection;
   quote: Quote | null;
   selectedToken?: MayanToken;
   sourceChain: SourceChainId;
@@ -912,6 +1192,42 @@ function buildRouteLegs({
   sourceTokenDecimals: number;
 }): RouteLeg[] {
   const sourceSymbol = quote?.sourceTokenSymbol ?? selectedToken?.symbol ?? 'Token';
+  if (direction === REVERSE_DIRECTION) {
+    const xmrAmount = quote ? formatXmr(quote.inputAmount) : amount || '0';
+    const usdcOut = quote?.mayan?.expectedSolanaUsdcOut ? `${formatUsdc(quote.mayan.expectedSolanaUsdcOut)} USDC` : 'USDC-SOL';
+    const destinationSymbol = quote?.destinationTokenSymbol ?? selectedToken?.symbol ?? 'Token';
+    const destinationDecimals = quote?.destinationTokenDecimals ?? sourceTokenDecimals;
+    const destinationOut = quote?.estimatedDestinationOut
+      ? `${formatBaseUnits(quote.estimatedDestinationOut, destinationDecimals)} ${destinationSymbol}`
+      : `${destinationSymbol} on ${CHAINS[sourceChain].name}`;
+    return [
+      {
+        title: 'Native XMR',
+        caption: 'Monero wallet transfer',
+        amount: `${xmrAmount} XMR`,
+        detail: 'You send native Monero to the order-specific bridge deposit address.',
+      },
+      {
+        title: 'Monero Bridge',
+        caption: 'native XMR to XMR-SOL',
+        amount: 'XMR-SOL',
+        detail: 'The bridge mints wXMR to the order deposit owner after confirmations.',
+      },
+      {
+        title: 'jup.ag',
+        caption: 'XMR-SOL to USDC-SOL',
+        amount: usdcOut,
+        detail: 'Jupiter swaps the claimed wXMR into Solana USDC with the quote minimum enforced.',
+      },
+      {
+        title: 'Mayan Swift v2',
+        caption: `USDC-SOL to ${CHAINS[sourceChain].name}`,
+        amount: destinationOut,
+        detail: 'Mayan pays the selected token to your destination-chain address.',
+      },
+    ];
+  }
+
   const sourceAmount = quote
     ? formatBaseUnits(quote.inputAmount, quote.sourceTokenDecimals ?? sourceTokenDecimals)
     : amount || '0';
@@ -998,6 +1314,24 @@ function normalizedTokenSymbol(token: MayanToken): string {
 
 function tokenSortLabel(token: MayanToken): string {
   return token.symbol ?? token.name ?? token.contract ?? '';
+}
+
+function selectableMayanChains(direction: SwapDirection): readonly SourceChainId[] {
+  return direction === FORWARD_DIRECTION ? MAYAN_SWIFT_EVM_SOURCE_CHAINS : MAYAN_SWIFT_SOURCE_CHAINS;
+}
+
+function formatReceivePreview({
+  direction,
+  quote,
+  token,
+}: {
+  direction: SwapDirection;
+  quote: Quote | null;
+  token?: MayanToken;
+}): string {
+  if (!quote) return direction === FORWARD_DIRECTION ? '0.000000' : '0.00';
+  if (direction === FORWARD_DIRECTION) return formatXmr(quote.estimatedXmrOut);
+  return formatBaseUnits(quote.estimatedDestinationOut ?? '0', quote.destinationTokenDecimals ?? token?.decimals ?? 6);
 }
 
 function getPrimaryLabel({
@@ -1090,20 +1424,12 @@ function formatCountdown(value: number | null): string {
   return `${minutes}:${seconds}`;
 }
 
-function orderTokenDecimals(order: Order): number {
-  return order.funding.type === 'mayan-swift' ? order.funding.tokenDecimals ?? 6 : 6;
-}
-
-function stepDone(label: string, status: Order['status']): boolean {
-  const order = ['Deposit', 'Bridge', 'Swap', 'Payout'];
-  const current = status === 'bridging' || status === 'minted'
-    ? 'Bridge'
-    : status === 'swapping'
-      ? 'Swap'
-      : status === 'withdrawing' || status === 'completed'
-        ? 'Payout'
-        : 'Deposit';
-  return order.indexOf(label) < order.indexOf(current);
+function orderInputDecimals(order: Order): number {
+  return order.direction === REVERSE_DIRECTION
+    ? XMR_DECIMALS
+    : order.funding.type === 'mayan-swift'
+      ? order.funding.tokenDecimals ?? 6
+      : 6;
 }
 
 function shortAddress(value: string): string {
