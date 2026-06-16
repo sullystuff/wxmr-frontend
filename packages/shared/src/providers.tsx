@@ -9,8 +9,8 @@ import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adap
 import '@solana/wallet-adapter-react-ui/styles.css';
 
 export function Providers({ children }: { children: React.ReactNode }) {
-  // Configure RPC endpoint - defaults to localnet
-  const endpoint = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'http://127.0.0.1:9888';
+  // Configure RPC endpoint - defaults to public mainnet.
+  const endpoint = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
 
   // Configure wallets
   const wallets = useMemo(
