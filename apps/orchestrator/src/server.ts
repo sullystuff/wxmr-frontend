@@ -14,6 +14,7 @@ import {
   buildMayanSwiftFunding,
   filterMayanTokensForChain,
   type DepositAddressFunding,
+  type ExecutionPolicy,
   type MayanEvmTxPayload,
   type MayanToken,
   MayanClient,
@@ -35,6 +36,7 @@ const connection = new Connection(env.solanaRpcUrl, "confirmed");
 const jupiter = new JupiterClient({ apiKey: env.jupiterApiKey });
 const mayan = new MayanClient({ apiKey: env.mayanApiKey });
 const solana = new SolanaExecutor(connection, env.solanaHotWallet, env.bridgeProgramId, env.jupiterApiKey, env.mayanApiKey);
+const DEFAULT_EXECUTION_POLICY: ExecutionPolicy = "refund-on-slippage";
 
 const app = Fastify({ logger: true });
 await app.register(cors, {
@@ -65,6 +67,7 @@ function registerRoutes(prefix: "" | "/api"): void {
   app.post(route("/quote"), async (request, reply) => {
     const body = request.body as Partial<QuoteRequest>;
     const direction = body.direction ?? "mayan-to-xmr";
+    const executionPolicy = normalizeExecutionPolicy(body.executionPolicy);
     const sourceChain = body.sourceChain as SourceChainId;
     if (!sourceChain || !CHAINS[sourceChain]) {
       return reply.code(400).send({ error: "unsupported sourceChain" });
@@ -94,6 +97,7 @@ function registerRoutes(prefix: "" | "/api"): void {
         xmrAddress: body.xmrAddress,
         refundAddress: body.refundAddress,
         slippageBps: body.slippageBps,
+        executionPolicy,
       }) : await quoteUsdcToXmr({
         direction,
         sourceChain,
@@ -102,6 +106,7 @@ function registerRoutes(prefix: "" | "/api"): void {
         xmrAddress: body.xmrAddress,
         refundAddress: body.refundAddress,
         slippageBps: body.slippageBps,
+        executionPolicy,
       });
       store.insertQuote(quote);
       return quote;
@@ -134,6 +139,7 @@ function registerRoutes(prefix: "" | "/api"): void {
       destinationAddress: body.destinationAddress,
       refundAddress: body.refundAddress,
       slippageBps: body.slippageBps,
+      executionPolicy,
     }) : await quoteXmrToMayan({
       direction,
       sourceChain,
@@ -143,13 +149,14 @@ function registerRoutes(prefix: "" | "/api"): void {
       destinationAddress: body.destinationAddress,
       refundAddress: body.refundAddress,
       slippageBps: body.slippageBps,
+      executionPolicy,
     });
     store.insertQuote(quote);
     return quote;
   });
 
   app.post(route("/orders"), async (request, reply) => {
-    const body = request.body as { quoteId?: string; refundAddress?: string; xmrAddress?: string };
+    const body = request.body as { quoteId?: string; refundAddress?: string; xmrAddress?: string; executionPolicy?: ExecutionPolicy };
     if (!body.quoteId) {
       return reply.code(400).send({ error: "quoteId is required" });
     }
@@ -165,6 +172,7 @@ function registerRoutes(prefix: "" | "/api"): void {
     const orderId = crypto.randomUUID();
     const refundAddress = body.refundAddress ?? quote.refundAddress;
     const xmrAddress = body.xmrAddress ?? quote.xmrAddress;
+    const executionPolicy = normalizeExecutionPolicy(body.executionPolicy ?? quote.executionPolicy);
     if (quote.direction === "mayan-to-xmr") {
       assertValidMoneroAddress(xmrAddress ?? "");
     }
@@ -182,6 +190,7 @@ function registerRoutes(prefix: "" | "/api"): void {
       destinationTokenSymbol: quote.destinationTokenSymbol,
       destinationTokenDecimals: quote.destinationTokenDecimals,
       refundAddress,
+      executionPolicy,
       funding,
       createdAt: now,
       updatedAt: now,
@@ -288,6 +297,7 @@ async function quoteUsdcToXmr(input: QuoteRequest): Promise<Quote> {
     minXmrOut: minXmrOut.toString(),
     bridgeFeeBps: BRIDGE_FEE_BPS,
     serviceFeeBps: env.serviceFeeBps,
+    executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
     jupiterPriceImpactPct: expectedJupiterQuote.priceImpactPct ?? "0",
     expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     route: "mayan",
@@ -337,6 +347,7 @@ async function quoteSolanaToXmr(input: QuoteRequest): Promise<Quote> {
     minXmrOut: minXmrOut.toString(),
     bridgeFeeBps: BRIDGE_FEE_BPS,
     serviceFeeBps: env.serviceFeeBps,
+    executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
     jupiterPriceImpactPct: expectedJupiterQuote.priceImpactPct ?? "0",
     expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     route: "solana",
@@ -383,6 +394,7 @@ async function quoteXmrToMayan(input: QuoteRequest): Promise<Quote> {
     minDestinationOut: mayanQuote.minReceivedBaseUnits,
     bridgeFeeBps: 0,
     serviceFeeBps: env.serviceFeeBps,
+    executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
     jupiterPriceImpactPct: expectedJupiterQuote.priceImpactPct ?? "0",
     expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
     route: "mayan",
@@ -434,6 +446,7 @@ async function quoteXmrToSolana(input: QuoteRequest): Promise<Quote> {
     minDestinationOut: minDestinationOut.toString(),
     bridgeFeeBps: 0,
     serviceFeeBps: env.serviceFeeBps,
+    executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
     jupiterPriceImpactPct: expectedJupiterQuote.priceImpactPct ?? "0",
     expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
     route: "solana",
@@ -525,4 +538,8 @@ async function findToken(sourceChain: SourceChainId, contract: string): Promise<
 
 function applyBps(amount: bigint, bps: number): bigint {
   return (amount * BigInt(bps)) / 10_000n;
+}
+
+function normalizeExecutionPolicy(value: unknown): ExecutionPolicy {
+  return value === "execute-anyway" ? "execute-anyway" : DEFAULT_EXECUTION_POLICY;
 }

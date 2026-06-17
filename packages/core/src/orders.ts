@@ -18,6 +18,7 @@ export type SourceChainId =
   | "bitcoin";
 
 export type SwapDirection = "mayan-to-xmr" | "xmr-to-mayan";
+export type ExecutionPolicy = "refund-on-slippage" | "execute-anyway";
 
 export type OrderStatus =
   | "created"
@@ -41,6 +42,7 @@ export interface QuoteRequest {
   destinationAddress?: string;
   refundAddress?: string;
   slippageBps?: number;
+  executionPolicy?: ExecutionPolicy;
 }
 
 export interface Quote {
@@ -64,6 +66,7 @@ export interface Quote {
   minXmrOut: string;
   bridgeFeeBps: number;
   serviceFeeBps: number;
+  executionPolicy: ExecutionPolicy;
   jupiterPriceImpactPct: string;
   expiresAt: string;
   route: "mayan" | "solana" | "thorchain";
@@ -220,6 +223,7 @@ export interface Order {
   destinationTokenSymbol?: string;
   destinationTokenDecimals?: number;
   refundAddress?: string;
+  executionPolicy: ExecutionPolicy;
   funding: FundingInstructions;
   sourceTxHash?: string;
   destinationAmount?: string;

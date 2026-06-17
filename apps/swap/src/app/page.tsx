@@ -10,6 +10,7 @@ import {
   XMR_DECIMALS,
   filterMayanTokensForChain,
   isValidMoneroAddress,
+  type ExecutionPolicy,
   type FundingInstructions,
   type MayanEvmTxPayload,
   type MayanToken,
@@ -45,6 +46,7 @@ const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfc
 const FORWARD_DIRECTION: SwapDirection = 'mayan-to-xmr';
 const REVERSE_DIRECTION: SwapDirection = 'xmr-to-mayan';
 const DEFAULT_MAYAN_CHAIN: SourceChainId = 'ethereum';
+const DEFAULT_EXECUTION_POLICY: ExecutionPolicy = 'refund-on-slippage';
 const TOKEN_RELEVANCE_BY_CHAIN: Partial<Record<SourceChainId, readonly string[]>> = {
   ethereum: ['ETH', 'USDC', 'USDT', 'WBTC', 'DAI', 'LINK', 'UNI', 'AAVE', 'ENA', 'PEPE', 'SHIB'],
   base: ['ETH', 'USDC', 'cbBTC', 'USDT', 'EURC', 'AERO', 'VIRTUAL', 'MORPHO', 'DEGEN', 'BRETT'],
@@ -106,6 +108,7 @@ export default function SwapPage() {
   const [xmrAddress, setXmrAddress] = useState('');
   const [destinationAddress, setDestinationAddress] = useState('');
   const [refundAddress, setRefundAddress] = useState('');
+  const [executionPolicy, setExecutionPolicy] = useState<ExecutionPolicy>(DEFAULT_EXECUTION_POLICY);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [order, setOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -133,6 +136,7 @@ export default function SwapPage() {
         setXmrAddress(next.xmrAddress);
         setDestinationAddress(next.destinationAddress ?? '');
         setRefundAddress(next.refundAddress ?? '');
+        setExecutionPolicy(next.executionPolicy ?? DEFAULT_EXECUTION_POLICY);
       })
       .catch((e) => {
         if (!cancelled) setError(errorMessage(e));
@@ -244,6 +248,7 @@ export default function SwapPage() {
           destinationAddress: direction === REVERSE_DIRECTION ? destinationAddress.trim() : undefined,
           refundAddress: refundAddress || undefined,
           slippageBps: 100,
+          executionPolicy,
         }),
       });
       if (quoteRequestSeq.current !== requestSeq) return;
@@ -262,7 +267,7 @@ export default function SwapPage() {
         setIsQuoteRefreshing(false);
       }
     }
-  }, [canPreviewQuote, destinationAddress, direction, hasValidXmrAddress, parsedAmount, refundAddress, sourceChain, sourceToken, xmrAddress]);
+  }, [canPreviewQuote, destinationAddress, direction, executionPolicy, hasValidXmrAddress, parsedAmount, refundAddress, sourceChain, sourceToken, xmrAddress]);
 
   useEffect(() => {
     if (!canPreviewQuote || order) return;
@@ -287,6 +292,7 @@ export default function SwapPage() {
           quoteId: quote.id,
           refundAddress: refundAddress || undefined,
           xmrAddress: direction === FORWARD_DIRECTION ? xmrAddress.trim() : undefined,
+          executionPolicy,
         }),
       });
       setOrder(result.order);
@@ -400,6 +406,14 @@ export default function SwapPage() {
                 resetTrade();
               }}
               onRefundAddressChange={setRefundAddress}
+            />
+
+            <ExecutionPolicyPanel
+              value={executionPolicy}
+              onChange={(next) => {
+                setExecutionPolicy(next);
+                resetTrade();
+              }}
             />
 
             {error && <ErrorBanner message={error} />}
@@ -753,6 +767,53 @@ function RecipientPanel({
           </label>
         </>
       )}
+    </div>
+  );
+}
+
+function ExecutionPolicyPanel({
+  value,
+  onChange,
+}: {
+  value: ExecutionPolicy;
+  onChange: (value: ExecutionPolicy) => void;
+}) {
+  const options: Array<{ value: ExecutionPolicy; title: string; caption: string }> = [
+    {
+      value: 'refund-on-slippage',
+      title: 'Refund if 1% fails',
+      caption: 'Require quoted minimum',
+    },
+    {
+      value: 'execute-anyway',
+      title: 'Execute anyway',
+      caption: 'Receive market output',
+    },
+  ];
+
+  return (
+    <div className="rounded-2xl border border-[#292b31] bg-[#0f1015] p-3">
+      <div className="mb-2 text-sm text-[#9aa0aa]">Execution</div>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {options.map((option) => {
+          const selected = option.value === value;
+          return (
+            <button
+              key={option.value}
+              type="button"
+              onClick={() => onChange(option.value)}
+              className={`rounded-xl border px-3 py-3 text-left transition-colors ${
+                selected
+                  ? 'border-[#f26822] bg-[#22170f] text-white'
+                  : 'border-[#30333b] bg-[#090a0e] text-[#c8cbd1] hover:border-[#f26822]'
+              }`}
+            >
+              <span className="block text-sm font-semibold">{option.title}</span>
+              <span className="mt-1 block text-xs text-[#8f949d]">{option.caption}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }

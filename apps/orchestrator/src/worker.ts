@@ -170,7 +170,11 @@ async function executeSwapAndWithdrawal(order: Order): Promise<void> {
 
   let swap;
   try {
-    swap = await solana.swapTokenToWxmr(swapInputMint, swapInputAmount, BigInt(quote.minWxmrOut));
+    swap = await solana.swapTokenToWxmr(
+      swapInputMint,
+      swapInputAmount,
+      executionMinimum(order, BigInt(quote.minWxmrOut)),
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     store.updateOrder(order.id, { status: "refunding", error: message }, `swap failed: ${message}`);
@@ -178,7 +182,7 @@ async function executeSwapAndWithdrawal(order: Order): Promise<void> {
   }
 
   const withdrawalAmount = applyBps(swap.outAmount, 10_000 - quote.serviceFeeBps);
-  if (withdrawalAmount < BigInt(quote.minWxmrOut)) {
+  if (shouldRefundOnSlippage(order) && withdrawalAmount < BigInt(quote.minWxmrOut)) {
     store.updateOrder(
       order.id,
       { status: "refunding", swapSignature: swap.signature, error: "executed output below locked minimum" },
@@ -221,7 +225,11 @@ async function executeSwapAndMayanPayout(order: Order): Promise<void> {
 
   let swap;
   try {
-    swap = await solana.swapWxmrToUsdc(swapInputAmount, BigInt(quote.mayan.minSolanaUsdcOut), owner);
+    swap = await solana.swapWxmrToUsdc(
+      swapInputAmount,
+      executionMinimum(order, BigInt(quote.mayan.minSolanaUsdcOut)),
+      owner,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     store.updateOrder(order.id, { status: "refunding", error: message }, `reverse swap failed before Mayan payout: ${message}`);
@@ -242,7 +250,7 @@ async function executeSwapAndMayanPayout(order: Order): Promise<void> {
     slippageBps: quote.mayan.quote.slippageBps ?? 100,
   });
   const minDestinationOut = BigInt(quote.minDestinationOut ?? "0");
-  if (BigInt(payoutQuote.minReceivedBaseUnits) < minDestinationOut) {
+  if (shouldRefundOnSlippage(order) && BigInt(payoutQuote.minReceivedBaseUnits) < minDestinationOut) {
     store.updateOrder(
       order.id,
       {
@@ -280,7 +288,12 @@ async function executeSwapAndSolanaPayout(order: Order, quote: Quote): Promise<v
 
   let swap;
   try {
-    swap = await solana.swapWxmrToToken(order.sourceToken, swapInputAmount, BigInt(quote.minDestinationOut ?? "0"), owner);
+    swap = await solana.swapWxmrToToken(
+      order.sourceToken,
+      swapInputAmount,
+      executionMinimum(order, BigInt(quote.minDestinationOut ?? "0")),
+      owner,
+    );
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     store.updateOrder(order.id, { status: "refunding", error: message }, `reverse Solana swap failed: ${message}`);
@@ -379,6 +392,14 @@ function getSolanaInputMint(order: Order): string {
     return order.funding.mint;
   }
   return order.sourceToken;
+}
+
+function executionMinimum(order: Order, lockedMinimum: bigint): bigint {
+  return shouldRefundOnSlippage(order) ? lockedMinimum : 0n;
+}
+
+function shouldRefundOnSlippage(order: Order): boolean {
+  return order.executionPolicy !== "execute-anyway";
 }
 
 function mustGetQuote(quoteId: string): Quote {

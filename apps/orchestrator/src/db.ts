@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 import type { Database as DatabaseType } from "better-sqlite3";
-import type { FundingInstructions, Order, OrderStatus, Quote } from "@wxmr/core";
+import type { ExecutionPolicy, FundingInstructions, Order, OrderStatus, Quote } from "@wxmr/core";
 
 export interface OrderRow {
   id: string;
@@ -15,6 +15,7 @@ export interface OrderRow {
   destination_token_symbol: string | null;
   destination_token_decimals: number | null;
   refund_address: string | null;
+  execution_policy: ExecutionPolicy | null;
   funding_json: string;
   source_tx_hash: string | null;
   destination_amount: string | null;
@@ -63,11 +64,11 @@ export class Store {
         `INSERT INTO orders (
           id, quote_id, direction, status, source_chain, source_token, amount, xmr_address,
           destination_address, destination_token_symbol, destination_token_decimals,
-          refund_address, funding_json, created_at, updated_at, expires_at
+          refund_address, execution_policy, funding_json, created_at, updated_at, expires_at
         ) VALUES (
           @id, @quote_id, @direction, @status, @source_chain, @source_token, @amount,
           @xmr_address, @destination_address, @destination_token_symbol, @destination_token_decimals,
-          @refund_address, @funding_json, @created_at, @updated_at, @expires_at
+          @refund_address, @execution_policy, @funding_json, @created_at, @updated_at, @expires_at
         )`,
       )
       .run({
@@ -83,6 +84,7 @@ export class Store {
         destination_token_symbol: order.destinationTokenSymbol ?? null,
         destination_token_decimals: order.destinationTokenDecimals ?? null,
         refund_address: order.refundAddress ?? null,
+        execution_policy: order.executionPolicy,
         funding_json: JSON.stringify(order.funding),
         created_at: order.createdAt,
         updated_at: order.updatedAt,
@@ -117,6 +119,7 @@ export class Store {
           destination_address = @destination_address,
           destination_token_symbol = @destination_token_symbol,
           destination_token_decimals = @destination_token_decimals,
+          execution_policy = @execution_policy,
           destination_amount = @destination_amount,
           solana_mint_signature = @solana_mint_signature,
           swap_signature = @swap_signature,
@@ -134,6 +137,7 @@ export class Store {
         destination_address: next.destinationAddress ?? null,
         destination_token_symbol: next.destinationTokenSymbol ?? null,
         destination_token_decimals: next.destinationTokenDecimals ?? null,
+        execution_policy: next.executionPolicy,
         destination_amount: next.destinationAmount ?? null,
         solana_mint_signature: next.solanaMintSignature ?? null,
         swap_signature: next.swapSignature ?? null,
@@ -179,6 +183,7 @@ export class Store {
           destination_token_symbol TEXT,
           destination_token_decimals INTEGER,
           refund_address TEXT,
+          execution_policy TEXT NOT NULL DEFAULT 'refund-on-slippage',
         funding_json TEXT NOT NULL,
         source_tx_hash TEXT,
         destination_amount TEXT,
@@ -219,6 +224,9 @@ export class Store {
     if (!columns.some((column) => column.name === "destination_token_decimals")) {
       this.db.exec("ALTER TABLE orders ADD COLUMN destination_token_decimals INTEGER");
     }
+    if (!columns.some((column) => column.name === "execution_policy")) {
+      this.db.exec("ALTER TABLE orders ADD COLUMN execution_policy TEXT NOT NULL DEFAULT 'refund-on-slippage'");
+    }
   }
 }
 
@@ -236,6 +244,7 @@ function rowToOrder(row: OrderRow): Order {
     destinationTokenSymbol: row.destination_token_symbol ?? undefined,
     destinationTokenDecimals: row.destination_token_decimals ?? undefined,
     refundAddress: row.refund_address ?? undefined,
+    executionPolicy: normalizeExecutionPolicy(row.execution_policy),
     funding: JSON.parse(row.funding_json) as FundingInstructions,
     sourceTxHash: row.source_tx_hash ?? undefined,
     destinationAmount: row.destination_amount ?? undefined,
@@ -248,4 +257,8 @@ function rowToOrder(row: OrderRow): Order {
     updatedAt: row.updated_at,
     expiresAt: row.expires_at,
   };
+}
+
+function normalizeExecutionPolicy(value: string | null): ExecutionPolicy {
+  return value === "execute-anyway" ? "execute-anyway" : "refund-on-slippage";
 }
