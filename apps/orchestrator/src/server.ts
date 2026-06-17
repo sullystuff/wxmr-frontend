@@ -37,6 +37,8 @@ const jupiter = new JupiterClient({ apiKey: env.jupiterApiKey });
 const mayan = new MayanClient({ apiKey: env.mayanApiKey });
 const solana = new SolanaExecutor(connection, env.solanaHotWallet, env.bridgeProgramId, env.jupiterApiKey, env.mayanApiKey);
 const DEFAULT_EXECUTION_POLICY: ExecutionPolicy = "refund-on-slippage";
+const DEFAULT_SLIPPAGE_BPS = 200;
+const MAX_SLIPPAGE_BPS = 2_000;
 
 const app = Fastify({ logger: true });
 await app.register(cors, {
@@ -261,7 +263,7 @@ function registerRoutes(prefix: "" | "/api"): void {
 }
 
 async function quoteUsdcToXmr(input: QuoteRequest): Promise<Quote> {
-  const slippageBps = Math.max(0, Math.min(input.slippageBps ?? 100, 2_000));
+  const slippageBps = normalizeSlippageBps(input.slippageBps);
   const mayanQuote = await mayan.fetchSwiftQuote({
     sourceChain: input.sourceChain,
     sourceToken: input.sourceToken,
@@ -316,7 +318,7 @@ async function quoteUsdcToXmr(input: QuoteRequest): Promise<Quote> {
 
 async function quoteSolanaToXmr(input: QuoteRequest): Promise<Quote> {
   const token = await findToken(input.sourceChain, input.sourceToken);
-  const slippageBps = Math.max(0, Math.min(input.slippageBps ?? 100, 2_000));
+  const slippageBps = normalizeSlippageBps(input.slippageBps);
   const expectedJupiterQuote = await jupiter.quote({
     inputMint: input.sourceToken,
     outputMint: WXMR_MINT_ADDRESS,
@@ -357,7 +359,7 @@ async function quoteSolanaToXmr(input: QuoteRequest): Promise<Quote> {
 
 async function quoteXmrToMayan(input: QuoteRequest): Promise<Quote> {
   if (!input.destinationAddress) throw new Error("destinationAddress is required");
-  const slippageBps = Math.max(0, Math.min(input.slippageBps ?? 100, 2_000));
+  const slippageBps = normalizeSlippageBps(input.slippageBps);
   const inputAmount = BigInt(input.amount);
   const afterService = applyBps(inputAmount, 10_000 - env.serviceFeeBps);
   const expectedJupiterQuote = await jupiter.quoteWxmrToUsdc(afterService);
@@ -414,7 +416,7 @@ async function quoteXmrToMayan(input: QuoteRequest): Promise<Quote> {
 async function quoteXmrToSolana(input: QuoteRequest): Promise<Quote> {
   if (!input.destinationAddress) throw new Error("destinationAddress is required");
   const token = await findToken(input.sourceChain, input.sourceToken);
-  const slippageBps = Math.max(0, Math.min(input.slippageBps ?? 100, 2_000));
+  const slippageBps = normalizeSlippageBps(input.slippageBps);
   const inputAmount = BigInt(input.amount);
   const afterService = applyBps(inputAmount, 10_000 - env.serviceFeeBps);
   const expectedJupiterQuote = await jupiter.quote({
@@ -538,6 +540,10 @@ async function findToken(sourceChain: SourceChainId, contract: string): Promise<
 
 function applyBps(amount: bigint, bps: number): bigint {
   return (amount * BigInt(bps)) / 10_000n;
+}
+
+function normalizeSlippageBps(slippageBps: number | undefined): number {
+  return Math.max(0, Math.min(slippageBps ?? DEFAULT_SLIPPAGE_BPS, MAX_SLIPPAGE_BPS));
 }
 
 function normalizeExecutionPolicy(value: unknown): ExecutionPolicy {

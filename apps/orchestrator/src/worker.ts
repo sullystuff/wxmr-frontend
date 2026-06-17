@@ -21,6 +21,7 @@ const store = new Store(env.dbPath);
 const connection = new Connection(env.solanaRpcUrl, "confirmed");
 const mayan = new MayanClient({ apiKey: env.mayanApiKey });
 const solana = new SolanaExecutor(connection, env.solanaHotWallet, env.bridgeProgramId, env.jupiterApiKey, env.mayanApiKey);
+const DEFAULT_SLIPPAGE_BPS = 200;
 
 let shuttingDown = false;
 process.on("SIGINT", () => {
@@ -247,7 +248,7 @@ async function executeSwapAndMayanPayout(order: Order): Promise<void> {
     toToken: order.sourceToken,
     amount: swap.outAmount,
     destinationAddress: order.destinationAddress,
-    slippageBps: quote.mayan.quote.slippageBps ?? 100,
+    slippageBps: quote.mayan.quote.slippageBps ?? DEFAULT_SLIPPAGE_BPS,
   });
   const minDestinationOut = BigInt(quote.minDestinationOut ?? "0");
   if (shouldRefundOnSlippage(order) && BigInt(payoutQuote.minReceivedBaseUnits) < minDestinationOut) {

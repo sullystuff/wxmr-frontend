@@ -47,6 +47,7 @@ const FORWARD_DIRECTION: SwapDirection = 'mayan-to-xmr';
 const REVERSE_DIRECTION: SwapDirection = 'xmr-to-mayan';
 const DEFAULT_MAYAN_CHAIN: SourceChainId = 'ethereum';
 const DEFAULT_EXECUTION_POLICY: ExecutionPolicy = 'refund-on-slippage';
+const DEFAULT_SLIPPAGE_BPS = 200;
 const TOKEN_RELEVANCE_BY_CHAIN: Partial<Record<SourceChainId, readonly string[]>> = {
   ethereum: ['ETH', 'USDC', 'USDT', 'WBTC', 'DAI', 'LINK', 'UNI', 'AAVE', 'ENA', 'PEPE', 'SHIB'],
   base: ['ETH', 'USDC', 'cbBTC', 'USDT', 'EURC', 'AERO', 'VIRTUAL', 'MORPHO', 'DEGEN', 'BRETT'],
@@ -263,7 +264,7 @@ export default function SwapPage() {
           xmrAddress: hasValidXmrAddress ? xmrAddress : undefined,
           destinationAddress: direction === REVERSE_DIRECTION ? destinationAddress.trim() : undefined,
           refundAddress: refundAddress || undefined,
-          slippageBps: 100,
+          slippageBps: DEFAULT_SLIPPAGE_BPS,
           executionPolicy,
         }),
       });
@@ -790,7 +791,7 @@ function ExecutionPolicyPanel({
     {
       value: 'refund-on-slippage',
       title: 'Protect my amount',
-      caption: 'Refund me if I would receive much less',
+      caption: 'Refund me if I would receive over 2% less',
     },
     {
       value: 'execute-anyway',
