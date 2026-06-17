@@ -1,5 +1,5 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { Connection } from "@solana/web3.js";
+import { Connection, PublicKey } from "@solana/web3.js";
 import {
   USDC_MINT_ADDRESS,
   MayanClient,
@@ -165,11 +165,12 @@ async function processMayanBridge(order: Order): Promise<void> {
 async function executeSwapAndWithdrawal(order: Order): Promise<void> {
   const quote = mustGetQuote(order.quoteId);
   store.updateOrder(order.id, { status: "swapping" }, "starting Jupiter swap");
-  const swapInputAmount = getSolanaUsdcAmount(order);
+  const swapInputAmount = getSolanaInputAmount(order);
+  const swapInputMint = getSolanaInputMint(order);
 
   let swap;
   try {
-    swap = await solana.swapUsdcToWxmr(swapInputAmount, BigInt(quote.minWxmrOut));
+    swap = await solana.swapTokenToWxmr(swapInputMint, swapInputAmount, BigInt(quote.minWxmrOut));
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     store.updateOrder(order.id, { status: "refunding", error: message }, `swap failed: ${message}`);
@@ -201,6 +202,10 @@ async function executeSwapAndWithdrawal(order: Order): Promise<void> {
 
 async function executeSwapAndMayanPayout(order: Order): Promise<void> {
   const quote = mustGetQuote(order.quoteId);
+  if (quote.route === "solana") {
+    await executeSwapAndSolanaPayout(order, quote);
+    return;
+  }
   if (!quote.mayan) {
     throw new Error("reverse order is missing Mayan quote metadata");
   }
@@ -262,6 +267,48 @@ async function executeSwapAndMayanPayout(order: Order): Promise<void> {
   );
 }
 
+async function executeSwapAndSolanaPayout(order: Order, quote: Quote): Promise<void> {
+  if (!order.destinationAddress) {
+    throw new Error("reverse order is missing Solana destination address");
+  }
+
+  store.updateOrder(order.id, { status: "swapping" }, "starting Jupiter wXMR -> Solana token swap");
+  const owner = deriveReverseDepositOwner(env.solanaHotWallet, order.id);
+  const depositedAmount = BigInt(order.destinationAmount ?? order.amount);
+  const serviceFee = applyBps(depositedAmount, quote.serviceFeeBps);
+  const swapInputAmount = depositedAmount - serviceFee;
+
+  let swap;
+  try {
+    swap = await solana.swapWxmrToToken(order.sourceToken, swapInputAmount, BigInt(quote.minDestinationOut ?? "0"), owner);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    store.updateOrder(order.id, { status: "refunding", error: message }, `reverse Solana swap failed: ${message}`);
+    return;
+  }
+
+  if (serviceFee > 0n) {
+    await solana.transferWxmr(owner, env.solanaHotWallet.publicKey, serviceFee);
+  }
+
+  const payoutSignature = await solana.transferToken(
+    order.sourceToken,
+    owner,
+    new PublicKey(order.destinationAddress),
+    swap.outAmount,
+  );
+  store.updateOrder(
+    order.id,
+    {
+      status: "completed",
+      destinationAmount: swap.outAmount.toString(),
+      swapSignature: swap.signature,
+      withdrawalSignature: payoutSignature,
+    },
+    `Solana payout delivered ${swap.outAmount}: ${payoutSignature}`,
+  );
+}
+
 async function processReverseMayanSettlement(order: Order): Promise<void> {
   if (!order.withdrawalSignature) {
     throw new Error("reverse order has no Mayan payout transaction");
@@ -292,8 +339,8 @@ async function refund(order: Order): Promise<void> {
   if (!order.refundAddress) {
     throw new Error("refund required but no Solana refund address was provided");
   }
-  const signature = await solana.refundUsdc(getSolanaUsdcAmount(order), order.refundAddress);
-  store.updateOrder(order.id, { status: "refunded" }, `USDC refunded on Solana: ${signature}`);
+  const signature = await solana.refundToken(getSolanaInputMint(order), getSolanaInputAmount(order), order.refundAddress);
+  store.updateOrder(order.id, { status: "refunded" }, `funded token refunded on Solana: ${signature}`);
 }
 
 async function refundReverse(order: Order): Promise<void> {
@@ -311,14 +358,27 @@ async function refundReverse(order: Order): Promise<void> {
   );
 }
 
-function getSolanaUsdcAmount(order: Order): bigint {
+function getSolanaInputAmount(order: Order): bigint {
   if (order.funding.type === "mayan-swift") {
     if (!order.destinationAmount) {
       throw new Error("Mayan order has no delivered Solana USDC amount");
     }
     return BigInt(order.destinationAmount);
   }
+  if (order.funding.type === "solana-transfer") {
+    return BigInt(order.destinationAmount ?? order.funding.amount);
+  }
   return BigInt(order.amount);
+}
+
+function getSolanaInputMint(order: Order): string {
+  if (order.funding.type === "mayan-swift") {
+    return USDC_MINT_ADDRESS;
+  }
+  if (order.funding.type === "solana-transfer") {
+    return order.funding.mint;
+  }
+  return order.sourceToken;
 }
 
 function mustGetQuote(quoteId: string): Quote {

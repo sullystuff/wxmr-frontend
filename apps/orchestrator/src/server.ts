@@ -2,17 +2,20 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import { getSwapFromEvmTxPayload } from "@mayanfinance/swap-sdk";
 import type { Quote as MayanSdkQuote } from "@mayanfinance/swap-sdk";
-import { Connection } from "@solana/web3.js";
+import { getAssociatedTokenAddressSync } from "@solana/spl-token";
+import { Connection, PublicKey } from "@solana/web3.js";
 import {
   BRIDGE_FEE_BPS,
   CHAINS,
   JupiterClient,
   USDC_MINT_ADDRESS,
+  WXMR_MINT_ADDRESS,
   assertValidMoneroAddress,
   buildMayanSwiftFunding,
   filterMayanTokensForChain,
   type DepositAddressFunding,
   type MayanEvmTxPayload,
+  type MayanToken,
   MayanClient,
   type FundingInstructions,
   type MayanSwiftFunding,
@@ -77,11 +80,19 @@ function registerRoutes(prefix: "" | "/api"): void {
       assertValidMoneroAddress(body.xmrAddress ?? "");
 
       const chain = CHAINS[sourceChain];
-      if (chain.kind !== "evm") {
+      if (sourceChain !== "solana" && chain.kind !== "evm") {
         return reply.code(400).send({ error: "this build supports Mayan Swift v2 EVM sources; Sui and Hyperliquid need separate wallet signing" });
       }
 
-      const quote = await quoteUsdcToXmr({
+      const quote = sourceChain === "solana" ? await quoteSolanaToXmr({
+        direction,
+        sourceChain,
+        sourceToken: body.sourceToken,
+        amount: body.amount,
+        xmrAddress: body.xmrAddress!,
+        refundAddress: body.refundAddress,
+        slippageBps: body.slippageBps,
+      }) : await quoteUsdcToXmr({
         direction,
         sourceChain,
         sourceToken: body.sourceToken,
@@ -101,11 +112,27 @@ function registerRoutes(prefix: "" | "/api"): void {
     if (!body.destinationAddress) {
       return reply.code(400).send({ error: "destinationAddress is required" });
     }
+    if (sourceChain === "solana") {
+      try {
+        new PublicKey(body.destinationAddress);
+      } catch {
+        return reply.code(400).send({ error: "destinationAddress must be a Solana wallet address" });
+      }
+    }
     if (!CHAINS[sourceChain].mayanChain) {
       return reply.code(400).send({ error: "destination chain is not supported by Mayan" });
     }
 
-    const quote = await quoteXmrToMayan({
+    const quote = sourceChain === "solana" ? await quoteXmrToSolana({
+      direction,
+      sourceChain,
+      sourceToken: body.sourceToken,
+      amount: body.amount,
+      xmrAddress: body.xmrAddress!,
+      destinationAddress: body.destinationAddress,
+      refundAddress: body.refundAddress,
+      slippageBps: body.slippageBps,
+    }) : await quoteXmrToMayan({
       direction,
       sourceChain,
       sourceToken: body.sourceToken,
@@ -171,6 +198,18 @@ function registerRoutes(prefix: "" | "/api"): void {
     }
     if (order.status !== "awaiting_deposit") {
       return reply.code(409).send({ error: `order is ${order.status}` });
+    }
+    if (order.funding.type === "solana-transfer") {
+      const verified = await solana.verifySolanaTransfer(order.funding, body.txHash);
+      return store.updateOrder(
+        id,
+        {
+          sourceTxHash: body.txHash,
+          status: "minted",
+          destinationAmount: verified.amount.toString(),
+        },
+        `verified Solana funding transfer for ${verified.amount}`,
+      );
     }
     const nextStatus = "bridging";
     return store.updateOrder(id, { sourceTxHash: body.txHash, status: nextStatus }, "deposit reported");
@@ -259,6 +298,46 @@ async function quoteUsdcToXmr(input: QuoteRequest): Promise<Quote> {
   };
 }
 
+async function quoteSolanaToXmr(input: QuoteRequest): Promise<Quote> {
+  const token = await findToken(input.sourceChain, input.sourceToken);
+  const slippageBps = Math.max(0, Math.min(input.slippageBps ?? 100, 2_000));
+  const expectedJupiterQuote = await jupiter.quote({
+    inputMint: input.sourceToken,
+    outputMint: WXMR_MINT_ADDRESS,
+    amount: input.amount,
+    taker: env.solanaHotWallet.publicKey.toBase58(),
+  });
+  const grossWxmr = BigInt(expectedJupiterQuote.outAmount);
+  const minGrossWxmr = applyBps(grossWxmr, 10_000 - slippageBps);
+  const afterService = applyBps(grossWxmr, 10_000 - env.serviceFeeBps);
+  const minWxmrOut = applyBps(minGrossWxmr, 10_000 - env.serviceFeeBps);
+  const estimatedXmrOut = applyBps(afterService, 10_000 - BRIDGE_FEE_BPS);
+  const minXmrOut = applyBps(minWxmrOut, 10_000 - BRIDGE_FEE_BPS);
+  const tokenSymbol = token.symbol ?? "Token";
+
+  return {
+    id: crypto.randomUUID(),
+    direction: "mayan-to-xmr",
+    sourceChain: "solana",
+    sourceToken: token.contract ?? input.sourceToken,
+    sourceTokenSymbol: token.symbol,
+    sourceTokenDecimals: token.decimals,
+    inputAmount: input.amount,
+    xmrAddress: input.xmrAddress,
+    refundAddress: input.refundAddress,
+    estimatedWxmrOut: afterService.toString(),
+    estimatedXmrOut: estimatedXmrOut.toString(),
+    minWxmrOut: minWxmrOut.toString(),
+    minXmrOut: minXmrOut.toString(),
+    bridgeFeeBps: BRIDGE_FEE_BPS,
+    serviceFeeBps: env.serviceFeeBps,
+    jupiterPriceImpactPct: expectedJupiterQuote.priceImpactPct ?? "0",
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    route: "solana",
+    routeSummary: `${tokenSymbol} on Solana -> XMR-SOL via jup.ag -> native XMR via Monero Bridge`,
+  };
+}
+
 async function quoteXmrToMayan(input: QuoteRequest): Promise<Quote> {
   if (!input.destinationAddress) throw new Error("destinationAddress is required");
   const slippageBps = Math.max(0, Math.min(input.slippageBps ?? 100, 2_000));
@@ -314,9 +393,49 @@ async function quoteXmrToMayan(input: QuoteRequest): Promise<Quote> {
   };
 }
 
-async function buildFundingInstructions(orderId: string, quote: Quote): Promise<FundingInstructions> {
-  if (!quote.mayan) throw new Error("Mayan quote metadata is missing");
+async function quoteXmrToSolana(input: QuoteRequest): Promise<Quote> {
+  if (!input.destinationAddress) throw new Error("destinationAddress is required");
+  const token = await findToken(input.sourceChain, input.sourceToken);
+  const slippageBps = Math.max(0, Math.min(input.slippageBps ?? 100, 2_000));
+  const inputAmount = BigInt(input.amount);
+  const afterService = applyBps(inputAmount, 10_000 - env.serviceFeeBps);
+  const expectedJupiterQuote = await jupiter.quote({
+    inputMint: WXMR_MINT_ADDRESS,
+    outputMint: input.sourceToken,
+    amount: afterService,
+  });
+  const minDestinationOut = applyBps(BigInt(expectedJupiterQuote.outAmount), 10_000 - slippageBps);
+  const tokenSymbol = token.symbol ?? "Token";
 
+  return {
+    id: crypto.randomUUID(),
+    direction: "xmr-to-mayan",
+    sourceChain: "solana",
+    sourceToken: token.contract ?? input.sourceToken,
+    sourceTokenSymbol: token.symbol,
+    sourceTokenDecimals: token.decimals,
+    inputAmount: input.amount,
+    xmrAddress: input.xmrAddress,
+    destinationAddress: input.destinationAddress,
+    destinationTokenSymbol: token.symbol,
+    destinationTokenDecimals: token.decimals,
+    refundAddress: input.refundAddress,
+    estimatedWxmrOut: afterService.toString(),
+    estimatedXmrOut: input.amount,
+    minWxmrOut: afterService.toString(),
+    minXmrOut: input.amount,
+    estimatedDestinationOut: expectedJupiterQuote.outAmount,
+    minDestinationOut: minDestinationOut.toString(),
+    bridgeFeeBps: 0,
+    serviceFeeBps: env.serviceFeeBps,
+    jupiterPriceImpactPct: expectedJupiterQuote.priceImpactPct ?? "0",
+    expiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(),
+    route: "solana",
+    routeSummary: `native XMR -> XMR-SOL via Monero Bridge -> ${tokenSymbol} on Solana via jup.ag`,
+  };
+}
+
+async function buildFundingInstructions(orderId: string, quote: Quote): Promise<FundingInstructions> {
   if (quote.direction === "xmr-to-mayan") {
     const owner = deriveReverseDepositOwner(env.solanaHotWallet, orderId);
     const created = await solana.createMoneroDepositAccount(owner);
@@ -334,6 +453,25 @@ async function buildFundingInstructions(orderId: string, quote: Quote): Promise<
     };
     return depositFunding;
   }
+
+  if (quote.route === "solana") {
+    const mint = new PublicKey(quote.sourceToken);
+    const destinationTokenAccount = getAssociatedTokenAddressSync(mint, env.solanaHotWallet.publicKey);
+    return {
+      type: "solana-transfer",
+      orderId,
+      chainId: "solana",
+      mint: mint.toBase58(),
+      tokenSymbol: quote.sourceTokenSymbol,
+      tokenDecimals: quote.sourceTokenDecimals,
+      amount: quote.inputAmount,
+      destinationTokenAccount: destinationTokenAccount.toBase58(),
+      destinationOwner: env.solanaHotWallet.publicKey.toBase58(),
+      memo: orderId,
+    };
+  }
+
+  if (!quote.mayan) throw new Error("Mayan quote metadata is missing");
 
   return buildMayanSwiftFunding({
     orderId,
@@ -361,6 +499,21 @@ async function buildMayanPayload(funding: MayanSwiftFunding, swapperAddress: str
     data: payload.data as MayanEvmTxPayload["data"],
     value: (payload.value ?? "0x0") as MayanEvmTxPayload["value"],
     chainId: Number(payload.chainId),
+  };
+}
+
+async function findToken(sourceChain: SourceChainId, contract: string): Promise<MayanToken> {
+  const tokens = filterMayanTokensForChain(await mayan.fetchTokens(sourceChain), sourceChain);
+  const token = tokens.find((candidate) => {
+    const candidateContract = candidate.contract ?? candidate.mint;
+    return candidateContract?.toLowerCase() === contract.toLowerCase();
+  });
+  if (!token) {
+    throw new Error(`token ${contract} is not supported on ${CHAINS[sourceChain].name}`);
+  }
+  return {
+    ...token,
+    contract: token.contract ?? token.mint ?? contract,
   };
 }
 

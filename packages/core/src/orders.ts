@@ -66,7 +66,7 @@ export interface Quote {
   serviceFeeBps: number;
   jupiterPriceImpactPct: string;
   expiresAt: string;
-  route: "mayan" | "thorchain";
+  route: "mayan" | "solana" | "thorchain";
   routeSummary?: string;
   mayan?: MayanQuoteMetadata;
 }
@@ -185,6 +185,8 @@ export interface SolanaTransferFunding {
   orderId: string;
   chainId: "solana";
   mint: string;
+  tokenSymbol?: string;
+  tokenDecimals?: number;
   amount: string;
   destinationTokenAccount: string;
   destinationOwner: string;

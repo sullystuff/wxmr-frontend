@@ -19,8 +19,10 @@ import {
   JupiterClient,
   USDC_MINT,
   WXMR_MINT,
+  WXMR_MINT_ADDRESS,
   type MayanSwiftQuote,
   type JupiterQuote,
+  type SolanaTransferFunding,
 } from "@wxmr/core";
 import {
   claimPendingMintWithKeypair,
@@ -32,6 +34,7 @@ import {
 
 const REVERSE_ORDER_INITIAL_SOL_LAMPORTS = Math.floor(0.01 * LAMPORTS_PER_SOL);
 const REVERSE_ORDER_EXECUTION_SOL_LAMPORTS = Math.floor(0.03 * LAMPORTS_PER_SOL);
+const MEMO_PROGRAM_ID = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 
 export class SolanaExecutor {
   private readonly jupiter: JupiterClient;
@@ -51,7 +54,20 @@ export class SolanaExecutor {
     outAmount: bigint;
     quote: JupiterQuote;
   }> {
-    const quote = await this.jupiter.quoteUsdcToWxmr(amount, this.hotWallet.publicKey.toBase58());
+    return this.swapTokenToWxmr(USDC_MINT.toBase58(), amount, minWxmrOut);
+  }
+
+  async swapTokenToWxmr(inputMint: string, amount: bigint, minWxmrOut: bigint): Promise<{
+    signature: string;
+    outAmount: bigint;
+    quote: JupiterQuote;
+  }> {
+    const quote = await this.jupiter.quote({
+      inputMint,
+      outputMint: WXMR_MINT_ADDRESS,
+      amount,
+      taker: this.hotWallet.publicKey.toBase58(),
+    });
     return this.executeJupiterQuote(quote, minWxmrOut, this.hotWallet);
   }
 
@@ -60,9 +76,22 @@ export class SolanaExecutor {
     outAmount: bigint;
     quote: JupiterQuote;
   }> {
+    return this.swapWxmrToToken(USDC_MINT.toBase58(), amount, minUsdcOut, signer);
+  }
+
+  async swapWxmrToToken(outputMint: string, amount: bigint, minOutAmount: bigint, signer: Keypair): Promise<{
+    signature: string;
+    outAmount: bigint;
+    quote: JupiterQuote;
+  }> {
     await this.ensureSolBalance(signer.publicKey, REVERSE_ORDER_EXECUTION_SOL_LAMPORTS);
-    const quote = await this.jupiter.quoteWxmrToUsdc(amount, signer.publicKey.toBase58());
-    return this.executeJupiterQuote(quote, minUsdcOut, signer);
+    const quote = await this.jupiter.quote({
+      inputMint: WXMR_MINT_ADDRESS,
+      outputMint,
+      amount,
+      taker: signer.publicKey.toBase58(),
+    });
+    return this.executeJupiterQuote(quote, minOutAmount, signer);
   }
 
   async createMoneroDepositAccount(owner: Keypair): Promise<{
@@ -105,15 +134,20 @@ export class SolanaExecutor {
   }
 
   async transferWxmr(from: Keypair, toOwner: PublicKey, amount: bigint): Promise<string> {
+    return this.transferToken(WXMR_MINT.toBase58(), from, toOwner, amount);
+  }
+
+  async transferToken(mintAddress: string, from: Keypair, toOwner: PublicKey, amount: bigint): Promise<string> {
     if (amount <= 0n) return "";
-    const fromAta = getAssociatedTokenAddressSync(WXMR_MINT, from.publicKey);
-    const toAta = getAssociatedTokenAddressSync(WXMR_MINT, toOwner);
+    const mint = new PublicKey(mintAddress);
+    const fromAta = getAssociatedTokenAddressSync(mint, from.publicKey);
+    const toAta = getAssociatedTokenAddressSync(mint, toOwner);
     const transaction = new Transaction().add(
       createAssociatedTokenAccountIdempotentInstruction(
         from.publicKey,
         toAta,
         toOwner,
-        WXMR_MINT,
+        mint,
       ),
       createTransferInstruction(
         fromAta,
@@ -227,15 +261,20 @@ export class SolanaExecutor {
   }
 
   async refundUsdc(amount: bigint, refundAddress: string): Promise<string> {
+    return this.refundToken(USDC_MINT.toBase58(), amount, refundAddress);
+  }
+
+  async refundToken(mintAddress: string, amount: bigint, refundAddress: string): Promise<string> {
     const refundOwner = new PublicKey(refundAddress);
-    const fromAta = getAssociatedTokenAddressSync(USDC_MINT, this.hotWallet.publicKey);
-    const refundAta = getAssociatedTokenAddressSync(USDC_MINT, refundOwner);
+    const mint = new PublicKey(mintAddress);
+    const fromAta = getAssociatedTokenAddressSync(mint, this.hotWallet.publicKey);
+    const refundAta = getAssociatedTokenAddressSync(mint, refundOwner);
     const transaction = new Transaction().add(
       createAssociatedTokenAccountIdempotentInstruction(
         this.hotWallet.publicKey,
         refundAta,
         refundOwner,
-        USDC_MINT,
+        mint,
       ),
       createTransferInstruction(
         fromAta,
@@ -250,4 +289,73 @@ export class SolanaExecutor {
       commitment: "confirmed",
     });
   }
+
+  async verifySolanaTransfer(funding: SolanaTransferFunding, signature: string): Promise<{ amount: bigint }> {
+    const transaction = await this.connection.getParsedTransaction(signature, {
+      commitment: "confirmed",
+      maxSupportedTransactionVersion: 0,
+    });
+    if (!transaction) {
+      throw new Error("Solana transfer pending: transaction not found yet");
+    }
+    if (transaction.meta?.err) {
+      throw new Error("Solana transfer transaction failed");
+    }
+
+    const instructions = [
+      ...transaction.transaction.message.instructions,
+      ...(transaction.meta?.innerInstructions ?? []).flatMap((inner) => inner.instructions),
+    ];
+    const expectedAmount = BigInt(funding.amount);
+    const destination = funding.destinationTokenAccount;
+    let memoMatched = false;
+    let transferred = 0n;
+
+    for (const instruction of instructions) {
+      const parsedInstruction = instruction as {
+        program?: string;
+        programId?: PublicKey;
+        parsed?: string | { type?: string; info?: Record<string, unknown> };
+      };
+      const programId = parsedInstruction.programId?.toBase58();
+      if (
+        parsedInstruction.program === "spl-memo" ||
+        programId === MEMO_PROGRAM_ID ||
+        (typeof parsedInstruction.parsed === "string" && parsedInstruction.parsed.includes(funding.memo))
+      ) {
+        const parsedMemo = typeof parsedInstruction.parsed === "string" ? parsedInstruction.parsed : "";
+        memoMatched = memoMatched || parsedMemo.includes(funding.memo) || JSON.stringify(parsedInstruction).includes(funding.memo);
+        continue;
+      }
+
+      if (parsedInstruction.program !== "spl-token" || typeof parsedInstruction.parsed !== "object") {
+        continue;
+      }
+      const info = parsedInstruction.parsed.info ?? {};
+      const parsedDestination = typeof info.destination === "string" ? info.destination : "";
+      if (parsedDestination !== destination) {
+        continue;
+      }
+      const amount = tokenTransferAmount(info);
+      transferred += amount;
+    }
+
+    if (!memoMatched) {
+      throw new Error("Solana transfer is missing the order memo");
+    }
+    if (transferred < expectedAmount) {
+      throw new Error(`Solana transfer amount ${transferred} is below expected ${expectedAmount}`);
+    }
+
+    return { amount: transferred };
+  }
+}
+
+function tokenTransferAmount(info: Record<string, unknown>): bigint {
+  const tokenAmount = info.tokenAmount as { amount?: string } | undefined;
+  if (tokenAmount?.amount) return BigInt(tokenAmount.amount);
+  const amount = info.amount;
+  if (typeof amount === "string") return BigInt(amount);
+  if (typeof amount === "number") return BigInt(amount);
+  return 0n;
 }
