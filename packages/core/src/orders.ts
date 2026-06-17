@@ -37,7 +37,7 @@ export interface QuoteRequest {
   sourceChain: SourceChainId;
   sourceToken: string;
   amount: string;
-  xmrAddress: string;
+  xmrAddress?: string;
   destinationAddress?: string;
   refundAddress?: string;
   slippageBps?: number;

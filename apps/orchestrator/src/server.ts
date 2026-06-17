@@ -77,7 +77,9 @@ function registerRoutes(prefix: "" | "/api"): void {
     }
 
     if (direction === "mayan-to-xmr") {
-      assertValidMoneroAddress(body.xmrAddress ?? "");
+      if (body.xmrAddress) {
+        assertValidMoneroAddress(body.xmrAddress);
+      }
 
       const chain = CHAINS[sourceChain];
       if (sourceChain !== "solana" && chain.kind !== "evm") {
@@ -89,7 +91,7 @@ function registerRoutes(prefix: "" | "/api"): void {
         sourceChain,
         sourceToken: body.sourceToken,
         amount: body.amount,
-        xmrAddress: body.xmrAddress!,
+        xmrAddress: body.xmrAddress,
         refundAddress: body.refundAddress,
         slippageBps: body.slippageBps,
       }) : await quoteUsdcToXmr({
@@ -97,7 +99,7 @@ function registerRoutes(prefix: "" | "/api"): void {
         sourceChain,
         sourceToken: body.sourceToken,
         amount: body.amount,
-        xmrAddress: body.xmrAddress!,
+        xmrAddress: body.xmrAddress,
         refundAddress: body.refundAddress,
         slippageBps: body.slippageBps,
       });
@@ -147,7 +149,7 @@ function registerRoutes(prefix: "" | "/api"): void {
   });
 
   app.post(route("/orders"), async (request, reply) => {
-    const body = request.body as { quoteId?: string; refundAddress?: string };
+    const body = request.body as { quoteId?: string; refundAddress?: string; xmrAddress?: string };
     if (!body.quoteId) {
       return reply.code(400).send({ error: "quoteId is required" });
     }
@@ -162,6 +164,10 @@ function registerRoutes(prefix: "" | "/api"): void {
     const now = new Date().toISOString();
     const orderId = crypto.randomUUID();
     const refundAddress = body.refundAddress ?? quote.refundAddress;
+    const xmrAddress = body.xmrAddress ?? quote.xmrAddress;
+    if (quote.direction === "mayan-to-xmr") {
+      assertValidMoneroAddress(xmrAddress ?? "");
+    }
     const funding = await buildFundingInstructions(orderId, quote);
     const order: Order = {
       id: orderId,
@@ -171,7 +177,7 @@ function registerRoutes(prefix: "" | "/api"): void {
       sourceChain: quote.sourceChain,
       sourceToken: quote.sourceToken,
       amount: quote.inputAmount,
-      xmrAddress: quote.xmrAddress,
+      xmrAddress: xmrAddress ?? quote.xmrAddress,
       destinationAddress: quote.destinationAddress,
       destinationTokenSymbol: quote.destinationTokenSymbol,
       destinationTokenDecimals: quote.destinationTokenDecimals,
@@ -274,7 +280,7 @@ async function quoteUsdcToXmr(input: QuoteRequest): Promise<Quote> {
     sourceTokenSymbol: mayanQuote.fromToken.symbol,
     sourceTokenDecimals: mayanQuote.fromToken.decimals,
     inputAmount: input.amount,
-    xmrAddress: input.xmrAddress,
+    xmrAddress: input.xmrAddress ?? "",
     refundAddress: input.refundAddress,
     estimatedWxmrOut: afterService.toString(),
     estimatedXmrOut: estimatedXmrOut.toString(),
@@ -323,7 +329,7 @@ async function quoteSolanaToXmr(input: QuoteRequest): Promise<Quote> {
     sourceTokenSymbol: token.symbol,
     sourceTokenDecimals: token.decimals,
     inputAmount: input.amount,
-    xmrAddress: input.xmrAddress,
+    xmrAddress: input.xmrAddress ?? "",
     refundAddress: input.refundAddress,
     estimatedWxmrOut: afterService.toString(),
     estimatedXmrOut: estimatedXmrOut.toString(),
@@ -364,7 +370,7 @@ async function quoteXmrToMayan(input: QuoteRequest): Promise<Quote> {
     sourceTokenSymbol: mayanQuote.toToken.symbol,
     sourceTokenDecimals: mayanQuote.toToken.decimals,
     inputAmount: input.amount,
-    xmrAddress: input.xmrAddress,
+    xmrAddress: input.xmrAddress ?? "",
     destinationAddress: input.destinationAddress,
     destinationTokenSymbol: mayanQuote.toToken.symbol,
     destinationTokenDecimals: mayanQuote.toToken.decimals,
@@ -415,7 +421,7 @@ async function quoteXmrToSolana(input: QuoteRequest): Promise<Quote> {
     sourceTokenSymbol: token.symbol,
     sourceTokenDecimals: token.decimals,
     inputAmount: input.amount,
-    xmrAddress: input.xmrAddress,
+    xmrAddress: input.xmrAddress ?? "",
     destinationAddress: input.destinationAddress,
     destinationTokenSymbol: token.symbol,
     destinationTokenDecimals: token.decimals,

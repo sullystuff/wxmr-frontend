@@ -194,16 +194,20 @@ export default function SwapPage() {
     : sourceChain === 'solana'
       ? isPotentialSolanaAddress(destinationAddress)
       : Boolean(destinationAddress.trim());
-  const canQuote = Boolean(sourceToken) &&
+  const hasValidXmrAddress = isValidMoneroAddress(xmrAddress);
+  const canPreviewQuote = Boolean(sourceToken) &&
     parsedAmount > BigInt(0) &&
-    (direction === FORWARD_DIRECTION
-      ? isValidMoneroAddress(xmrAddress)
-      : destinationAddressOk && isValidMoneroAddress(xmrAddress));
+    (direction === FORWARD_DIRECTION || (destinationAddressOk && hasValidXmrAddress));
   const quoteExpiresIn = useCountdown(quote?.expiresAt);
   const quoteExpired = quoteExpiresIn === 0;
+  const canCreateOrder = Boolean(quote) &&
+    !quoteExpired &&
+    (direction === FORWARD_DIRECTION
+      ? hasValidXmrAddress
+      : destinationAddressOk && hasValidXmrAddress);
   const routeLegs = buildRouteLegs({ direction, quote, selectedToken, sourceChain, amount, sourceTokenDecimals });
-  const primaryLabel = getPrimaryLabel({ quote, order, isLoading, quoteExpired });
-  const primaryDisabled = getPrimaryDisabled({ canQuote, quote, order, isLoading, quoteExpired });
+  const primaryLabel = getPrimaryLabel({ quote, order, isLoading, quoteExpired, canCreateOrder });
+  const primaryDisabled = getPrimaryDisabled({ canPreviewQuote, canCreateOrder, quote, order, isLoading, quoteExpired });
   const receivePreview = formatReceivePreview({ direction, quote, token: selectedToken });
 
   const resetTrade = () => {
@@ -219,7 +223,7 @@ export default function SwapPage() {
   };
 
   const fetchQuote = useCallback(async ({ showLoading }: { showLoading: boolean }) => {
-    if (!canQuote) return;
+    if (!canPreviewQuote) return;
     const requestSeq = quoteRequestSeq.current + 1;
     quoteRequestSeq.current = requestSeq;
     if (showLoading) setIsLoading(true);
@@ -232,7 +236,7 @@ export default function SwapPage() {
           sourceChain,
           sourceToken,
           amount: parsedAmount.toString(),
-          xmrAddress,
+          xmrAddress: hasValidXmrAddress ? xmrAddress : undefined,
           destinationAddress: direction === REVERSE_DIRECTION ? destinationAddress.trim() : undefined,
           refundAddress: refundAddress || undefined,
           slippageBps: 100,
@@ -251,15 +255,15 @@ export default function SwapPage() {
         setIsLoading(false);
       }
     }
-  }, [canQuote, destinationAddress, direction, parsedAmount, refundAddress, sourceChain, sourceToken, xmrAddress]);
+  }, [canPreviewQuote, destinationAddress, direction, hasValidXmrAddress, parsedAmount, refundAddress, sourceChain, sourceToken, xmrAddress]);
 
   useEffect(() => {
-    if (!canQuote || order) return;
+    if (!canPreviewQuote || order) return;
     const timer = setTimeout(() => {
       void fetchQuote({ showLoading: false });
     }, 650);
     return () => clearTimeout(timer);
-  }, [canQuote, fetchQuote, order]);
+  }, [canPreviewQuote, fetchQuote, order]);
 
   const requestQuote = async () => {
     await fetchQuote({ showLoading: true });
@@ -272,7 +276,11 @@ export default function SwapPage() {
     try {
       const result = await api<{ order: Order; funding: FundingInstructions }>('/orders', {
         method: 'POST',
-        body: JSON.stringify({ quoteId: quote.id, refundAddress: refundAddress || undefined }),
+        body: JSON.stringify({
+          quoteId: quote.id,
+          refundAddress: refundAddress || undefined,
+          xmrAddress: direction === FORWARD_DIRECTION ? xmrAddress.trim() : undefined,
+        }),
       });
       setOrder(result.order);
       setOrderUrl(result.order.id);
@@ -1552,35 +1560,40 @@ function getPrimaryLabel({
   order,
   isLoading,
   quoteExpired,
+  canCreateOrder,
 }: {
   quote: Quote | null;
   order: Order | null;
   isLoading: boolean;
   quoteExpired: boolean;
+  canCreateOrder: boolean;
 }): string {
   if (isLoading) return quote ? 'Creating order...' : 'Fetching route...';
   if (order) return 'Order created';
   if (quoteExpired) return 'Refresh quote';
+  if (quote && !canCreateOrder) return 'Enter XMR address';
   if (quote) return 'Create order';
   return 'Preview exchange';
 }
 
 function getPrimaryDisabled({
-  canQuote,
+  canPreviewQuote,
+  canCreateOrder,
   quote,
   order,
   isLoading,
   quoteExpired,
 }: {
-  canQuote: boolean;
+  canPreviewQuote: boolean;
+  canCreateOrder: boolean;
   quote: Quote | null;
   order: Order | null;
   isLoading: boolean;
   quoteExpired: boolean;
 }): boolean {
   if (isLoading || order) return true;
-  if (quote && !quoteExpired) return false;
-  return !canQuote;
+  if (quote && !quoteExpired) return !canCreateOrder;
+  return !canPreviewQuote;
 }
 
 function useCountdown(expiresAt?: string): number | null {
