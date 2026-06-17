@@ -306,7 +306,6 @@ export default function SwapPage() {
                 amount={amount}
                 chainId={sourceChain}
                 token={selectedToken}
-                tokenCount={sourceTokens.length}
                 label="You send"
                 onAmountChange={(next) => {
                   setAmount(next);
@@ -333,8 +332,6 @@ export default function SwapPage() {
                 value={receivePreview}
                 chainId={sourceChain}
                 token={selectedToken}
-                tokenCount={sourceTokens.length}
-                quote={quote}
                 onOpenTokenPicker={() => setIsTokenPickerOpen(true)}
               />
             )}
@@ -449,7 +446,6 @@ function TradeAmountPanel({
   amount,
   chainId,
   token,
-  tokenCount,
   label,
   onAmountChange,
   onOpenTokenPicker,
@@ -457,7 +453,6 @@ function TradeAmountPanel({
   amount: string;
   chainId: SourceChainId;
   token?: MayanToken;
-  tokenCount: number;
   label: string;
   onAmountChange: (value: string) => void;
   onOpenTokenPicker: () => void;
@@ -488,9 +483,7 @@ function TradeAmountPanel({
           <TokenLogo token={token} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-semibold">{token?.symbol ?? 'Token'}</span>
-            <span className="block truncate text-[11px] text-[#8f949d]">
-              {chainName} - {tokenCount ? `${tokenCount} assets` : 'Loading'}
-            </span>
+            <span className="block truncate text-[11px] text-[#8f949d]">{chainName}</span>
           </span>
           <span className="text-[#8f949d]">v</span>
         </button>
@@ -563,15 +556,11 @@ function MayanReceivePanel({
   value,
   chainId,
   token,
-  tokenCount,
-  quote,
   onOpenTokenPicker,
 }: {
   value: string;
   chainId: SourceChainId;
   token?: MayanToken;
-  tokenCount: number;
-  quote: Quote | null;
   onOpenTokenPicker: () => void;
 }) {
   const chainName = CHAINS[chainId].name;
@@ -592,9 +581,7 @@ function MayanReceivePanel({
           <TokenLogo token={token} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-semibold">{token?.symbol ?? 'Token'}</span>
-            <span className="block truncate text-[11px] text-[#8f949d]">
-              {chainName} - {quote ? 'Estimated' : `${tokenCount || 0} assets`}
-            </span>
+            <span className="block truncate text-[11px] text-[#8f949d]">{chainName}</span>
           </span>
           <span className="text-[#8f949d]">v</span>
         </button>
