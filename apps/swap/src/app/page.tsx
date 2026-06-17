@@ -86,7 +86,6 @@ const BLUE_CHIP_TOKEN_SYMBOLS = new Set([
 type RouteLeg = {
   title: string;
   caption: string;
-  amount: string;
   detail: string;
 };
 
@@ -216,7 +215,7 @@ export default function SwapPage() {
     (direction === FORWARD_DIRECTION
       ? hasValidXmrAddress
       : destinationAddressOk && hasValidXmrAddress);
-  const routeLegs = buildRouteLegs({ direction, quote, selectedToken, sourceChain, amount, sourceTokenDecimals });
+  const routeLegs = buildRouteLegs({ direction, quote, selectedToken, sourceChain });
   const primaryLabel = getPrimaryLabel({ quote, order, isLoading, isQuoteRefreshing, quoteExpired, canCreateOrder });
   const primaryDisabled = getPrimaryDisabled({ canPreviewQuote, canCreateOrder, quote, order, isLoading, isQuoteRefreshing, quoteExpired });
   const receivePreview = formatReceivePreview({ direction, quote, token: selectedToken });
@@ -932,16 +931,14 @@ function QuoteSummary({
   const destinationSymbol = quote.destinationTokenSymbol ?? quote.sourceTokenSymbol ?? mayan?.quote.toToken.symbol ?? 'Token';
   const destinationDecimals = quote.destinationTokenDecimals ?? quote.sourceTokenDecimals ?? mayan?.quote.toToken.decimals ?? 6;
   const isSolanaDirect = quote.route === 'solana';
-  const middleLabel = isSolanaDirect
-    ? 'Jupiter output'
-    : isReverse
-      ? 'Jupiter output'
-      : 'Mayan delivers';
-  const middleValue = isSolanaDirect
-    ? isReverse
-      ? `${formatBaseUnits(quote.estimatedDestinationOut ?? '0', destinationDecimals)} ${destinationSymbol}`
-      : `${formatXmr(quote.estimatedWxmrOut)} XMR-SOL`
-    : `${formatUsdc(mayan?.expectedSolanaUsdcOut ?? quote.inputAmount)} USDC-SOL`;
+  const expectedLabel = isReverse ? `Expected ${destinationSymbol}` : 'Expected XMR';
+  const expectedValue = isReverse
+    ? `${formatBaseUnits(quote.estimatedDestinationOut ?? '0', destinationDecimals)} ${destinationSymbol}`
+    : `${formatXmr(quote.estimatedXmrOut)} XMR`;
+  const minimumLabel = isReverse ? `Minimum ${destinationSymbol}` : 'Minimum XMR';
+  const minimumValue = isReverse
+    ? `${formatBaseUnits(quote.minDestinationOut ?? '0', destinationDecimals)} ${destinationSymbol}`
+    : `${formatXmr(quote.minXmrOut)} XMR`;
   const fees = isSolanaDirect
     ? `Jupiter + ${formatBps(quote.bridgeFeeBps)} bridge`
     : `${formatBps(mayan?.protocolBps ?? 0)} Mayan + ${formatBps(quote.bridgeFeeBps)} bridge`;
@@ -959,13 +956,8 @@ function QuoteSummary({
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
         <Metric label="Sending" value={`${formatBaseUnits(quote.inputAmount, sourceDecimals)} ${sourceSymbol}`} />
-        <Metric label={middleLabel} value={middleValue} />
-        <Metric
-          label={isReverse ? `Minimum ${destinationSymbol}` : 'Minimum XMR'}
-          value={isReverse
-            ? `${formatBaseUnits(quote.minDestinationOut ?? '0', destinationDecimals)} ${destinationSymbol}`
-            : `${formatXmr(quote.minXmrOut)} XMR`}
-        />
+        <Metric label={expectedLabel} value={expectedValue} />
+        <Metric label={minimumLabel} value={minimumValue} />
         <Metric label="Fees" value={fees} />
       </div>
     </div>
@@ -994,12 +986,9 @@ function RoutePanel({ legs, quote }: { legs: RouteLeg[]; quote: Quote | null }) 
               {index < legs.length - 1 && <div className="h-full min-h-7 w-px bg-[#2a2d35]" />}
             </div>
             <div className="min-w-0 rounded-2xl border border-[#292b31] bg-[#0c0d11] p-3">
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold text-white">{leg.title}</div>
-                  <div className="truncate text-xs text-[#8f949d]">{leg.caption}</div>
-                </div>
-                <div className="shrink-0 text-right text-xs text-[#f2a269]">{leg.amount}</div>
+              <div className="min-w-0">
+                <div className="truncate text-sm font-semibold text-white">{leg.title}</div>
+                <div className="truncate text-xs text-[#8f949d]">{leg.caption}</div>
               </div>
               <div className="mt-2 text-xs text-[#6f747d]">{leg.detail}</div>
             </div>
@@ -1422,134 +1411,103 @@ function buildRouteLegs({
   quote,
   selectedToken,
   sourceChain,
-  amount,
-  sourceTokenDecimals,
 }: {
   direction: SwapDirection;
   quote: Quote | null;
   selectedToken?: MayanToken;
   sourceChain: SourceChainId;
-  amount: string;
-  sourceTokenDecimals: number;
 }): RouteLeg[] {
   const sourceSymbol = quote?.sourceTokenSymbol ?? selectedToken?.symbol ?? 'Token';
   if (direction === REVERSE_DIRECTION) {
-    const xmrAmount = quote ? formatXmr(quote.inputAmount) : amount || '0';
     const destinationSymbol = quote?.destinationTokenSymbol ?? selectedToken?.symbol ?? 'Token';
-    const destinationDecimals = quote?.destinationTokenDecimals ?? sourceTokenDecimals;
-    const destinationOut = quote?.estimatedDestinationOut
-      ? `${formatBaseUnits(quote.estimatedDestinationOut, destinationDecimals)} ${destinationSymbol}`
-      : `${destinationSymbol} on ${CHAINS[sourceChain].name}`;
     if (sourceChain === 'solana' || quote?.route === 'solana') {
       return [
         {
           title: 'Native XMR',
           caption: 'Monero wallet transfer',
-          amount: `${xmrAmount} XMR`,
           detail: 'You send native Monero to the order-specific bridge deposit address.',
         },
         {
           title: 'Monero Bridge',
           caption: 'native XMR to XMR-SOL',
-          amount: 'XMR-SOL',
           detail: 'The bridge mints wXMR to the order deposit owner after confirmations.',
         },
         {
           title: 'jup.ag',
           caption: `XMR-SOL to ${destinationSymbol} on Solana`,
-          amount: destinationOut,
           detail: 'Jupiter swaps the claimed wXMR into the selected Solana token.',
         },
         {
           title: 'Solana payout',
           caption: 'Direct token transfer',
-          amount: destinationOut,
           detail: 'The backend transfers the output token to your Solana receive address.',
         },
       ];
     }
 
-    const usdcOut = quote?.mayan?.expectedSolanaUsdcOut ? `${formatUsdc(quote.mayan.expectedSolanaUsdcOut)} USDC` : 'USDC-SOL';
     return [
       {
         title: 'Native XMR',
         caption: 'Monero wallet transfer',
-        amount: `${xmrAmount} XMR`,
         detail: 'You send native Monero to the order-specific bridge deposit address.',
       },
       {
         title: 'Monero Bridge',
         caption: 'native XMR to XMR-SOL',
-        amount: 'XMR-SOL',
         detail: 'The bridge mints wXMR to the order deposit owner after confirmations.',
       },
       {
         title: 'jup.ag',
         caption: 'XMR-SOL to USDC-SOL',
-        amount: usdcOut,
-        detail: 'Jupiter swaps the claimed wXMR into Solana USDC with the quote minimum enforced.',
+        detail: 'Jupiter swaps the claimed wXMR into Solana USDC.',
       },
       {
         title: 'Mayan Swift v2',
         caption: `USDC-SOL to ${CHAINS[sourceChain].name}`,
-        amount: destinationOut,
         detail: 'Mayan pays the selected token to your destination-chain address.',
       },
     ];
   }
 
-  const sourceAmount = quote
-    ? formatBaseUnits(quote.inputAmount, quote.sourceTokenDecimals ?? sourceTokenDecimals)
-    : amount || '0';
   if (sourceChain === 'solana' || quote?.route === 'solana') {
-    const xmrOut = quote ? `${formatXmr(quote.estimatedXmrOut)} XMR` : 'XMR-SOL';
     return [
       {
         title: `${sourceSymbol} on Solana`,
         caption: 'Wallet-signed Solana transfer',
-        amount: `${sourceAmount} ${sourceSymbol}`,
         detail: 'You send the selected SPL token to the hot wallet with the order memo.',
       },
       {
         title: 'jup.ag',
         caption: `${sourceSymbol} to XMR-SOL`,
-        amount: xmrOut,
-        detail: 'Jupiter executes the Solana swap with the quote minimum enforced.',
+        detail: 'Jupiter swaps the selected Solana token into XMR-SOL.',
       },
       {
         title: 'Monero Bridge',
         caption: 'XMR-SOL to native XMR',
-        amount: quote ? `${formatXmr(quote.minXmrOut)} min` : 'Native XMR',
         detail: 'The bridge withdrawal request pays the final Monero address.',
       },
     ];
   }
 
-  const usdcOut = quote?.mayan?.expectedSolanaUsdcOut ? `${formatUsdc(quote.mayan.expectedSolanaUsdcOut)} USDC` : 'USDC-SOL';
-  const xmrOut = quote ? `${formatXmr(quote.estimatedXmrOut)} XMR` : 'XMR-SOL';
   return [
     {
       title: `${sourceSymbol} on ${CHAINS[sourceChain].name}`,
       caption: 'Wallet-signed source transaction',
-      amount: `${sourceAmount} ${sourceSymbol}`,
       detail: 'You keep custody until your wallet submits the Mayan Swift order.',
     },
     {
       title: 'Mayan Swift v2',
       caption: 'Cross-chain delivery to Solana',
-      amount: usdcOut,
       detail: 'Mayan routes the source asset into USDC on Solana for the hot wallet.',
     },
     {
       title: 'jup.ag',
       caption: 'USDC-SOL to XMR-SOL',
-      amount: xmrOut,
-      detail: 'Jupiter executes the Solana swap with the quote minimum enforced.',
+      detail: 'Jupiter swaps Solana USDC into XMR-SOL.',
     },
     {
       title: 'Monero Bridge',
       caption: 'XMR-SOL to native XMR',
-      amount: quote ? `${formatXmr(quote.minXmrOut)} min` : 'Native XMR',
       detail: 'The bridge withdrawal request pays the final Monero address.',
     },
   ];
@@ -1705,10 +1663,6 @@ function parseTokenAmount(value: string, decimals: number): bigint {
   const safeWhole = whole.replace(/\D/g, '') || '0';
   const safeFraction = fraction.replace(/\D/g, '').slice(0, decimals).padEnd(decimals, '0');
   return BigInt(safeWhole) * BigInt(10) ** BigInt(decimals) + BigInt(safeFraction || '0');
-}
-
-function formatUsdc(value: string): string {
-  return formatBaseUnits(value, 6);
 }
 
 function formatBaseUnits(value: string, decimals: number, maxFractionDigits = 6): string {
