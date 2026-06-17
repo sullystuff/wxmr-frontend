@@ -8,6 +8,7 @@ import {
   MAYAN_SWIFT_EVM_SOURCE_CHAINS,
   MAYAN_SWIFT_SOURCE_CHAINS,
   XMR_DECIMALS,
+  filterMayanTokensForChain,
   isValidMoneroAddress,
   type FundingInstructions,
   type MayanEvmTxPayload,
@@ -32,6 +33,7 @@ const ORCHESTRATOR_URL = (process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || '/api').re
 const EVM_NATIVE_TOKEN = '0x0000000000000000000000000000000000000000';
 const FORWARD_DIRECTION: SwapDirection = 'mayan-to-xmr';
 const REVERSE_DIRECTION: SwapDirection = 'xmr-to-mayan';
+const DEFAULT_MAYAN_CHAIN: SourceChainId = 'ethereum';
 const TOKEN_RELEVANCE_BY_CHAIN: Partial<Record<SourceChainId, readonly string[]>> = {
   ethereum: ['ETH', 'WETH', 'USDC', 'USDT', 'WBTC', 'DAI', 'LINK', 'UNI', 'AAVE', 'ENA', 'PEPE', 'SHIB'],
   base: ['ETH', 'WETH', 'USDC', 'cbBTC', 'USDT', 'EURC', 'AERO', 'VIRTUAL', 'MORPHO', 'DEGEN', 'BRETT'],
@@ -91,7 +93,7 @@ function MoneroLogo({ className = 'w-8 h-8' }: { className?: string }) {
 
 export default function SwapPage() {
   const [direction, setDirection] = useState<SwapDirection>(FORWARD_DIRECTION);
-  const [sourceChain, setSourceChain] = useState<SourceChainId>('base');
+  const [sourceChain, setSourceChain] = useState<SourceChainId>(DEFAULT_MAYAN_CHAIN);
   const [sourceTokens, setSourceTokens] = useState<MayanToken[]>([]);
   const [sourceToken, setSourceToken] = useState('');
   const [amount, setAmount] = useState('');
@@ -138,7 +140,7 @@ export default function SwapPage() {
   useEffect(() => {
     const chains = selectableMayanChains(direction);
     if (chains.includes(sourceChain)) return;
-    setSourceChain(chains[0]);
+    setSourceChain(defaultMayanChain(direction));
     resetTrade();
   }, [direction, sourceChain]);
 
@@ -149,7 +151,7 @@ export default function SwapPage() {
     api<MayanToken[]>(`/tokens/${sourceChain}`)
       .then((tokens) => {
         if (cancelled) return;
-        const sortedTokens = sortTokensByRelevance(tokens, sourceChain);
+        const sortedTokens = sortTokensByRelevance(filterMayanTokensForChain(tokens, sourceChain), sourceChain);
         setSourceTokens(sortedTokens);
         const preferred = sortedTokens[0];
         setSourceToken((current) =>
@@ -196,6 +198,11 @@ export default function SwapPage() {
     setQuote(null);
     setOrder(null);
     clearOrderUrl();
+  };
+
+  const switchDirection = () => {
+    setDirection((current) => (current === FORWARD_DIRECTION ? REVERSE_DIRECTION : FORWARD_DIRECTION));
+    resetTrade();
   };
 
   const requestQuote = async () => {
@@ -287,13 +294,9 @@ export default function SwapPage() {
                   {direction === FORWARD_DIRECTION ? 'One wallet transaction into native Monero.' : 'Native Monero into Mayan-supported assets.'}
                 </div>
               </div>
-              <DirectionToggle
-                value={direction}
-                onChange={(next) => {
-                  setDirection(next);
-                  resetTrade();
-                }}
-              />
+              <div className="rounded-full border border-[#30333b] bg-[#0b0c10] px-3 py-1 text-xs font-medium text-[#c8cbd1]">
+                {direction === FORWARD_DIRECTION ? 'To XMR' : 'From XMR'}
+              </div>
             </div>
           </div>
 
@@ -326,9 +329,7 @@ export default function SwapPage() {
               />
             )}
 
-            <div className="mx-auto flex h-10 w-10 items-center justify-center rounded-full border border-[#2d3037] bg-[#15161b] text-lg text-[#f26822]">
-              v
-            </div>
+            <DirectionSwapButton direction={direction} onClick={switchDirection} />
 
             {direction === FORWARD_DIRECTION ? (
               <ReceivePanel value={receivePreview} quote={quote} />
@@ -417,30 +418,33 @@ export default function SwapPage() {
   );
 }
 
-function DirectionToggle({
-  value,
-  onChange,
+function DirectionSwapButton({
+  direction,
+  onClick,
 }: {
-  value: SwapDirection;
-  onChange: (value: SwapDirection) => void;
+  direction: SwapDirection;
+  onClick: () => void;
 }) {
+  const label = direction === FORWARD_DIRECTION ? 'Switch to XMR source' : 'Switch to Mayan source';
   return (
-    <div className="grid grid-cols-2 rounded-xl bg-[#0b0c10] p-1 text-xs">
+    <div className="flex justify-center">
       <button
-        onClick={() => onChange(FORWARD_DIRECTION)}
-        className={`rounded-lg px-3 py-2 font-semibold transition-colors ${
-          value === FORWARD_DIRECTION ? 'bg-[#f26822] text-white' : 'text-[#8f949d] hover:text-white'
-        }`}
+        type="button"
+        onClick={onClick}
+        title={label}
+        aria-label={label}
+        className="group flex h-11 w-11 items-center justify-center rounded-full border border-[#343740] bg-[#15161b] text-[#f26822] shadow-lg shadow-black/25 transition-colors hover:border-[#f26822] hover:bg-[#1b1714] focus:outline-none focus:ring-2 focus:ring-[#f26822]/60"
       >
-        To XMR
-      </button>
-      <button
-        onClick={() => onChange(REVERSE_DIRECTION)}
-        className={`rounded-lg px-3 py-2 font-semibold transition-colors ${
-          value === REVERSE_DIRECTION ? 'bg-[#f26822] text-white' : 'text-[#8f949d] hover:text-white'
-        }`}
-      >
-        From XMR
+        <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
+          <path
+            d="M7 4v13m0 0 4-4m-4 4-4-4M17 20V7m0 0-4 4m4-4 4 4"
+            fill="none"
+            stroke="currentColor"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth="2"
+          />
+        </svg>
       </button>
     </div>
   );
@@ -1318,6 +1322,11 @@ function tokenSortLabel(token: MayanToken): string {
 
 function selectableMayanChains(direction: SwapDirection): readonly SourceChainId[] {
   return direction === FORWARD_DIRECTION ? MAYAN_SWIFT_EVM_SOURCE_CHAINS : MAYAN_SWIFT_SOURCE_CHAINS;
+}
+
+function defaultMayanChain(direction: SwapDirection): SourceChainId {
+  const chains = selectableMayanChains(direction);
+  return chains.includes(DEFAULT_MAYAN_CHAIN) ? DEFAULT_MAYAN_CHAIN : chains[0];
 }
 
 function formatReceivePreview({
