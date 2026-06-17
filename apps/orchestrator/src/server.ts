@@ -10,6 +10,7 @@ import {
   USDC_MINT_ADDRESS,
   assertValidMoneroAddress,
   buildMayanSwiftFunding,
+  filterMayanTokensForChain,
   type DepositAddressFunding,
   type MayanEvmTxPayload,
   MayanClient,
@@ -55,7 +56,7 @@ function registerRoutes(prefix: "" | "/api"): void {
       return reply.code(404).send({ error: "unsupported sourceChain" });
     }
     const tokens = await mayan.fetchTokens(sourceChain);
-    return tokens.filter((token) => token.verified !== false);
+    return filterMayanTokensForChain(tokens, sourceChain).filter((token) => token.verified !== false);
   });
 
   app.post(route("/quote"), async (request, reply) => {

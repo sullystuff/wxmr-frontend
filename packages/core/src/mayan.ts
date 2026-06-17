@@ -152,6 +152,34 @@ export class MayanClient {
   }
 }
 
+const CROSS_CHAIN_STABLE_SYMBOLS = new Set(["USDC", "USDC.E", "USDCE", "USDT", "USDT0"]);
+
+export function filterMayanTokensForChain(tokens: MayanToken[], sourceChain: SourceChainId): MayanToken[] {
+  return tokens.filter((token) => !isCrossChainStablecoinVariant(token, sourceChain));
+}
+
+export function isCrossChainStablecoinVariant(token: MayanToken, sourceChain: SourceChainId): boolean {
+  if (!isFilteredStableSymbol(token.symbol)) return false;
+
+  const configuredUsdc = CHAINS[sourceChain]?.usdc;
+  const contract = token.contract?.toLowerCase();
+  if (configuredUsdc && contract === String(configuredUsdc).toLowerCase()) {
+    return false;
+  }
+
+  const hasOriginMismatch =
+    token.realOriginChainId !== undefined &&
+    token.wChainId !== undefined &&
+    token.realOriginChainId !== token.wChainId;
+  const hasPortalName = /\bportal from\b/i.test(token.name ?? "");
+
+  return hasOriginMismatch || hasPortalName;
+}
+
+function isFilteredStableSymbol(symbol?: string): boolean {
+  return CROSS_CHAIN_STABLE_SYMBOLS.has((symbol ?? "").trim().toUpperCase());
+}
+
 export function buildMayanSwiftFunding(params: {
   orderId: string;
   sourceChain: SourceChainId;
