@@ -48,6 +48,7 @@ const REVERSE_DIRECTION: SwapDirection = 'xmr-to-mayan';
 const DEFAULT_MAYAN_CHAIN: SourceChainId = 'ethereum';
 const DEFAULT_EXECUTION_POLICY: ExecutionPolicy = 'execute-anyway';
 const DEFAULT_SLIPPAGE_BPS = 200;
+const AUTO_REFRESH_QUOTE_MS = 10_000;
 const TOKEN_RELEVANCE_BY_CHAIN: Partial<Record<SourceChainId, readonly string[]>> = {
   ethereum: ['ETH', 'USDC', 'USDT', 'WBTC', 'DAI', 'LINK', 'UNI', 'AAVE', 'ENA', 'PEPE', 'SHIB'],
   base: ['ETH', 'USDC', 'cbBTC', 'USDT', 'EURC', 'AERO', 'VIRTUAL', 'MORPHO', 'DEGEN', 'BRETT'],
@@ -292,6 +293,14 @@ export default function SwapPage() {
     }, 650);
     return () => clearTimeout(timer);
   }, [canPreviewQuote, fetchQuote, order]);
+
+  useEffect(() => {
+    if (!canPreviewQuote || order || isLoading || isQuoteRefreshing) return;
+    const timer = setInterval(() => {
+      void fetchQuote({ showLoading: false });
+    }, AUTO_REFRESH_QUOTE_MS);
+    return () => clearInterval(timer);
+  }, [canPreviewQuote, fetchQuote, isLoading, isQuoteRefreshing, order]);
 
   const requestQuote = async () => {
     await fetchQuote({ showLoading: true });
