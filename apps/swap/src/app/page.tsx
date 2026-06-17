@@ -951,7 +951,7 @@ function QuoteSummary({
           <div className="text-xs text-[#8f949d]">{quote.routeSummary ?? 'Mayan Swift v2 route'}</div>
         </div>
         <div className={`rounded-full px-3 py-1 text-xs font-semibold ${quoteExpired ? 'bg-[#351919] text-[#ff8c8c]' : 'bg-[#142316] text-[#9ee6a8]'}`}>
-          {quoteExpired ? 'Expired' : `Locks ${formatCountdown(quoteExpiresIn)}`}
+          {quoteExpired ? 'Expired' : `Expires in ${formatCountdown(quoteExpiresIn)}`}
         </div>
       </div>
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
