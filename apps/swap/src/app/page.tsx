@@ -153,7 +153,11 @@ export default function SwapPage() {
     const chains = selectableMayanChains(direction);
     if (chains.includes(sourceChain)) return;
     setSourceChain(defaultMayanChain(direction));
-    resetTrade();
+    quoteRequestSeq.current += 1;
+    setIsQuoteRefreshing(false);
+    setQuote(null);
+    setOrder(null);
+    clearOrderUrl();
   }, [direction, sourceChain]);
 
   useEffect(() => {
@@ -207,21 +211,33 @@ export default function SwapPage() {
   const quoteExpired = quoteExpiresIn === 0;
   const canCreateOrder = Boolean(quote) &&
     !quoteExpired &&
+    !isQuoteRefreshing &&
     (direction === FORWARD_DIRECTION
       ? hasValidXmrAddress
       : destinationAddressOk && hasValidXmrAddress);
   const routeLegs = buildRouteLegs({ direction, quote, selectedToken, sourceChain, amount, sourceTokenDecimals });
-  const primaryLabel = getPrimaryLabel({ quote, order, isLoading, quoteExpired, canCreateOrder });
-  const primaryDisabled = getPrimaryDisabled({ canPreviewQuote, canCreateOrder, quote, order, isLoading, quoteExpired });
+  const primaryLabel = getPrimaryLabel({ quote, order, isLoading, isQuoteRefreshing, quoteExpired, canCreateOrder });
+  const primaryDisabled = getPrimaryDisabled({ canPreviewQuote, canCreateOrder, quote, order, isLoading, isQuoteRefreshing, quoteExpired });
   const receivePreview = formatReceivePreview({ direction, quote, token: selectedToken });
   const isReceivePreviewLoading = isQuoteRefreshing && canPreviewQuote;
 
-  const resetTrade = () => {
+  const resetTrade = ({ preserveQuote = false }: { preserveQuote?: boolean } = {}) => {
     quoteRequestSeq.current += 1;
-    setIsQuoteRefreshing(false);
-    setQuote(null);
+    if (preserveQuote && quote) {
+      setIsQuoteRefreshing(true);
+    } else {
+      setIsQuoteRefreshing(false);
+      setQuote(null);
+    }
     setOrder(null);
     clearOrderUrl();
+  };
+
+  const updateAmount = (next: string) => {
+    setAmount(next);
+    resetTrade({
+      preserveQuote: parseTokenAmount(next, inputDecimals) > BigInt(0),
+    });
   };
 
   const switchDirection = () => {
@@ -291,7 +307,7 @@ export default function SwapPage() {
         body: JSON.stringify({
           quoteId: quote.id,
           refundAddress: refundAddress || undefined,
-          xmrAddress: direction === FORWARD_DIRECTION ? xmrAddress.trim() : undefined,
+          xmrAddress: xmrAddress.trim(),
           executionPolicy,
         }),
       });
@@ -361,19 +377,13 @@ export default function SwapPage() {
                 chainId={sourceChain}
                 token={selectedToken}
                 label="You send"
-                onAmountChange={(next) => {
-                  setAmount(next);
-                  resetTrade();
-                }}
+                onAmountChange={updateAmount}
                 onOpenTokenPicker={() => setIsTokenPickerOpen(true)}
               />
             ) : (
               <XmrAmountPanel
                 amount={amount}
-                onAmountChange={(next) => {
-                  setAmount(next);
-                  resetTrade();
-                }}
+                onAmountChange={updateAmount}
               />
             )}
 
@@ -399,7 +409,6 @@ export default function SwapPage() {
               refundAddress={refundAddress}
               onXmrAddressChange={(next) => {
                 setXmrAddress(next);
-                resetTrade();
               }}
               onDestinationAddressChange={(next) => {
                 setDestinationAddress(next);
@@ -412,7 +421,6 @@ export default function SwapPage() {
               value={executionPolicy}
               onChange={(next) => {
                 setExecutionPolicy(next);
-                resetTrade();
               }}
             />
 
@@ -781,19 +789,19 @@ function ExecutionPolicyPanel({
   const options: Array<{ value: ExecutionPolicy; title: string; caption: string }> = [
     {
       value: 'refund-on-slippage',
-      title: 'Refund if 1% fails',
-      caption: 'Require quoted minimum',
+      title: 'Protect my amount',
+      caption: 'Refund me if I would receive much less',
     },
     {
       value: 'execute-anyway',
-      title: 'Execute anyway',
-      caption: 'Receive market output',
+      title: 'Swap anyway',
+      caption: 'Use the best available rate',
     },
   ];
 
   return (
     <div className="rounded-2xl border border-[#292b31] bg-[#0f1015] p-3">
-      <div className="mb-2 text-sm text-[#9aa0aa]">Execution</div>
+      <div className="mb-2 text-sm text-[#9aa0aa]">If the price moves</div>
       <div className="grid gap-2 sm:grid-cols-2">
         {options.map((option) => {
           const selected = option.value === value;
@@ -1634,17 +1642,20 @@ function getPrimaryLabel({
   quote,
   order,
   isLoading,
+  isQuoteRefreshing,
   quoteExpired,
   canCreateOrder,
 }: {
   quote: Quote | null;
   order: Order | null;
   isLoading: boolean;
+  isQuoteRefreshing: boolean;
   quoteExpired: boolean;
   canCreateOrder: boolean;
 }): string {
   if (isLoading) return quote ? 'Creating order...' : 'Fetching route...';
   if (order) return 'Order created';
+  if (quote && isQuoteRefreshing) return 'Updating quote...';
   if (quoteExpired) return 'Refresh quote';
   if (quote && !canCreateOrder) return 'Enter XMR address';
   if (quote) return 'Create order';
@@ -1657,6 +1668,7 @@ function getPrimaryDisabled({
   quote,
   order,
   isLoading,
+  isQuoteRefreshing,
   quoteExpired,
 }: {
   canPreviewQuote: boolean;
@@ -1664,9 +1676,10 @@ function getPrimaryDisabled({
   quote: Quote | null;
   order: Order | null;
   isLoading: boolean;
+  isQuoteRefreshing: boolean;
   quoteExpired: boolean;
 }): boolean {
-  if (isLoading || order) return true;
+  if (isLoading || isQuoteRefreshing || order) return true;
   if (quote && !quoteExpired) return !canCreateOrder;
   return !canPreviewQuote;
 }
