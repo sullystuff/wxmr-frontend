@@ -1366,7 +1366,7 @@ function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-xl border border-[#292b31] bg-[#0b0c10] px-3 py-3">
       <div className="truncate text-[11px] uppercase tracking-[0.08em] text-[#737982]">{label}</div>
-      <div className="mt-1 truncate text-sm font-semibold text-white">{value}</div>
+      <div className="mt-1 break-words text-sm font-semibold leading-snug text-white">{value}</div>
     </div>
   );
 }
