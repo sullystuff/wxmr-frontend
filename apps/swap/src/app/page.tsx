@@ -109,6 +109,7 @@ export default function SwapPage() {
   const [quote, setQuote] = useState<Quote | null>(null);
   const [order, setOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [isQuoteRefreshing, setIsQuoteRefreshing] = useState(false);
   const [isTokenPickerOpen, setIsTokenPickerOpen] = useState(false);
   const [tokenSearch, setTokenSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -209,9 +210,11 @@ export default function SwapPage() {
   const primaryLabel = getPrimaryLabel({ quote, order, isLoading, quoteExpired, canCreateOrder });
   const primaryDisabled = getPrimaryDisabled({ canPreviewQuote, canCreateOrder, quote, order, isLoading, quoteExpired });
   const receivePreview = formatReceivePreview({ direction, quote, token: selectedToken });
+  const isReceivePreviewLoading = isQuoteRefreshing && canPreviewQuote;
 
   const resetTrade = () => {
     quoteRequestSeq.current += 1;
+    setIsQuoteRefreshing(false);
     setQuote(null);
     setOrder(null);
     clearOrderUrl();
@@ -226,6 +229,7 @@ export default function SwapPage() {
     if (!canPreviewQuote) return;
     const requestSeq = quoteRequestSeq.current + 1;
     quoteRequestSeq.current = requestSeq;
+    setIsQuoteRefreshing(true);
     if (showLoading) setIsLoading(true);
     setError(null);
     try {
@@ -253,6 +257,9 @@ export default function SwapPage() {
     } finally {
       if (showLoading && quoteRequestSeq.current === requestSeq) {
         setIsLoading(false);
+      }
+      if (quoteRequestSeq.current === requestSeq) {
+        setIsQuoteRefreshing(false);
       }
     }
   }, [canPreviewQuote, destinationAddress, direction, hasValidXmrAddress, parsedAmount, refundAddress, sourceChain, sourceToken, xmrAddress]);
@@ -367,12 +374,13 @@ export default function SwapPage() {
             <DirectionSwapButton direction={direction} onClick={switchDirection} />
 
             {direction === FORWARD_DIRECTION ? (
-              <ReceivePanel value={receivePreview} quote={quote} />
+              <ReceivePanel value={receivePreview} quote={quote} isLoading={isReceivePreviewLoading} />
             ) : (
               <MayanReceivePanel
                 value={receivePreview}
                 chainId={sourceChain}
                 token={selectedToken}
+                isLoading={isReceivePreviewLoading}
                 onOpenTokenPicker={() => setIsTokenPickerOpen(true)}
               />
             )}
@@ -571,7 +579,7 @@ function XmrAmountPanel({
   );
 }
 
-function ReceivePanel({ value, quote }: { value: string; quote: Quote | null }) {
+function ReceivePanel({ value, quote, isLoading }: { value: string; quote: Quote | null; isLoading: boolean }) {
   return (
     <div className="rounded-2xl border border-[#292b31] bg-[#0c0d11] p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
@@ -581,7 +589,9 @@ function ReceivePanel({ value, quote }: { value: string; quote: Quote | null }) 
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <div className="min-w-0 flex-1 text-4xl font-semibold text-white md:text-5xl">{value}</div>
+        <div className={`min-w-0 flex-1 text-4xl font-semibold transition-colors md:text-5xl ${isLoading ? 'text-[#6f747d]' : 'text-white'}`}>
+          {value}
+        </div>
         <div className="flex min-w-[132px] items-center gap-2 rounded-2xl border border-[#30333b] bg-[#17191f] px-3 py-3">
           <MoneroLogo className="h-8 w-8 shrink-0" />
           <span>
@@ -598,11 +608,13 @@ function MayanReceivePanel({
   value,
   chainId,
   token,
+  isLoading,
   onOpenTokenPicker,
 }: {
   value: string;
   chainId: SourceChainId;
   token?: MayanToken;
+  isLoading: boolean;
   onOpenTokenPicker: () => void;
 }) {
   const chainName = CHAINS[chainId].name;
@@ -615,7 +627,9 @@ function MayanReceivePanel({
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <div className="min-w-0 flex-1 text-4xl font-semibold text-white md:text-5xl">{value}</div>
+        <div className={`min-w-0 flex-1 text-4xl font-semibold transition-colors md:text-5xl ${isLoading ? 'text-[#6f747d]' : 'text-white'}`}>
+          {value}
+        </div>
         <button
           onClick={onOpenTokenPicker}
           className="flex min-w-[132px] items-center justify-between gap-2 rounded-2xl border border-[#30333b] bg-[#17191f] px-3 py-3 text-left text-white transition-colors hover:border-[#f26822]"
