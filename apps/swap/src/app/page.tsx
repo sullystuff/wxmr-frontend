@@ -305,16 +305,11 @@ export default function SwapPage() {
               <TradeAmountPanel
                 amount={amount}
                 chainId={sourceChain}
-                chains={selectableMayanChains(direction)}
                 token={selectedToken}
                 tokenCount={sourceTokens.length}
                 label="You send"
                 onAmountChange={(next) => {
                   setAmount(next);
-                  resetTrade();
-                }}
-                onChainChange={(next) => {
-                  setSourceChain(next);
                   resetTrade();
                 }}
                 onOpenTokenPicker={() => setIsTokenPickerOpen(true)}
@@ -337,14 +332,9 @@ export default function SwapPage() {
               <MayanReceivePanel
                 value={receivePreview}
                 chainId={sourceChain}
-                chains={selectableMayanChains(direction)}
                 token={selectedToken}
                 tokenCount={sourceTokens.length}
                 quote={quote}
-                onChainChange={(next) => {
-                  setSourceChain(next);
-                  resetTrade();
-                }}
                 onOpenTokenPicker={() => setIsTokenPickerOpen(true)}
               />
             )}
@@ -402,10 +392,15 @@ export default function SwapPage() {
       {isTokenPickerOpen && (
         <TokenPicker
           chainId={sourceChain}
+          chains={selectableMayanChains(direction)}
           tokens={sourceTokens}
           selectedToken={sourceToken}
           search={tokenSearch}
           onSearchChange={setTokenSearch}
+          onChainChange={(next) => {
+            setSourceChain(next);
+            resetTrade();
+          }}
           onClose={() => setIsTokenPickerOpen(false)}
           onSelect={(contract) => {
             setSourceToken(contract);
@@ -453,29 +448,28 @@ function DirectionSwapButton({
 function TradeAmountPanel({
   amount,
   chainId,
-  chains,
   token,
   tokenCount,
   label,
   onAmountChange,
-  onChainChange,
   onOpenTokenPicker,
 }: {
   amount: string;
   chainId: SourceChainId;
-  chains: readonly SourceChainId[];
   token?: MayanToken;
   tokenCount: number;
   label: string;
   onAmountChange: (value: string) => void;
-  onChainChange: (value: SourceChainId) => void;
   onOpenTokenPicker: () => void;
 }) {
+  const chainName = CHAINS[chainId].name;
   return (
     <div className="rounded-2xl border border-[#292b31] bg-[#0c0d11] p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="text-sm text-[#9aa0aa]">{label}</div>
-        <ChainSelect value={chainId} chains={chains} onChange={onChainChange} />
+        <div className="rounded-full border border-[#30333b] bg-[#17191f] px-3 py-1 text-xs text-[#9aa0aa]">
+          {chainName}
+        </div>
       </div>
       <div className="flex items-center gap-3">
         <input
@@ -494,7 +488,9 @@ function TradeAmountPanel({
           <TokenLogo token={token} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-semibold">{token?.symbol ?? 'Token'}</span>
-            <span className="block truncate text-[11px] text-[#8f949d]">{tokenCount ? `${tokenCount} assets` : 'Loading'}</span>
+            <span className="block truncate text-[11px] text-[#8f949d]">
+              {chainName} - {tokenCount ? `${tokenCount} assets` : 'Loading'}
+            </span>
           </span>
           <span className="text-[#8f949d]">v</span>
         </button>
@@ -566,27 +562,26 @@ function ReceivePanel({ value, quote }: { value: string; quote: Quote | null }) 
 function MayanReceivePanel({
   value,
   chainId,
-  chains,
   token,
   tokenCount,
   quote,
-  onChainChange,
   onOpenTokenPicker,
 }: {
   value: string;
   chainId: SourceChainId;
-  chains: readonly SourceChainId[];
   token?: MayanToken;
   tokenCount: number;
   quote: Quote | null;
-  onChainChange: (value: SourceChainId) => void;
   onOpenTokenPicker: () => void;
 }) {
+  const chainName = CHAINS[chainId].name;
   return (
     <div className="rounded-2xl border border-[#292b31] bg-[#0c0d11] p-4">
       <div className="mb-3 flex items-center justify-between gap-3">
         <div className="text-sm text-[#9aa0aa]">You get</div>
-        <ChainSelect value={chainId} chains={chains} onChange={onChainChange} />
+        <div className="rounded-full border border-[#30333b] bg-[#17191f] px-3 py-1 text-xs text-[#9aa0aa]">
+          {chainName}
+        </div>
       </div>
       <div className="flex items-center gap-3">
         <div className="min-w-0 flex-1 text-4xl font-semibold text-white md:text-5xl">{value}</div>
@@ -597,7 +592,9 @@ function MayanReceivePanel({
           <TokenLogo token={token} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-semibold">{token?.symbol ?? 'Token'}</span>
-            <span className="block truncate text-[11px] text-[#8f949d]">{quote ? 'Estimated' : `${tokenCount || 0} assets`}</span>
+            <span className="block truncate text-[11px] text-[#8f949d]">
+              {chainName} - {quote ? 'Estimated' : `${tokenCount || 0} assets`}
+            </span>
           </span>
           <span className="text-[#8f949d]">v</span>
         </button>
@@ -616,12 +613,12 @@ function ChainSelect({
   onChange: (value: SourceChainId) => void;
 }) {
   return (
-    <label className="relative">
-      <span className="sr-only">Source chain</span>
+    <label className="relative block">
+      <span className="sr-only">Network</span>
       <select
         value={value}
         onChange={(event) => onChange(event.target.value as SourceChainId)}
-        className="appearance-none rounded-full border border-[#30333b] bg-[#17191f] py-2 pl-3 pr-8 text-xs font-medium text-white outline-none transition-colors hover:border-[#f26822] focus:border-[#f26822]"
+        className="w-full appearance-none rounded-xl border border-[#30333b] bg-[#17191f] py-3 pl-3 pr-9 text-sm font-medium text-white outline-none transition-colors hover:border-[#f26822] focus:border-[#f26822]"
       >
         {chains.map((chain) => (
           <option key={chain} value={chain}>{CHAINS[chain].name}</option>
@@ -715,18 +712,22 @@ function RecipientPanel({
 
 function TokenPicker({
   chainId,
+  chains,
   tokens,
   selectedToken,
   search,
   onSearchChange,
+  onChainChange,
   onClose,
   onSelect,
 }: {
   chainId: SourceChainId;
+  chains: readonly SourceChainId[];
   tokens: MayanToken[];
   selectedToken: string;
   search: string;
   onSearchChange: (value: string) => void;
+  onChainChange: (value: SourceChainId) => void;
   onClose: () => void;
   onSelect: (contract: string) => void;
 }) {
@@ -750,11 +751,15 @@ function TokenPicker({
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <div className="text-base font-semibold text-white">Select asset</div>
-              <div className="text-xs text-[#8f949d]">{CHAINS[chainId].name}</div>
+              <div className="text-xs text-[#8f949d]">Choose network and token</div>
             </div>
             <button onClick={onClose} className="rounded-full border border-[#30333b] px-3 py-2 text-sm text-[#c8cbd1] hover:border-[#f26822]">
               Close
             </button>
+          </div>
+          <div className="mb-3 rounded-2xl border border-[#292b31] bg-[#0c0d11] p-3">
+            <div className="mb-2 text-xs font-medium uppercase tracking-[0.08em] text-[#6f747d]">Network</div>
+            <ChainSelect value={chainId} chains={chains} onChange={onChainChange} />
           </div>
           <input
             value={search}
