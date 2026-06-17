@@ -153,9 +153,25 @@ export class MayanClient {
 }
 
 const CROSS_CHAIN_STABLE_SYMBOLS = new Set(["USDC", "USDC.E", "USDCE", "USDT", "USDT0"]);
+const WRAPPED_NATIVE_SYMBOLS = new Set([
+  "WETH",
+  "WETH.E",
+  "WBNB",
+  "WAVAX",
+  "WMATIC",
+  "WPOL",
+  "WHYPE",
+  "WMON",
+  "WSUI",
+  "WSOL",
+]);
 
 export function filterMayanTokensForChain(tokens: MayanToken[], sourceChain: SourceChainId): MayanToken[] {
-  return tokens.filter((token) => !isCrossChainStablecoinVariant(token, sourceChain));
+  return tokens.filter(
+    (token) =>
+      !isCrossChainStablecoinVariant(token, sourceChain) &&
+      !isWrappedNativeVariant(token),
+  );
 }
 
 export function isCrossChainStablecoinVariant(token: MayanToken, sourceChain: SourceChainId): boolean {
@@ -178,6 +194,10 @@ export function isCrossChainStablecoinVariant(token: MayanToken, sourceChain: So
 
 function isFilteredStableSymbol(symbol?: string): boolean {
   return CROSS_CHAIN_STABLE_SYMBOLS.has((symbol ?? "").trim().toUpperCase());
+}
+
+export function isWrappedNativeVariant(token: MayanToken): boolean {
+  return WRAPPED_NATIVE_SYMBOLS.has((token.symbol ?? "").trim().toUpperCase());
 }
 
 export function buildMayanSwiftFunding(params: {
