@@ -46,7 +46,7 @@ const MEMO_PROGRAM_ID = new PublicKey('MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfc
 const FORWARD_DIRECTION: SwapDirection = 'mayan-to-xmr';
 const REVERSE_DIRECTION: SwapDirection = 'xmr-to-mayan';
 const DEFAULT_MAYAN_CHAIN: SourceChainId = 'ethereum';
-const DEFAULT_EXECUTION_POLICY: ExecutionPolicy = 'refund-on-slippage';
+const DEFAULT_EXECUTION_POLICY: ExecutionPolicy = 'execute-anyway';
 const DEFAULT_SLIPPAGE_BPS = 200;
 const TOKEN_RELEVANCE_BY_CHAIN: Partial<Record<SourceChainId, readonly string[]>> = {
   ethereum: ['ETH', 'USDC', 'USDT', 'WBTC', 'DAI', 'LINK', 'UNI', 'AAVE', 'ENA', 'PEPE', 'SHIB'],
@@ -788,14 +788,14 @@ function ExecutionPolicyPanel({
 }) {
   const options: Array<{ value: ExecutionPolicy; title: string; caption: string }> = [
     {
-      value: 'refund-on-slippage',
-      title: 'Protect my amount',
-      caption: 'Refund me if I would receive over 2% less',
-    },
-    {
       value: 'execute-anyway',
       title: 'Swap anyway',
       caption: 'Use the best available rate',
+    },
+    {
+      value: 'refund-on-slippage',
+      title: 'Protect my amount',
+      caption: 'Refund me if I would receive over 2% less',
     },
   ];
 

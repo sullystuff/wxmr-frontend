@@ -183,7 +183,7 @@ export class Store {
           destination_token_symbol TEXT,
           destination_token_decimals INTEGER,
           refund_address TEXT,
-          execution_policy TEXT NOT NULL DEFAULT 'refund-on-slippage',
+          execution_policy TEXT NOT NULL DEFAULT 'execute-anyway',
         funding_json TEXT NOT NULL,
         source_tx_hash TEXT,
         destination_amount TEXT,
@@ -225,7 +225,7 @@ export class Store {
       this.db.exec("ALTER TABLE orders ADD COLUMN destination_token_decimals INTEGER");
     }
     if (!columns.some((column) => column.name === "execution_policy")) {
-      this.db.exec("ALTER TABLE orders ADD COLUMN execution_policy TEXT NOT NULL DEFAULT 'refund-on-slippage'");
+      this.db.exec("ALTER TABLE orders ADD COLUMN execution_policy TEXT NOT NULL DEFAULT 'execute-anyway'");
     }
   }
 }
@@ -260,5 +260,5 @@ function rowToOrder(row: OrderRow): Order {
 }
 
 function normalizeExecutionPolicy(value: string | null): ExecutionPolicy {
-  return value === "execute-anyway" ? "execute-anyway" : "refund-on-slippage";
+  return value === "refund-on-slippage" ? "refund-on-slippage" : "execute-anyway";
 }

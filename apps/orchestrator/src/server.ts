@@ -36,7 +36,7 @@ const connection = new Connection(env.solanaRpcUrl, "confirmed");
 const jupiter = new JupiterClient({ apiKey: env.jupiterApiKey });
 const mayan = new MayanClient({ apiKey: env.mayanApiKey });
 const solana = new SolanaExecutor(connection, env.solanaHotWallet, env.bridgeProgramId, env.jupiterApiKey, env.mayanApiKey);
-const DEFAULT_EXECUTION_POLICY: ExecutionPolicy = "refund-on-slippage";
+const DEFAULT_EXECUTION_POLICY: ExecutionPolicy = "execute-anyway";
 const DEFAULT_SLIPPAGE_BPS = 200;
 const MAX_SLIPPAGE_BPS = 2_000;
 
