@@ -64,6 +64,7 @@ services:
       MAYAN_API_KEY: ${MAYAN_API_KEY:-}
       THORNODE_URL: ${THORNODE_URL:-https://thornode.thorchain.network}
       THORNODE_CLIENT_ID: ${THORNODE_CLIENT_ID:-wxmr}
+      CHAINFLIP_BACKEND_URL: ${CHAINFLIP_BACKEND_URL:-https://chainflip-swap.chainflip.io}
       EVM_HOTWALLET_PRIVATE_KEY: ${EVM_HOTWALLET_PRIVATE_KEY:-}
       ETHEREUM_RPC_URL: ${ETHEREUM_RPC_URL:-}
       BASE_RPC_URL: ${BASE_RPC_URL:-}
@@ -98,6 +99,7 @@ services:
       MAYAN_API_KEY: ${MAYAN_API_KEY:-}
       THORNODE_URL: ${THORNODE_URL:-https://thornode.thorchain.network}
       THORNODE_CLIENT_ID: ${THORNODE_CLIENT_ID:-wxmr}
+      CHAINFLIP_BACKEND_URL: ${CHAINFLIP_BACKEND_URL:-https://chainflip-swap.chainflip.io}
       EVM_HOTWALLET_PRIVATE_KEY: ${EVM_HOTWALLET_PRIVATE_KEY:-}
       ETHEREUM_RPC_URL: ${ETHEREUM_RPC_URL:-}
     volumes:
