@@ -35,6 +35,9 @@
     "HYPEREVM_RPC_URL",
     "MONAD_RPC_URL",
     "MAYAN_API_KEY",
+    "THORNODE_URL",
+    "THORNODE_CLIENT_ID",
+    "EVM_HOTWALLET_PRIVATE_KEY",
     "SERVICE_FEE_BPS"
   ],
   "tasks": {

@@ -62,6 +62,9 @@ services:
       SERVICE_FEE_BPS: ${SERVICE_FEE_BPS:-0}
       JUPITER_API_KEY: ${JUPITER_API_KEY:-}
       MAYAN_API_KEY: ${MAYAN_API_KEY:-}
+      THORNODE_URL: ${THORNODE_URL:-https://thornode.thorchain.network}
+      THORNODE_CLIENT_ID: ${THORNODE_CLIENT_ID:-wxmr}
+      EVM_HOTWALLET_PRIVATE_KEY: ${EVM_HOTWALLET_PRIVATE_KEY:-}
       ETHEREUM_RPC_URL: ${ETHEREUM_RPC_URL:-}
       BASE_RPC_URL: ${BASE_RPC_URL:-}
       BSC_RPC_URL: ${BSC_RPC_URL:-}
@@ -93,6 +96,10 @@ services:
       SERVICE_FEE_BPS: ${SERVICE_FEE_BPS:-0}
       JUPITER_API_KEY: ${JUPITER_API_KEY:-}
       MAYAN_API_KEY: ${MAYAN_API_KEY:-}
+      THORNODE_URL: ${THORNODE_URL:-https://thornode.thorchain.network}
+      THORNODE_CLIENT_ID: ${THORNODE_CLIENT_ID:-wxmr}
+      EVM_HOTWALLET_PRIVATE_KEY: ${EVM_HOTWALLET_PRIVATE_KEY:-}
+      ETHEREUM_RPC_URL: ${ETHEREUM_RPC_URL:-}
     volumes:
       - orchestrator-data:/data
 
