@@ -16,6 +16,10 @@ const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
 const config = createConfig({
   chains: [mainnet, bsc, base, arbitrum, optimism, polygon, avalanche, linea, hyperEvm, monad],
   connectors: [
+    injected({ target: 'metaMask', shimDisconnect: true }),
+    injected({ target: 'rabby', shimDisconnect: true }),
+    injected({ target: 'coinbaseWallet', shimDisconnect: true }),
+    injected({ target: 'phantom', shimDisconnect: true }),
     injected({ shimDisconnect: true }),
     ...(walletConnectProjectId
       ? [walletConnect({ projectId: walletConnectProjectId, showQrModal: true })]

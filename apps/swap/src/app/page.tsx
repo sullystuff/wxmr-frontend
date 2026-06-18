@@ -37,6 +37,7 @@ import {
   useSendTransaction,
   useSwitchChain,
   useWriteContract,
+  type Connector,
 } from 'wagmi';
 import { EVM_RPC_ENV_BY_CHAIN, EVM_RPC_URL_BY_CHAIN } from './evm-rpc';
 
@@ -1324,8 +1325,11 @@ function MayanEvmFunding({
   const publicClient = usePublicClient({ chainId: funding.chainNumericId });
   const { writeContractAsync } = useWriteContract();
   const { sendTransactionAsync } = useSendTransaction();
+  const walletOptions = useMemo(() => buildWalletOptions(connectors), [connectors]);
+  const walletAvailability = useConnectorAvailability(walletOptions);
   const [showConnect, setShowConnect] = useState(false);
   const [isFunding, setIsFunding] = useState(false);
+  const [connectingConnectorUid, setConnectingConnectorUid] = useState<string | null>(null);
 
   const fund = async () => {
     setIsFunding(true);
@@ -1411,25 +1415,213 @@ function MayanEvmFunding({
                 Close
               </button>
             </div>
-            <div className="space-y-2">
-              {connectors.map((connector) => (
-                <button
-                  key={connector.uid}
-                  disabled={isPending}
-                  onClick={async () => {
-                    await connectAsync({ connector });
-                    setShowConnect(false);
-                  }}
-                  className="w-full rounded-2xl border border-[#292b31] bg-[#0c0d11] px-3 py-3 text-left text-sm font-medium text-white transition-colors hover:border-[#f26822]"
-                >
-                  {connector.name}
-                </button>
-              ))}
+            <div className="grid gap-2">
+              {walletOptions.map(({ connector, description, icon, id, name }) => {
+                const isConnecting = connectingConnectorUid === connector.uid;
+                const isAvailable = walletAvailability[connector.uid] ?? true;
+                const status = id === 'walletconnect' ? 'QR or mobile' : isAvailable ? 'Installed' : 'Not detected';
+                return (
+                  <button
+                    key={connector.uid}
+                    disabled={isPending}
+                    onClick={async () => {
+                      setConnectingConnectorUid(connector.uid);
+                      try {
+                        await connectAsync({ connector });
+                        setShowConnect(false);
+                      } catch (e) {
+                        onError(errorMessage(e));
+                      } finally {
+                        setConnectingConnectorUid(null);
+                      }
+                    }}
+                    className="grid w-full grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-[#292b31] bg-[#0c0d11] px-3 py-3 text-left transition-colors hover:border-[#f26822] disabled:opacity-65"
+                  >
+                    <WalletLogo id={id} icon={icon} name={name} />
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-semibold text-white">{name}</span>
+                      <span className="block truncate text-xs text-[#8f949d]">{description}</span>
+                    </span>
+                    <span className="rounded-full border border-[#292b31] px-2 py-1 text-xs text-[#9aa0aa]">
+                      {isConnecting ? 'Connecting' : status}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+type WalletIconId = 'metamask' | 'rabby' | 'coinbase' | 'phantom' | 'walletconnect' | 'browser' | 'generic';
+
+type WalletOption = {
+  connector: Connector;
+  description: string;
+  icon?: string;
+  id: WalletIconId;
+  name: string;
+  order: number;
+};
+
+const WALLET_META: Record<WalletIconId, Omit<WalletOption, 'connector' | 'icon'>> = {
+  metamask: {
+    id: 'metamask',
+    name: 'MetaMask',
+    description: 'Browser extension or mobile wallet',
+    order: 10,
+  },
+  rabby: {
+    id: 'rabby',
+    name: 'Rabby',
+    description: 'Browser extension wallet',
+    order: 20,
+  },
+  coinbase: {
+    id: 'coinbase',
+    name: 'Coinbase Wallet',
+    description: 'Browser extension wallet',
+    order: 30,
+  },
+  phantom: {
+    id: 'phantom',
+    name: 'Phantom',
+    description: 'Phantom Ethereum wallet',
+    order: 40,
+  },
+  walletconnect: {
+    id: 'walletconnect',
+    name: 'WalletConnect',
+    description: 'Scan with mobile or desktop wallet',
+    order: 50,
+  },
+  browser: {
+    id: 'browser',
+    name: 'Browser Wallet',
+    description: 'Use the active injected wallet',
+    order: 60,
+  },
+  generic: {
+    id: 'generic',
+    name: 'Wallet',
+    description: 'Injected EVM wallet',
+    order: 70,
+  },
+};
+
+function buildWalletOptions(connectors: readonly Connector[]): WalletOption[] {
+  const byWallet = new Map<string, WalletOption>();
+  for (const option of connectors
+    .map((connector) => {
+      const id = walletIconId(connector);
+      const meta = WALLET_META[id];
+      const name = id === 'generic' ? normalizeConnectorName(connector.name) : meta.name;
+      const description = id === 'generic' ? 'EVM wallet' : meta.description;
+      return {
+        connector,
+        description,
+        icon: connector.icon,
+        id,
+        name,
+        order: meta.order,
+      };
+    })) {
+    const duplicateKey = option.id === 'browser' || option.id === 'generic'
+      ? `${option.id}:${option.name}`
+      : option.id;
+    const existing = byWallet.get(duplicateKey);
+    if (!existing || (!existing.icon && option.icon)) {
+      byWallet.set(duplicateKey, option);
+    }
+  }
+
+  return Array.from(byWallet.values())
+    .sort((a, b) => a.order - b.order || a.name.localeCompare(b.name));
+}
+
+function useConnectorAvailability(walletOptions: readonly WalletOption[]): Record<string, boolean> {
+  const [availability, setAvailability] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    void Promise.all(
+      walletOptions.map(async ({ connector, id }) => {
+        if (id === 'walletconnect') return [connector.uid, true] as const;
+        try {
+          return [connector.uid, Boolean(await connector.getProvider())] as const;
+        } catch {
+          return [connector.uid, false] as const;
+        }
+      }),
+    ).then((entries) => {
+      if (!cancelled) setAvailability(Object.fromEntries(entries));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [walletOptions]);
+
+  return availability;
+}
+
+function walletIconId(connector: Connector): WalletIconId {
+  const id = connector.id.toLowerCase();
+  const name = connector.name.toLowerCase();
+  if (id.includes('metamask') || name.includes('metamask')) return 'metamask';
+  if (id.includes('rabby') || name.includes('rabby')) return 'rabby';
+  if (id.includes('coinbase') || name.includes('coinbase')) return 'coinbase';
+  if (id.includes('phantom') || name.includes('phantom')) return 'phantom';
+  if (id.includes('walletconnect') || name.includes('walletconnect')) return 'walletconnect';
+  if (id === 'injected' || name === 'injected') return 'browser';
+  return 'generic';
+}
+
+function normalizeConnectorName(name: string): string {
+  return name === 'Injected' ? 'Browser Wallet' : name;
+}
+
+function WalletLogo({ icon, id, name }: { icon?: string; id: WalletIconId; name: string }) {
+  if (icon) {
+    return (
+      <span className="flex h-10 w-10 items-center justify-center rounded-xl border border-white/10 bg-white">
+        <span
+          aria-hidden="true"
+          className="h-7 w-7 bg-contain bg-center bg-no-repeat"
+          style={{ backgroundImage: `url(${icon})` }}
+        />
+      </span>
+    );
+  }
+
+  if (id === 'walletconnect') {
+    return (
+      <span className="flex h-10 w-10 items-center justify-center rounded-xl bg-[#2b6fff]">
+        <svg viewBox="0 0 32 32" aria-hidden="true" className="h-7 w-7 text-white">
+          <path fill="currentColor" d="M9.1 13.4a9.8 9.8 0 0 1 13.8 0l.5.5a.6.6 0 0 1 0 .8l-1.7 1.7a.4.4 0 0 1-.6 0l-.7-.7a6.3 6.3 0 0 0-8.8 0l-.8.8a.4.4 0 0 1-.6 0l-1.7-1.8a.6.6 0 0 1 0-.8l.6-.5Z" />
+          <path fill="currentColor" d="m26 16.5 1.5 1.5a.6.6 0 0 1 0 .8l-6.8 6.8a.7.7 0 0 1-1 0l-4.8-4.8a.2.2 0 0 0-.3 0l-4.8 4.8a.7.7 0 0 1-1 0L2 18.8a.6.6 0 0 1 0-.8l1.5-1.5a.6.6 0 0 1 .8 0l5 5a.2.2 0 0 0 .3 0l4.8-4.8a.7.7 0 0 1 1 0l4.8 4.8a.2.2 0 0 0 .3 0l5-5a.6.6 0 0 1 .8 0Z" />
+        </svg>
+      </span>
+    );
+  }
+
+  const styles: Record<WalletIconId, string> = {
+    metamask: 'bg-[#f6851b] text-[#22170f]',
+    rabby: 'bg-[#9de5ff] text-[#09131a]',
+    coinbase: 'bg-[#0052ff] text-white',
+    phantom: 'bg-[#ab9ff2] text-[#171020]',
+    walletconnect: 'bg-[#2b6fff] text-white',
+    browser: 'bg-[#252932] text-white',
+    generic: 'bg-[#252932] text-white',
+  };
+  const label = id === 'metamask' ? 'M' : id === 'coinbase' ? 'C' : id === 'phantom' ? 'P' : id === 'rabby' ? 'R' : name.slice(0, 1).toUpperCase();
+
+  return (
+    <span className={`flex h-10 w-10 items-center justify-center rounded-xl text-base font-black ${styles[id]}`}>
+      {label}
+    </span>
   );
 }
 
