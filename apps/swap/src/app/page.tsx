@@ -108,7 +108,6 @@ export default function SwapPage() {
   const [sourceToken, setSourceToken] = useState('');
   const [amount, setAmount] = useState('');
   const [xmrAddress, setXmrAddress] = useState('');
-  const [sourceAddress, setSourceAddress] = useState('');
   const [destinationAddress, setDestinationAddress] = useState('');
   const [refundAddress, setRefundAddress] = useState('');
   const [executionPolicy, setExecutionPolicy] = useState<ExecutionPolicy>(DEFAULT_EXECUTION_POLICY);
@@ -137,7 +136,6 @@ export default function SwapPage() {
         setSourceToken(next.sourceToken);
         setAmount(formatBaseUnits(next.amount, orderInputDecimals(next)));
         setXmrAddress(next.xmrAddress);
-        setSourceAddress(next.funding.type === 'deposit-address' ? next.funding.sourceAddress ?? '' : '');
         setDestinationAddress(next.destinationAddress ?? '');
         setRefundAddress(next.refundAddress ?? '');
         setExecutionPolicy(next.executionPolicy ?? DEFAULT_EXECUTION_POLICY);
@@ -208,11 +206,8 @@ export default function SwapPage() {
       ? isPotentialSolanaAddress(destinationAddress)
       : Boolean(destinationAddress.trim());
   const hasValidXmrAddress = isValidMoneroAddress(xmrAddress);
-  const isBitcoinSource = direction === FORWARD_DIRECTION && sourceChain === 'bitcoin';
-  const hasBitcoinSourceAddress = !isBitcoinSource || Boolean(sourceAddress.trim());
   const canPreviewQuote = Boolean(sourceToken) &&
     parsedAmount > BigInt(0) &&
-    hasBitcoinSourceAddress &&
     (direction === FORWARD_DIRECTION || (destinationAddressOk && hasValidXmrAddress));
   const quoteExpiresIn = useCountdown(quote?.expiresAt);
   const quoteExpired = quoteExpiresIn === 0;
@@ -220,7 +215,6 @@ export default function SwapPage() {
     direction,
     hasValidXmrAddress,
     destinationAddressOk,
-    hasBitcoinSourceAddress,
   });
   const canCreateOrder = Boolean(quote) &&
     !quoteExpired &&
@@ -271,7 +265,6 @@ export default function SwapPage() {
           sourceChain,
           sourceToken,
           amount: parsedAmount.toString(),
-          sourceAddress: isBitcoinSource && sourceAddress.trim() ? sourceAddress.trim() : undefined,
           xmrAddress: hasValidXmrAddress ? xmrAddress : undefined,
           destinationAddress: direction === REVERSE_DIRECTION ? destinationAddress.trim() : undefined,
           refundAddress: refundAddress || undefined,
@@ -295,7 +288,7 @@ export default function SwapPage() {
         setIsQuoteRefreshing(false);
       }
     }
-  }, [canPreviewQuote, destinationAddress, direction, executionPolicy, hasValidXmrAddress, isBitcoinSource, parsedAmount, refundAddress, sourceAddress, sourceChain, sourceToken, xmrAddress]);
+  }, [canPreviewQuote, destinationAddress, direction, executionPolicy, hasValidXmrAddress, parsedAmount, refundAddress, sourceChain, sourceToken, xmrAddress]);
 
   useEffect(() => {
     if (!canPreviewQuote || order) return;
@@ -326,7 +319,6 @@ export default function SwapPage() {
         method: 'POST',
         body: JSON.stringify({
           quoteId: quote.id,
-          sourceAddress: isBitcoinSource ? sourceAddress.trim() : undefined,
           refundAddress: refundAddress || undefined,
           xmrAddress: xmrAddress.trim(),
           executionPolicy,
@@ -426,15 +418,10 @@ export default function SwapPage() {
               direction={direction}
               sourceChain={sourceChain}
               xmrAddress={xmrAddress}
-              sourceAddress={sourceAddress}
               destinationAddress={destinationAddress}
               refundAddress={refundAddress}
               onXmrAddressChange={(next) => {
                 setXmrAddress(next);
-              }}
-              onSourceAddressChange={(next) => {
-                setSourceAddress(next);
-                resetTrade({ preserveQuote: parsedAmount > BigInt(0) });
               }}
               onDestinationAddressChange={(next) => {
                 setDestinationAddress(next);
@@ -724,28 +711,22 @@ function RecipientPanel({
   direction,
   sourceChain,
   xmrAddress,
-  sourceAddress,
   destinationAddress,
   refundAddress,
   onXmrAddressChange,
-  onSourceAddressChange,
   onDestinationAddressChange,
   onRefundAddressChange,
 }: {
   direction: SwapDirection;
   sourceChain: SourceChainId;
   xmrAddress: string;
-  sourceAddress: string;
   destinationAddress: string;
   refundAddress: string;
   onXmrAddressChange: (value: string) => void;
-  onSourceAddressChange: (value: string) => void;
   onDestinationAddressChange: (value: string) => void;
   onRefundAddressChange: (value: string) => void;
 }) {
   const addressOk = !xmrAddress || isValidMoneroAddress(xmrAddress);
-  const isBitcoinSource = direction === FORWARD_DIRECTION && sourceChain === 'bitcoin';
-  const bitcoinSourceOk = !isBitcoinSource || Boolean(sourceAddress.trim());
   const destinationLabel = sourceChain === 'solana' ? 'Solana receive address' : 'Destination address';
   const destinationPlaceholder = sourceChain === 'solana' ? 'Solana wallet address' : 'Wallet on the destination chain';
 
@@ -768,23 +749,6 @@ function RecipientPanel({
               className="w-full resize-none rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
             />
           </label>
-          {isBitcoinSource && (
-            <label>
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <span className="text-sm text-[#9aa0aa]">BTC source/refund address</span>
-                <span className={bitcoinSourceOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff7777]'}>
-                  {bitcoinSourceOk ? 'Ready' : 'Required'}
-                </span>
-              </div>
-              <textarea
-                value={sourceAddress}
-                onChange={(event) => onSourceAddressChange(event.target.value.trim())}
-                rows={2}
-                placeholder="bc1..."
-                className="w-full resize-none rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
-              />
-            </label>
-          )}
           <label>
             <div className="mb-2 text-sm text-[#9aa0aa]">Solana refund address</div>
             <input
@@ -1136,7 +1100,6 @@ function BtcDepositFunding({
           </div>
         </div>
         {funding.memo && <Metric label="Memo" value={funding.memo} />}
-        {funding.sourceAddress && <Metric label="Refund address" value={funding.sourceAddress} />}
         <button
           onClick={copyAddress}
           disabled={!addressReady}
@@ -1803,17 +1766,14 @@ function getCreateOrderBlocker({
   direction,
   hasValidXmrAddress,
   destinationAddressOk,
-  hasBitcoinSourceAddress,
 }: {
   direction: SwapDirection;
   hasValidXmrAddress: boolean;
   destinationAddressOk: boolean;
-  hasBitcoinSourceAddress: boolean;
 }): string | null {
   if (!hasValidXmrAddress) {
     return direction === FORWARD_DIRECTION ? 'Enter XMR address' : 'Enter XMR refund address';
   }
-  if (!hasBitcoinSourceAddress) return 'Enter BTC refund address';
   if (direction === REVERSE_DIRECTION && !destinationAddressOk) return 'Enter destination address';
   return null;
 }

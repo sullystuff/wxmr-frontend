@@ -106,10 +106,6 @@ function registerRoutes(prefix: "" | "/api"): void {
       if (sourceChain !== "solana" && sourceChain !== "bitcoin" && chain.kind !== "evm") {
         return reply.code(400).send({ error: "this build supports Mayan Swift v2 EVM sources; Sui and Hyperliquid need separate wallet signing" });
       }
-      if (sourceChain === "bitcoin" && !body.sourceAddress) {
-        return reply.code(400).send({ error: "BTC source/refund address is required before quoting" });
-      }
-
       const quote = sourceChain === "bitcoin" ? await quoteBtcToXmr({
         direction,
         sourceChain,
@@ -207,12 +203,6 @@ function registerRoutes(prefix: "" | "/api"): void {
     const executionPolicy = normalizeExecutionPolicy(body.executionPolicy ?? quote.executionPolicy);
     if (quote.direction === "mayan-to-xmr") {
       assertValidMoneroAddress(xmrAddress ?? "");
-    }
-    if (quote.route === "thorchain" && !sourceAddress) {
-      return reply.code(400).send({ error: "BTC source/refund address is required" });
-    }
-    if (quote.route === "thorchain" && sourceAddress !== quote.sourceAddress) {
-      return reply.code(400).send({ error: "Refresh the quote after changing the BTC source/refund address" });
     }
     const funding = await buildFundingInstructions(orderId, { ...quote, sourceAddress, refundAddress, xmrAddress: xmrAddress ?? quote.xmrAddress });
     const order: Order = {
@@ -395,7 +385,6 @@ async function quoteSolanaToXmr(input: QuoteRequest): Promise<Quote> {
 
 async function quoteBtcToXmr(input: QuoteRequest): Promise<Quote> {
   const slippageBps = normalizeSlippageBps(input.slippageBps);
-  if (!input.sourceAddress) throw new Error("BTC source/refund address is required before quoting");
 
   let directError: unknown;
   const directQuote = await thorchain.fetchSwapQuote({
@@ -403,7 +392,6 @@ async function quoteBtcToXmr(input: QuoteRequest): Promise<Quote> {
     toAsset: THORCHAIN.solanaUsdcAsset,
     amount: input.amount,
     destination: env.solanaHotWallet.publicKey.toBase58(),
-    refundAddress: input.sourceAddress,
     toleranceBps: slippageBps,
   }).catch((error) => {
     directError = error;
@@ -498,7 +486,6 @@ async function quoteBtcToEthUsdc(
     toAsset: THORCHAIN.ethUsdcAsset,
     amount: input.amount,
     destination: env.evmHotWalletAddress,
-    refundAddress: input.sourceAddress,
     toleranceBps: slippageBps,
   });
   const expectedEthUsdcOut = thorchainAmountToBaseUnits(quote.expected_amount_out, USDC_DECIMALS);
@@ -669,7 +656,6 @@ async function buildFundingInstructions(orderId: string, quote: Quote): Promise<
 
   if (quote.route === "thorchain") {
     if (!quote.thorchain) throw new Error("THORChain quote metadata is missing");
-    if (!quote.sourceAddress) throw new Error("BTC source/refund address is required");
     return {
       type: "deposit-address",
       orderId,
