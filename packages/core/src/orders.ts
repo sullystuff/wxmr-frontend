@@ -71,10 +71,11 @@ export interface Quote {
   executionPolicy: ExecutionPolicy;
   jupiterPriceImpactPct: string;
   expiresAt: string;
-  route: "mayan" | "solana" | "thorchain";
+  route: "mayan" | "solana" | "thorchain" | "chainflip";
   routeSummary?: string;
   mayan?: MayanQuoteMetadata;
   thorchain?: ThorchainQuoteMetadata;
+  chainflip?: ChainflipQuoteMetadata;
 }
 
 export type FundingInstructions =
@@ -105,6 +106,17 @@ export interface ThorchainQuoteMetadata {
   estimatedTimeSeconds?: number;
   fees?: unknown;
   mayan?: MayanQuoteMetadata;
+}
+
+export interface ChainflipQuoteMetadata {
+  fromAsset: string;
+  toAsset: string;
+  quote: unknown;
+  expectedSolanaUsdcOut: string;
+  minSolanaUsdcOut: string;
+  slippageBps: number;
+  estimatedTimeSeconds?: number;
+  fees?: unknown;
 }
 
 export interface MayanSwiftFunding {
@@ -226,6 +238,9 @@ export interface DepositAddressFunding {
   sourceAddress?: string;
   provider?: string;
   targetAsset?: string;
+  depositChannelId?: string;
+  channelOpeningFee?: string;
+  maxBoostFeeBps?: number;
   depositOwner?: string;
   depositPda?: string;
   createSignature?: string;

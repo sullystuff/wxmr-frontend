@@ -11,3 +11,9 @@ export class ThorchainProvider extends UnsupportedRouteProvider {
     super("thorchain", "THORChain routing is scaffolded but not active in v1");
   }
 }
+
+export class ChainflipProvider extends UnsupportedRouteProvider {
+  constructor() {
+    super("chainflip", "Chainflip routing is handled by the orchestrator");
+  }
+}

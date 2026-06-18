@@ -1,4 +1,5 @@
 export * from "./chains.js";
+export * from "./chainflip.js";
 export * from "./constants.js";
 export * from "./erc20.js";
 export * from "./jupiter.js";
