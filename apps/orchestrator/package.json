@@ -19,7 +19,8 @@
     "@wxmr/core": "*",
     "better-sqlite3": "^12.5.0",
     "dotenv": "^17.2.3",
-    "fastify": "^5.6.2"
+    "fastify": "^5.6.2",
+    "viem": "^2.52.2"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",

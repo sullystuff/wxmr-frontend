@@ -1,18 +1,27 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { Connection, PublicKey } from "@solana/web3.js";
+import { privateKeyToAccount } from "viem/accounts";
 import {
+  CHAINS,
+  THORCHAIN,
   USDC_MINT_ADDRESS,
   MayanClient,
+  ThorchainClient,
   type DepositAddressFunding,
   mayanDeliveredBaseUnits,
   mayanDestinationTx,
   mayanSwapFailed,
   mayanSwapSucceeded,
+  thorchainAmountToBaseUnits,
+  thorchainOutTx,
+  thorchainPlannedRefund,
+  thorchainTxAmount,
   type Order,
   type Quote,
 } from "@wxmr/core";
 import { loadEnv } from "./env.js";
 import { Store } from "./db.js";
+import { EvmExecutor } from "./chain/evm.js";
 import { SolanaExecutor } from "./chain/solana.js";
 import { deriveReverseDepositOwner } from "./reverse.js";
 
@@ -20,6 +29,10 @@ const env = loadEnv();
 const store = new Store(env.dbPath);
 const connection = new Connection(env.solanaRpcUrl, "confirmed");
 const mayan = new MayanClient({ apiKey: env.mayanApiKey });
+const thorchain = new ThorchainClient({ thornodeUrl: env.thornodeUrl, clientId: env.thornodeClientId });
+const evm = env.evmHotWalletPrivateKey && env.ethereumRpcUrl
+  ? new EvmExecutor(privateKeyToAccount(env.evmHotWalletPrivateKey), env.ethereumRpcUrl, env.mayanApiKey)
+  : null;
 const solana = new SolanaExecutor(connection, env.solanaHotWallet, env.bridgeProgramId, env.jupiterApiKey, env.mayanApiKey);
 const DEFAULT_SLIPPAGE_BPS = 200;
 
@@ -63,7 +76,11 @@ async function processOrder(order: Order): Promise<void> {
   }
 
   if (order.status === "bridging") {
-    await processMayanBridge(order);
+    if (order.funding.type === "deposit-address" && order.funding.chainId === "bitcoin") {
+      await processThorchainBridge(order);
+    } else {
+      await processMayanBridge(order);
+    }
     return;
   }
 
@@ -160,6 +177,122 @@ async function processMayanBridge(order: Order): Promise<void> {
       solanaMintSignature: destinationTx,
     },
     `Mayan delivered ${destinationAmount} USDC on Solana`,
+  );
+}
+
+async function processThorchainBridge(order: Order): Promise<void> {
+  if (order.funding.type !== "deposit-address" || order.funding.chainId !== "bitcoin") {
+    throw new Error("BTC order is missing THORChain deposit funding");
+  }
+  if (!order.sourceTxHash) {
+    throw new Error("BTC order has no source transaction hash");
+  }
+  const quote = mustGetQuote(order.quoteId);
+  if (!quote.thorchain) {
+    throw new Error("BTC order is missing THORChain quote metadata");
+  }
+
+  if (quote.thorchain.mode === "eth-usdc-fallback" && order.solanaMintSignature) {
+    await processThorchainMayanForward(order, quote);
+    return;
+  }
+
+  const details = await thorchain.fetchTxStatus(order.sourceTxHash);
+  const refund = thorchainPlannedRefund(details);
+  if (refund) {
+    store.updateOrder(order.id, { status: "refunded", error: "THORChain planned a refund for the BTC deposit" }, "THORChain planned a refund");
+    return;
+  }
+
+  if (quote.thorchain.mode === "direct-solana") {
+    const outTx = thorchainOutTx(details, THORCHAIN.solanaUsdcAsset, env.solanaHotWallet.publicKey.toBase58());
+    if (!outTx) throw new Error("THORChain swap pending: waiting for Solana USDC outbound");
+    const destinationAmount = thorchainAmountToBaseUnits(thorchainTxAmount(outTx, THORCHAIN.solanaUsdcAsset), 6);
+    store.updateOrder(
+      order.id,
+      {
+        status: "minted",
+        destinationAmount,
+        solanaMintSignature: outTx.id ?? order.sourceTxHash,
+      },
+      `THORChain delivered ${destinationAmount} USDC on Solana`,
+    );
+    return;
+  }
+
+  const outTx = thorchainOutTx(details, THORCHAIN.ethUsdcAsset, env.evmHotWalletAddress);
+  if (!outTx) throw new Error("THORChain swap pending: waiting for Ethereum USDC outbound");
+  if (!evm) {
+    throw new Error("EVM_HOTWALLET_PRIVATE_KEY and ETHEREUM_RPC_URL are required to forward THORChain ETH USDC to Solana");
+  }
+  const ethUsdcAmount = thorchainAmountToBaseUnits(thorchainTxAmount(outTx, THORCHAIN.ethUsdcAsset), 6);
+  const mayanQuote = await mayan.fetchSwiftQuoteForRoute({
+    fromChain: "ethereum",
+    fromToken: CHAINS.ethereum.usdc!,
+    toChain: "solana",
+    toToken: USDC_MINT_ADDRESS,
+    amount: ethUsdcAmount,
+    destinationAddress: env.solanaHotWallet.publicKey.toBase58(),
+    slippageBps: quote.thorchain.mayan?.quote.slippageBps ?? DEFAULT_SLIPPAGE_BPS,
+  });
+  if (shouldRefundOnSlippage(order) && BigInt(mayanQuote.minReceivedBaseUnits) < BigInt(quote.thorchain.minSolanaUsdcOut)) {
+    store.updateOrder(
+      order.id,
+      {
+        status: "failed",
+        error: `Mayan forwarding minimum ${mayanQuote.minReceivedBaseUnits} is below locked minimum ${quote.thorchain.minSolanaUsdcOut}`,
+      },
+      "THORChain fallback Mayan quote below locked minimum",
+    );
+    return;
+  }
+
+  const mayanTx = await evm.executeMayanSwift(mayanQuote, env.solanaHotWallet.publicKey.toBase58());
+  store.updateOrder(
+    order.id,
+    {
+      solanaMintSignature: mayanTx,
+    },
+    `Mayan ETH USDC -> Solana USDC submitted: ${mayanTx}`,
+  );
+  throw new Error(`Mayan swap pending: ${mayanTx}`);
+}
+
+async function processThorchainMayanForward(order: Order, quote: Quote): Promise<void> {
+  if (!order.solanaMintSignature) {
+    throw new Error("BTC fallback has no Mayan forwarding transaction");
+  }
+  const details = await mayan.fetchSwapByTx(order.solanaMintSignature);
+  if (mayanSwapFailed(details)) {
+    store.updateOrder(order.id, { status: "failed", error: `Mayan forwarding ${details.clientStatus ?? details.status}` }, "Mayan forwarding failed");
+    return;
+  }
+  if (!mayanSwapSucceeded(details)) {
+    throw new Error(`Mayan forwarding pending: ${details.clientStatus ?? details.status ?? "unknown"}`);
+  }
+
+  const destinationAmount = mayanDeliveredBaseUnits(details, 6);
+  const destinationTx = mayanDestinationTx(details) ?? order.solanaMintSignature;
+  const minimum = BigInt(quote.thorchain?.minSolanaUsdcOut ?? "0");
+  if (shouldRefundOnSlippage(order) && BigInt(destinationAmount) < minimum) {
+    store.updateOrder(
+      order.id,
+      {
+        status: "failed",
+        error: `Mayan forwarding delivered ${destinationAmount}, below locked minimum ${minimum}`,
+      },
+      "Mayan forwarding delivered below locked minimum",
+    );
+    return;
+  }
+  store.updateOrder(
+    order.id,
+    {
+      status: "minted",
+      destinationAmount,
+      solanaMintSignature: destinationTx,
+    },
+    `Mayan delivered ${destinationAmount} USDC on Solana after THORChain BTC swap`,
   );
 }
 
@@ -382,6 +515,12 @@ function getSolanaInputAmount(order: Order): bigint {
   if (order.funding.type === "solana-transfer") {
     return BigInt(order.destinationAmount ?? order.funding.amount);
   }
+  if (order.funding.type === "deposit-address" && order.funding.chainId === "bitcoin") {
+    if (!order.destinationAmount) {
+      throw new Error("BTC order has no delivered Solana USDC amount");
+    }
+    return BigInt(order.destinationAmount);
+  }
   return BigInt(order.amount);
 }
 
@@ -391,6 +530,9 @@ function getSolanaInputMint(order: Order): string {
   }
   if (order.funding.type === "solana-transfer") {
     return order.funding.mint;
+  }
+  if (order.funding.type === "deposit-address" && order.funding.chainId === "bitcoin") {
+    return USDC_MINT_ADDRESS;
   }
   return order.sourceToken;
 }
