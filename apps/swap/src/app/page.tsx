@@ -114,6 +114,7 @@ export default function SwapPage() {
   const [refundAddress, setRefundAddress] = useState('');
   const [executionPolicy, setExecutionPolicy] = useState<ExecutionPolicy>(DEFAULT_EXECUTION_POLICY);
   const [quote, setQuote] = useState<Quote | null>(null);
+  const [quoteKey, setQuoteKey] = useState<string | null>(null);
   const [order, setOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [isQuoteRefreshing, setIsQuoteRefreshing] = useState(false);
@@ -133,6 +134,7 @@ export default function SwapPage() {
         if (cancelled) return;
         setOrder(next);
         setQuote(null);
+        setQuoteKey(null);
         setDirection(next.direction ?? FORWARD_DIRECTION);
         setSourceChain(next.sourceChain);
         setSourceToken(next.sourceToken);
@@ -161,6 +163,7 @@ export default function SwapPage() {
     quoteRequestSeq.current += 1;
     setIsQuoteRefreshing(false);
     setQuote(null);
+    setQuoteKey(null);
     setOrder(null);
     clearOrderUrl();
   }, [direction, sourceChain]);
@@ -210,9 +213,24 @@ export default function SwapPage() {
       : Boolean(destinationAddress.trim());
   const hasValidXmrAddress = isValidMoneroAddress(xmrAddress);
   const hasBitcoinRefundAddress = Boolean(sourceAddress.trim());
-  const canPreviewQuote = Boolean(sourceToken) &&
+  const sourceTokenReady = Boolean(sourceToken) && Boolean(selectedToken);
+  const canPreviewQuote = sourceTokenReady &&
     parsedAmount > BigInt(0) &&
     (direction === FORWARD_DIRECTION || (destinationAddressOk && hasValidXmrAddress));
+  const quoteRequestKey = useMemo(() => {
+    if (!canPreviewQuote) return null;
+    return [
+      direction,
+      sourceChain,
+      sourceToken,
+      parsedAmount.toString(),
+      hasValidXmrAddress ? xmrAddress.trim() : '',
+      direction === REVERSE_DIRECTION ? destinationAddress.trim() : '',
+      refundAddress.trim(),
+      executionPolicy,
+    ].join('|');
+  }, [canPreviewQuote, destinationAddress, direction, executionPolicy, hasValidXmrAddress, parsedAmount, refundAddress, sourceChain, sourceToken, xmrAddress]);
+  const quoteMatchesInputs = Boolean(quote && quoteKey && quoteKey === quoteRequestKey);
   const quoteExpiresIn = useCountdown(quote?.expiresAt);
   const quoteExpired = quoteExpiresIn === 0;
   const createOrderBlocker = getCreateOrderBlocker({
@@ -222,13 +240,13 @@ export default function SwapPage() {
     hasValidXmrAddress,
     destinationAddressOk,
   });
-  const canCreateOrder = Boolean(quote) &&
+  const canCreateOrder = quoteMatchesInputs &&
     !quoteExpired &&
     !isQuoteRefreshing &&
     !createOrderBlocker;
   const routeLegs = buildRouteLegs({ direction, quote, selectedToken, sourceChain });
-  const primaryLabel = getPrimaryLabel({ quote, order, isLoading, isQuoteRefreshing, quoteExpired, createOrderBlocker });
-  const primaryDisabled = getPrimaryDisabled({ canPreviewQuote, canCreateOrder, quote, order, isLoading, isQuoteRefreshing, quoteExpired });
+  const primaryLabel = getPrimaryLabel({ quote, quoteMatchesInputs, order, isLoading, isQuoteRefreshing, quoteExpired, createOrderBlocker });
+  const primaryDisabled = getPrimaryDisabled({ canPreviewQuote, canCreateOrder, quote, quoteMatchesInputs, order, isLoading, isQuoteRefreshing, quoteExpired });
   const receivePreview = formatReceivePreview({ direction, quote, token: selectedToken });
   const isReceivePreviewLoading = isQuoteRefreshing && canPreviewQuote;
 
@@ -239,6 +257,7 @@ export default function SwapPage() {
     } else {
       setIsQuoteRefreshing(false);
       setQuote(null);
+      setQuoteKey(null);
     }
     setOrder(null);
     clearOrderUrl();
@@ -257,7 +276,7 @@ export default function SwapPage() {
   };
 
   const fetchQuote = useCallback(async ({ showLoading }: { showLoading: boolean }) => {
-    if (!canPreviewQuote) return;
+    if (!canPreviewQuote || !quoteRequestKey) return;
     const requestSeq = quoteRequestSeq.current + 1;
     quoteRequestSeq.current = requestSeq;
     setIsQuoteRefreshing(true);
@@ -280,6 +299,7 @@ export default function SwapPage() {
       });
       if (quoteRequestSeq.current !== requestSeq) return;
       setQuote(next);
+      setQuoteKey(quoteRequestKey);
       setOrder(null);
       clearOrderUrl();
     } catch (e) {
@@ -294,15 +314,16 @@ export default function SwapPage() {
         setIsQuoteRefreshing(false);
       }
     }
-  }, [canPreviewQuote, destinationAddress, direction, executionPolicy, hasValidXmrAddress, parsedAmount, refundAddress, sourceChain, sourceToken, xmrAddress]);
+  }, [canPreviewQuote, destinationAddress, direction, executionPolicy, hasValidXmrAddress, parsedAmount, quoteRequestKey, refundAddress, sourceChain, sourceToken, xmrAddress]);
 
   useEffect(() => {
-    if (!canPreviewQuote || order) return;
+    if (!canPreviewQuote || !quoteRequestKey || order || quoteMatchesInputs) return;
+    if (quote) setIsQuoteRefreshing(true);
     const timer = setTimeout(() => {
       void fetchQuote({ showLoading: false });
-    }, 650);
+    }, quote ? 150 : 0);
     return () => clearTimeout(timer);
-  }, [canPreviewQuote, fetchQuote, order]);
+  }, [canPreviewQuote, fetchQuote, order, quote, quoteMatchesInputs, quoteRequestKey]);
 
   useEffect(() => {
     if (!canPreviewQuote || order || isLoading || isQuoteRefreshing) return;
@@ -341,7 +362,7 @@ export default function SwapPage() {
   };
 
   const onPrimaryAction = () => {
-    if (quote && !quoteExpired) {
+    if (quoteMatchesInputs && quote && !quoteExpired) {
       void createOrder();
       return;
     }
@@ -493,13 +514,13 @@ export default function SwapPage() {
           onSearchChange={setTokenSearch}
           onChainChange={(next) => {
             setSourceChain(next);
-            resetTrade();
+            resetTrade({ preserveQuote: parsedAmount > BigInt(0) });
           }}
           onClose={() => setIsTokenPickerOpen(false)}
           onSelect={(contract) => {
             setSourceToken(contract);
             setIsTokenPickerOpen(false);
-            resetTrade();
+            resetTrade({ preserveQuote: parsedAmount > BigInt(0) });
           }}
         />
       )}
@@ -2004,6 +2025,7 @@ function formatReceivePreview({
 
 function getPrimaryLabel({
   quote,
+  quoteMatchesInputs,
   order,
   isLoading,
   isQuoteRefreshing,
@@ -2011,6 +2033,7 @@ function getPrimaryLabel({
   createOrderBlocker,
 }: {
   quote: Quote | null;
+  quoteMatchesInputs: boolean;
   order: Order | null;
   isLoading: boolean;
   isQuoteRefreshing: boolean;
@@ -2020,6 +2043,7 @@ function getPrimaryLabel({
   if (isLoading) return quote ? 'Creating order...' : 'Fetching route...';
   if (order) return 'Order created';
   if (quote && isQuoteRefreshing) return 'Updating quote...';
+  if (quote && !quoteMatchesInputs) return 'Refresh quote';
   if (quoteExpired) return 'Refresh quote';
   if (quote && createOrderBlocker) return createOrderBlocker;
   if (quote) return 'Create order';
@@ -2053,6 +2077,7 @@ function getPrimaryDisabled({
   canPreviewQuote,
   canCreateOrder,
   quote,
+  quoteMatchesInputs,
   order,
   isLoading,
   isQuoteRefreshing,
@@ -2061,12 +2086,14 @@ function getPrimaryDisabled({
   canPreviewQuote: boolean;
   canCreateOrder: boolean;
   quote: Quote | null;
+  quoteMatchesInputs: boolean;
   order: Order | null;
   isLoading: boolean;
   isQuoteRefreshing: boolean;
   quoteExpired: boolean;
 }): boolean {
   if (isLoading || isQuoteRefreshing || order) return true;
+  if (quote && !quoteMatchesInputs) return !canPreviewQuote;
   if (quote && !quoteExpired) return !canCreateOrder;
   return !canPreviewQuote;
 }
