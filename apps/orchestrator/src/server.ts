@@ -6,7 +6,9 @@ import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import { Connection, PublicKey } from "@solana/web3.js";
 import {
   BRIDGE_FEE_BPS,
+  CHAINFLIP,
   CHAINS,
+  ChainflipClient,
   JupiterClient,
   THORCHAIN,
   ThorchainClient,
@@ -14,9 +16,12 @@ import {
   WXMR_MINT_ADDRESS,
   assertValidMoneroAddress,
   buildMayanSwiftFunding,
+  chainflipDepositExpiresAt,
+  chainflipMinSolanaUsdcOut,
   filterMayanTokensForChain,
   thorchainAmountToBaseUnits,
   thorchainSeconds,
+  type ChainflipQuote,
   type DepositAddressFunding,
   type ExecutionPolicy,
   type MayanEvmTxPayload,
@@ -39,6 +44,7 @@ const store = new Store(env.dbPath);
 const connection = new Connection(env.solanaRpcUrl, "confirmed");
 const jupiter = new JupiterClient({ apiKey: env.jupiterApiKey });
 const mayan = new MayanClient({ apiKey: env.mayanApiKey });
+const chainflip = new ChainflipClient({ backendUrl: env.chainflipBackendUrl });
 const thorchain = new ThorchainClient({ thornodeUrl: env.thornodeUrl, clientId: env.thornodeClientId });
 const solana = new SolanaExecutor(connection, env.solanaHotWallet, env.bridgeProgramId, env.jupiterApiKey, env.mayanApiKey);
 const DEFAULT_EXECUTION_POLICY: ExecutionPolicy = "execute-anyway";
@@ -204,7 +210,11 @@ function registerRoutes(prefix: "" | "/api"): void {
     if (quote.direction === "mayan-to-xmr") {
       assertValidMoneroAddress(xmrAddress ?? "");
     }
+    if (quote.route === "chainflip" && !sourceAddress) {
+      return reply.code(400).send({ error: "BTC refund address is required for Chainflip" });
+    }
     const funding = await buildFundingInstructions(orderId, { ...quote, sourceAddress, refundAddress, xmrAddress: xmrAddress ?? quote.xmrAddress });
+    const orderExpiresAt = funding.type === "deposit-address" ? funding.expiresAt : quote.expiresAt;
     const order: Order = {
       id: orderId,
       quoteId: quote.id,
@@ -222,7 +232,7 @@ function registerRoutes(prefix: "" | "/api"): void {
       funding,
       createdAt: now,
       updatedAt: now,
-      expiresAt: quote.expiresAt,
+      expiresAt: orderExpiresAt,
     };
 
     store.createOrder(order);
@@ -385,6 +395,58 @@ async function quoteSolanaToXmr(input: QuoteRequest): Promise<Quote> {
 
 async function quoteBtcToXmr(input: QuoteRequest): Promise<Quote> {
   const slippageBps = normalizeSlippageBps(input.slippageBps);
+
+  const chainflipQuote = await chainflip.fetchBtcToSolanaUsdcQuote({
+    amount: input.amount,
+  }).catch(() => null);
+
+  if (chainflipQuote) {
+    const expectedSolanaUsdcOut = chainflipQuote.egressAmount;
+    const minSolanaUsdcOut = chainflipMinSolanaUsdcOut(chainflipQuote, slippageBps);
+    const expectedJupiterQuote = await jupiter.quoteUsdcToWxmr(expectedSolanaUsdcOut);
+    const minJupiterQuote = await jupiter.quoteUsdcToWxmr(minSolanaUsdcOut);
+    const grossWxmr = BigInt(expectedJupiterQuote.outAmount);
+    const minGrossWxmr = BigInt(minJupiterQuote.outAmount);
+    const afterService = applyBps(grossWxmr, 10_000 - env.serviceFeeBps);
+    const minAfterService = applyBps(minGrossWxmr, 10_000 - env.serviceFeeBps);
+    const minWxmrOut = applyBps(minAfterService, 10_000 - slippageBps);
+    const estimatedXmrOut = applyBps(afterService, 10_000 - BRIDGE_FEE_BPS);
+    const minXmrOut = applyBps(minWxmrOut, 10_000 - BRIDGE_FEE_BPS);
+
+    return {
+      id: crypto.randomUUID(),
+      direction: "mayan-to-xmr",
+      sourceChain: "bitcoin",
+      sourceToken: input.sourceToken,
+      sourceTokenSymbol: "BTC",
+      sourceTokenDecimals: CHAINFLIP.btcDecimals,
+      inputAmount: input.amount,
+      sourceAddress: input.sourceAddress,
+      xmrAddress: input.xmrAddress ?? "",
+      refundAddress: input.refundAddress,
+      estimatedWxmrOut: afterService.toString(),
+      estimatedXmrOut: estimatedXmrOut.toString(),
+      minWxmrOut: minWxmrOut.toString(),
+      minXmrOut: minXmrOut.toString(),
+      bridgeFeeBps: BRIDGE_FEE_BPS,
+      serviceFeeBps: env.serviceFeeBps,
+      executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
+      jupiterPriceImpactPct: expectedJupiterQuote.priceImpactPct ?? "0",
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      route: "chainflip",
+      routeSummary: "BTC -> USDC-SOL via Chainflip -> XMR-SOL via jup.ag -> native XMR via Monero Bridge",
+      chainflip: {
+        fromAsset: "BTC",
+        toAsset: "USDC-SOL",
+        quote: chainflipQuote,
+        expectedSolanaUsdcOut,
+        minSolanaUsdcOut,
+        slippageBps,
+        estimatedTimeSeconds: chainflipQuote.estimatedDurationSeconds,
+        fees: chainflipQuote.includedFees,
+      },
+    };
+  }
 
   let directError: unknown;
   const directQuote = await thorchain.fetchSwapQuote({
@@ -668,6 +730,32 @@ async function buildFundingInstructions(orderId: string, quote: Quote): Promise<
       sourceAddress: quote.sourceAddress,
       provider: "THORChain",
       targetAsset: quote.thorchain.toAsset,
+    };
+  }
+
+  if (quote.route === "chainflip") {
+    if (!quote.chainflip) throw new Error("Chainflip quote metadata is missing");
+    if (!quote.sourceAddress) throw new Error("BTC refund address is required for Chainflip");
+    const deposit = await chainflip.openDepositAddress({
+      quote: quote.chainflip.quote as ChainflipQuote,
+      destinationAddress: env.solanaHotWallet.publicKey.toBase58(),
+      refundAddress: quote.sourceAddress,
+      slippageBps: quote.chainflip.slippageBps,
+    });
+    return {
+      type: "deposit-address",
+      orderId,
+      chainId: "bitcoin",
+      asset: "BTC",
+      address: deposit.depositAddress,
+      expiresAt: chainflipDepositExpiresAt(deposit),
+      expectedAmount: quote.inputAmount,
+      sourceAddress: quote.sourceAddress,
+      provider: "Chainflip",
+      targetAsset: "USDC-SOL",
+      depositChannelId: deposit.id,
+      channelOpeningFee: deposit.channelOpeningFee,
+      maxBoostFeeBps: deposit.maxBoostFeeBps,
     };
   }
 

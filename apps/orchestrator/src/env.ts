@@ -24,6 +24,7 @@ export interface Env {
   serviceFeeBps: number;
   jupiterApiKey?: string;
   mayanApiKey?: string;
+  chainflipBackendUrl?: string;
   thornodeUrl?: string;
   thornodeClientId?: string;
   evmHotWalletPrivateKey?: Hex;
@@ -46,6 +47,7 @@ export function loadEnv(): Env {
     serviceFeeBps: Number(process.env.SERVICE_FEE_BPS ?? 0),
     jupiterApiKey: process.env.JUPITER_API_KEY,
     mayanApiKey: process.env.MAYAN_API_KEY,
+    chainflipBackendUrl: process.env.CHAINFLIP_BACKEND_URL,
     thornodeUrl: process.env.THORNODE_URL,
     thornodeClientId: process.env.THORNODE_CLIENT_ID,
     evmHotWalletPrivateKey,

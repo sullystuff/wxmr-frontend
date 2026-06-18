@@ -3,10 +3,15 @@ import { Connection, PublicKey } from "@solana/web3.js";
 import { privateKeyToAccount } from "viem/accounts";
 import {
   CHAINS,
+  ChainflipClient,
   THORCHAIN,
   USDC_MINT_ADDRESS,
   MayanClient,
   ThorchainClient,
+  chainflipDeliveredBaseUnits,
+  chainflipDestinationTx,
+  chainflipSwapFailed,
+  chainflipSwapSucceeded,
   type DepositAddressFunding,
   mayanDeliveredBaseUnits,
   mayanDestinationTx,
@@ -29,6 +34,7 @@ const env = loadEnv();
 const store = new Store(env.dbPath);
 const connection = new Connection(env.solanaRpcUrl, "confirmed");
 const mayan = new MayanClient({ apiKey: env.mayanApiKey });
+const chainflip = new ChainflipClient({ backendUrl: env.chainflipBackendUrl });
 const thorchain = new ThorchainClient({ thornodeUrl: env.thornodeUrl, clientId: env.thornodeClientId });
 const evm = env.evmHotWalletPrivateKey && env.ethereumRpcUrl
   ? new EvmExecutor(privateKeyToAccount(env.evmHotWalletPrivateKey), env.ethereumRpcUrl, env.mayanApiKey)
@@ -77,7 +83,11 @@ async function processOrder(order: Order): Promise<void> {
 
   if (order.status === "bridging") {
     if (order.funding.type === "deposit-address" && order.funding.chainId === "bitcoin") {
-      await processThorchainBridge(order);
+      if (order.funding.provider === "Chainflip") {
+        await processChainflipBridge(order);
+      } else {
+        await processThorchainBridge(order);
+      }
     } else {
       await processMayanBridge(order);
     }
@@ -177,6 +187,53 @@ async function processMayanBridge(order: Order): Promise<void> {
       solanaMintSignature: destinationTx,
     },
     `Mayan delivered ${destinationAmount} USDC on Solana`,
+  );
+}
+
+async function processChainflipBridge(order: Order): Promise<void> {
+  if (order.funding.type !== "deposit-address" || order.funding.chainId !== "bitcoin") {
+    throw new Error("BTC order is missing Chainflip deposit funding");
+  }
+  const channelId = order.funding.depositChannelId;
+  if (!channelId) {
+    throw new Error("Chainflip BTC order is missing a deposit channel id");
+  }
+  const quote = mustGetQuote(order.quoteId);
+  if (!quote.chainflip) {
+    throw new Error("BTC order is missing Chainflip quote metadata");
+  }
+
+  const status = await chainflip.fetchStatus(channelId);
+  if (chainflipSwapFailed(status)) {
+    store.updateOrder(order.id, { status: "failed", error: `Chainflip swap ${status.state}` }, "Chainflip swap failed");
+    return;
+  }
+  if (!chainflipSwapSucceeded(status)) {
+    throw new Error(`Chainflip swap pending: ${status.state}`);
+  }
+
+  const destinationAmount = chainflipDeliveredBaseUnits(status);
+  const minimum = BigInt(quote.chainflip.minSolanaUsdcOut);
+  if (shouldRefundOnSlippage(order) && BigInt(destinationAmount) < minimum) {
+    store.updateOrder(
+      order.id,
+      {
+        status: "failed",
+        error: `Chainflip delivered ${destinationAmount}, below locked minimum ${minimum}`,
+      },
+      "Chainflip delivered below locked minimum",
+    );
+    return;
+  }
+
+  store.updateOrder(
+    order.id,
+    {
+      status: "minted",
+      destinationAmount,
+      solanaMintSignature: chainflipDestinationTx(status) ?? order.sourceTxHash,
+    },
+    `Chainflip delivered ${destinationAmount} USDC on Solana`,
   );
 }
 
