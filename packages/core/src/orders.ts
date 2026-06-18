@@ -38,6 +38,7 @@ export interface QuoteRequest {
   sourceChain: SourceChainId;
   sourceToken: string;
   amount: string;
+  sourceAddress?: string;
   xmrAddress?: string;
   destinationAddress?: string;
   refundAddress?: string;
@@ -53,6 +54,7 @@ export interface Quote {
   sourceTokenSymbol?: string;
   sourceTokenDecimals?: number;
   inputAmount: string;
+  sourceAddress?: string;
   xmrAddress: string;
   destinationAddress?: string;
   destinationTokenSymbol?: string;
@@ -72,6 +74,7 @@ export interface Quote {
   route: "mayan" | "solana" | "thorchain";
   routeSummary?: string;
   mayan?: MayanQuoteMetadata;
+  thorchain?: ThorchainQuoteMetadata;
 }
 
 export type FundingInstructions =
@@ -87,6 +90,21 @@ export interface MayanQuoteMetadata {
   clientEta?: string;
   protocolBps?: number;
   quoteId?: string;
+}
+
+export interface ThorchainQuoteMetadata {
+  mode: "direct-solana" | "eth-usdc-fallback";
+  fromAsset: string;
+  toAsset: string;
+  expectedOut: string;
+  expectedSolanaUsdcOut: string;
+  minSolanaUsdcOut: string;
+  inboundAddress: string;
+  memo: string;
+  expiry: number;
+  estimatedTimeSeconds?: number;
+  fees?: unknown;
+  mayan?: MayanQuoteMetadata;
 }
 
 export interface MayanSwiftFunding {
@@ -205,6 +223,9 @@ export interface DepositAddressFunding {
   memo?: string;
   expiresAt: string;
   expectedAmount?: string;
+  sourceAddress?: string;
+  provider?: string;
+  targetAsset?: string;
   depositOwner?: string;
   depositPda?: string;
   createSignature?: string;

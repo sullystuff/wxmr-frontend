@@ -23,3 +23,13 @@ export const ERC20_ALLOWANCE_ABI = [
     outputs: [{ name: "", type: "uint256" }],
   },
 ] as const;
+
+export const ERC20_BALANCE_OF_ABI = [
+  {
+    type: "function",
+    name: "balanceOf",
+    stateMutability: "view",
+    inputs: [{ name: "account", type: "address" }],
+    outputs: [{ name: "", type: "uint256" }],
+  },
+] as const;

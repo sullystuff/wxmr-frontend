@@ -6,4 +6,5 @@ export * from "./mayan.js";
 export * from "./monero.js";
 export * from "./orders.js";
 export * from "./routes.js";
+export * from "./thorchain.js";
 export * from "./providers/stubs.js";
