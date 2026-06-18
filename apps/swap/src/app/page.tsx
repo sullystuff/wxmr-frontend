@@ -108,6 +108,7 @@ export default function SwapPage() {
   const [sourceToken, setSourceToken] = useState('');
   const [amount, setAmount] = useState('');
   const [xmrAddress, setXmrAddress] = useState('');
+  const [sourceAddress, setSourceAddress] = useState('');
   const [destinationAddress, setDestinationAddress] = useState('');
   const [refundAddress, setRefundAddress] = useState('');
   const [executionPolicy, setExecutionPolicy] = useState<ExecutionPolicy>(DEFAULT_EXECUTION_POLICY);
@@ -136,6 +137,7 @@ export default function SwapPage() {
         setSourceToken(next.sourceToken);
         setAmount(formatBaseUnits(next.amount, orderInputDecimals(next)));
         setXmrAddress(next.xmrAddress);
+        setSourceAddress(next.funding.type === 'deposit-address' ? next.funding.sourceAddress ?? '' : '');
         setDestinationAddress(next.destinationAddress ?? '');
         setRefundAddress(next.refundAddress ?? '');
         setExecutionPolicy(next.executionPolicy ?? DEFAULT_EXECUTION_POLICY);
@@ -206,6 +208,7 @@ export default function SwapPage() {
       ? isPotentialSolanaAddress(destinationAddress)
       : Boolean(destinationAddress.trim());
   const hasValidXmrAddress = isValidMoneroAddress(xmrAddress);
+  const hasBitcoinRefundAddress = Boolean(sourceAddress.trim());
   const canPreviewQuote = Boolean(sourceToken) &&
     parsedAmount > BigInt(0) &&
     (direction === FORWARD_DIRECTION || (destinationAddressOk && hasValidXmrAddress));
@@ -213,6 +216,8 @@ export default function SwapPage() {
   const quoteExpired = quoteExpiresIn === 0;
   const createOrderBlocker = getCreateOrderBlocker({
     direction,
+    quote,
+    hasBitcoinRefundAddress,
     hasValidXmrAddress,
     destinationAddressOk,
   });
@@ -319,6 +324,7 @@ export default function SwapPage() {
         method: 'POST',
         body: JSON.stringify({
           quoteId: quote.id,
+          sourceAddress: sourceChain === 'bitcoin' ? sourceAddress.trim() : undefined,
           refundAddress: refundAddress || undefined,
           xmrAddress: xmrAddress.trim(),
           executionPolicy,
@@ -417,11 +423,16 @@ export default function SwapPage() {
             <RecipientPanel
               direction={direction}
               sourceChain={sourceChain}
+              quote={quote}
               xmrAddress={xmrAddress}
+              sourceAddress={sourceAddress}
               destinationAddress={destinationAddress}
               refundAddress={refundAddress}
               onXmrAddressChange={(next) => {
                 setXmrAddress(next);
+              }}
+              onSourceAddressChange={(next) => {
+                setSourceAddress(next);
               }}
               onDestinationAddressChange={(next) => {
                 setDestinationAddress(next);
@@ -710,23 +721,32 @@ function ChainSelect({
 function RecipientPanel({
   direction,
   sourceChain,
+  quote,
   xmrAddress,
+  sourceAddress,
   destinationAddress,
   refundAddress,
   onXmrAddressChange,
+  onSourceAddressChange,
   onDestinationAddressChange,
   onRefundAddressChange,
 }: {
   direction: SwapDirection;
   sourceChain: SourceChainId;
+  quote: Quote | null;
   xmrAddress: string;
+  sourceAddress: string;
   destinationAddress: string;
   refundAddress: string;
   onXmrAddressChange: (value: string) => void;
+  onSourceAddressChange: (value: string) => void;
   onDestinationAddressChange: (value: string) => void;
   onRefundAddressChange: (value: string) => void;
 }) {
   const addressOk = !xmrAddress || isValidMoneroAddress(xmrAddress);
+  const isBitcoinSource = direction === FORWARD_DIRECTION && sourceChain === 'bitcoin';
+  const needsBitcoinRefundAddress = quote?.route === 'chainflip';
+  const bitcoinRefundOk = !needsBitcoinRefundAddress || Boolean(sourceAddress.trim());
   const destinationLabel = sourceChain === 'solana' ? 'Solana receive address' : 'Destination address';
   const destinationPlaceholder = sourceChain === 'solana' ? 'Solana wallet address' : 'Wallet on the destination chain';
 
@@ -758,6 +778,23 @@ function RecipientPanel({
               className="w-full rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
             />
           </label>
+          {isBitcoinSource && (
+            <label>
+              <div className="mb-2 flex items-center justify-between gap-3">
+                <span className="text-sm text-[#9aa0aa]">BTC refund address</span>
+                <span className={bitcoinRefundOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff7777]'}>
+                  {needsBitcoinRefundAddress ? (bitcoinRefundOk ? 'Ready' : 'Required') : 'Before swap'}
+                </span>
+              </div>
+              <textarea
+                value={sourceAddress}
+                onChange={(event) => onSourceAddressChange(event.target.value.trim())}
+                rows={2}
+                placeholder="bc1..."
+                className="w-full resize-none rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
+              />
+            </label>
+          )}
         </>
       ) : (
         <>
@@ -957,6 +994,8 @@ function QuoteSummary({
     ? `Jupiter + ${formatBps(quote.bridgeFeeBps)} bridge`
     : quote.route === 'thorchain'
       ? `${thorchain?.mode === 'eth-usdc-fallback' ? 'THORChain + Mayan' : 'THORChain'} + ${formatBps(quote.bridgeFeeBps)} bridge`
+      : quote.route === 'chainflip'
+        ? `Chainflip + ${formatBps(quote.bridgeFeeBps)} bridge`
       : `${formatBps(mayan?.protocolBps ?? 0)} Mayan + ${formatBps(quote.bridgeFeeBps)} bridge`;
 
   return (
@@ -989,7 +1028,13 @@ function RoutePanel({ legs, quote }: { legs: RouteLeg[]; quote: Quote | null }) 
           <p className="text-xs text-[#8f949d]">Token path and execution venues</p>
         </div>
         <div className="rounded-full bg-[#17191f] px-3 py-1 text-xs text-[#c8cbd1]">
-          {quote?.route === 'solana' ? 'Direct Solana' : quote?.route === 'thorchain' ? 'THORChain' : quote?.mayan?.clientEta ?? 'Live quote'}
+          {quote?.route === 'solana'
+            ? 'Direct Solana'
+            : quote?.route === 'chainflip'
+              ? 'Chainflip'
+              : quote?.route === 'thorchain'
+                ? 'THORChain'
+                : quote?.mayan?.clientEta ?? 'Live quote'}
         </div>
       </div>
       <div className="space-y-3">
@@ -1060,6 +1105,7 @@ function BtcDepositFunding({
   const [txHash, setTxHash] = useState('');
   const [isReporting, setIsReporting] = useState(false);
   const addressReady = Boolean(funding.address);
+  const provider = funding.provider ?? 'THORChain';
   const amount = formatBaseUnits(funding.expectedAmount ?? order.amount, 8, 8);
   const copyAddress = () => {
     if (funding.address) void navigator.clipboard?.writeText(funding.address);
@@ -1086,13 +1132,14 @@ function BtcDepositFunding({
       <div className="mb-4 flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-semibold text-white">Send BTC</div>
-          <div className="text-xs text-[#c59a7c]">{funding.provider ?? 'THORChain'} deposit for order {shortId(order.id)}</div>
+          <div className="text-xs text-[#c59a7c]">{provider} deposit for order {shortId(order.id)}</div>
         </div>
         <StatusBadge status={addressReady ? 'awaiting_deposit' : 'created'} />
       </div>
       <div className="space-y-3">
         <Metric label="Amount" value={`${amount} BTC`} />
-        <Metric label="Route" value="BTC -> USDC-SOL -> XMR-SOL -> native XMR" />
+        <Metric label="Route" value={`BTC -> USDC-SOL via ${provider} -> XMR-SOL -> native XMR`} />
+        {funding.sourceAddress && <Metric label="BTC refund address" value={funding.sourceAddress} />}
         <div className="rounded-xl border border-[#493424] bg-[#120d09] p-3">
           <div className="mb-2 text-xs uppercase tracking-[0.08em] text-[#a8846d]">Bitcoin deposit address</div>
           <div className="break-all font-mono text-sm text-white">
@@ -1598,7 +1645,32 @@ function buildRouteLegs({
     ];
   }
 
-  if (sourceChain === 'bitcoin' || quote?.route === 'thorchain') {
+  if (sourceChain === 'bitcoin' || quote?.route === 'chainflip' || quote?.route === 'thorchain') {
+    if (quote?.route !== 'thorchain') {
+      return [
+        {
+          title: 'BTC on Bitcoin',
+          caption: 'Bitcoin deposit',
+          detail: 'You send BTC to the order-specific Chainflip deposit address.',
+        },
+        {
+          title: 'Chainflip',
+          caption: 'BTC to USDC-SOL',
+          detail: 'Chainflip swaps BTC and delivers Solana USDC to the hot wallet.',
+        },
+        {
+          title: 'jup.ag',
+          caption: 'USDC-SOL to XMR-SOL',
+          detail: 'Jupiter swaps Solana USDC into XMR-SOL.',
+        },
+        {
+          title: 'Monero Bridge',
+          caption: 'XMR-SOL to native XMR',
+          detail: 'The bridge withdrawal request pays the final Monero address.',
+        },
+      ];
+    }
+
     return [
       {
         title: 'BTC on Bitcoin',
@@ -1764,15 +1836,22 @@ function getPrimaryLabel({
 
 function getCreateOrderBlocker({
   direction,
+  quote,
+  hasBitcoinRefundAddress,
   hasValidXmrAddress,
   destinationAddressOk,
 }: {
   direction: SwapDirection;
+  quote: Quote | null;
+  hasBitcoinRefundAddress: boolean;
   hasValidXmrAddress: boolean;
   destinationAddressOk: boolean;
 }): string | null {
   if (!hasValidXmrAddress) {
     return direction === FORWARD_DIRECTION ? 'Enter XMR address' : 'Enter XMR refund address';
+  }
+  if (direction === FORWARD_DIRECTION && quote?.route === 'chainflip' && !hasBitcoinRefundAddress) {
+    return 'Enter BTC refund address';
   }
   if (direction === REVERSE_DIRECTION && !destinationAddressOk) return 'Enter destination address';
   return null;
