@@ -7,6 +7,7 @@ import {
   ERC20_APPROVE_ABI,
   MAYAN_SWIFT_EVM_SOURCE_CHAINS,
   MAYAN_SWIFT_SOURCE_CHAINS,
+  WXMR_MINT_ADDRESS,
   XMR_DECIMALS,
   filterMayanTokensForChain,
   isValidMoneroAddress,
@@ -108,6 +109,14 @@ const XMR_TOKEN: MayanToken = {
   name: 'Monero',
   symbol: 'XMR',
   contract: 'XMR',
+  decimals: XMR_DECIMALS,
+  verified: true,
+};
+const WXMR_SOL_TOKEN: MayanToken = {
+  name: 'XMR on Solana',
+  symbol: 'XMR-SOL',
+  contract: WXMR_MINT_ADDRESS,
+  mint: WXMR_MINT_ADDRESS,
   decimals: XMR_DECIMALS,
   verified: true,
 };
@@ -1863,7 +1872,7 @@ function OrderStatusPanel({ order }: { order: Order | null }) {
 }
 
 function TokenLogo({ token }: { token?: MayanToken }) {
-  if ((token?.symbol ?? '').toUpperCase() === 'XMR') {
+  if (['XMR', 'XMR-SOL'].includes((token?.symbol ?? '').toUpperCase())) {
     return <MoneroLogo className="h-8 w-8 shrink-0" />;
   }
   if (token?.logoURI) {
@@ -2176,7 +2185,11 @@ function selectableDestinationChains(): readonly SourceChainId[] {
 async function loadTokensForChain(chainId: SourceChainId): Promise<MayanToken[]> {
   if (chainId === 'monero') return [XMR_TOKEN];
   const tokens = await api<MayanToken[]>(`/tokens/${chainId}`);
-  return sortTokensByRelevance(filterMayanTokensForChain(tokens, chainId), chainId);
+  const filtered = filterMayanTokensForChain(tokens, chainId);
+  const withWxmr = chainId === 'solana' && !filtered.some((token) => tokenAddress(token)?.toLowerCase() === WXMR_MINT_ADDRESS.toLowerCase())
+    ? [WXMR_SOL_TOKEN, ...filtered]
+    : filtered.map((token) => tokenAddress(token)?.toLowerCase() === WXMR_MINT_ADDRESS.toLowerCase() ? { ...WXMR_SOL_TOKEN, ...token, symbol: 'XMR-SOL' } : token);
+  return sortTokensByRelevance(withWxmr, chainId);
 }
 
 function formatReceivePreview({

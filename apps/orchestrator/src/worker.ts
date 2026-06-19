@@ -6,6 +6,7 @@ import {
   ChainflipClient,
   THORCHAIN,
   USDC_MINT_ADDRESS,
+  WXMR_MINT_ADDRESS,
   MayanClient,
   ThorchainClient,
   chainflipDeliveredBaseUnits,
@@ -183,7 +184,7 @@ async function processMayanBridge(order: Order): Promise<void> {
   const quote = mustGetQuote(order.quoteId);
   const destinationAmount = mayanDeliveredBaseUnits(details, order.funding.mayanQuote.toToken.decimals ?? 6);
   const destinationTx = mayanDestinationTx(details) ?? order.sourceTxHash;
-  if (quote.direction === "asset-to-asset") {
+  if (quote.direction === "asset-to-asset" && !requiresSolanaHotWalletPayout(quote)) {
     store.updateOrder(
       order.id,
       {
@@ -376,17 +377,21 @@ async function executeSwapAndWithdrawal(order: Order): Promise<void> {
   const swapInputAmount = getSolanaInputAmount(order);
   const swapInputMint = getSolanaInputMint(order);
 
-  let swap;
-  try {
-    swap = await solana.swapTokenToWxmr(
-      swapInputMint,
-      swapInputAmount,
-      executionMinimum(order, BigInt(quote.minWxmrOut)),
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    store.updateOrder(order.id, { status: "refunding", error: message }, `swap failed: ${message}`);
-    return;
+  let swap: { signature: string; outAmount: bigint } | null = null;
+  if (isWxmrMint(swapInputMint)) {
+    swap = { signature: "", outAmount: swapInputAmount };
+  } else {
+    try {
+      swap = await solana.swapTokenToWxmr(
+        swapInputMint,
+        swapInputAmount,
+        executionMinimum(order, BigInt(quote.minWxmrOut)),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      store.updateOrder(order.id, { status: "refunding", error: message }, `swap failed: ${message}`);
+      return;
+    }
   }
 
   const withdrawalAmount = applyBps(swap.outAmount, 10_000 - quote.serviceFeeBps);
@@ -399,7 +404,11 @@ async function executeSwapAndWithdrawal(order: Order): Promise<void> {
     return;
   }
 
-  store.updateOrder(order.id, { status: "withdrawing", swapSignature: swap.signature }, `Jupiter swap: ${swap.signature}`);
+  store.updateOrder(
+    order.id,
+    { status: "withdrawing", swapSignature: swap.signature || order.sourceTxHash },
+    swap.signature ? `Jupiter swap: ${swap.signature}` : "using deposited XMR-SOL without swap",
+  );
   const withdrawal = await solana.requestWithdrawal(withdrawalAmount, order.xmrAddress);
   store.updateOrder(
     order.id,
@@ -497,18 +506,22 @@ async function executeSwapAndSolanaPayout(order: Order, quote: Quote): Promise<v
   const serviceFee = applyBps(depositedAmount, quote.serviceFeeBps);
   const swapInputAmount = depositedAmount - serviceFee;
 
-  let swap;
-  try {
-    swap = await solana.swapWxmrToToken(
-      outputToken,
-      swapInputAmount,
-      executionMinimum(order, BigInt(quote.minDestinationOut ?? "0")),
-      owner,
-    );
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    store.updateOrder(order.id, { status: "refunding", error: message }, `reverse Solana swap failed: ${message}`);
-    return;
+  let swap: { signature: string; outAmount: bigint } | null = null;
+  if (isWxmrMint(outputToken)) {
+    swap = { signature: "", outAmount: swapInputAmount };
+  } else {
+    try {
+      swap = await solana.swapWxmrToToken(
+        outputToken,
+        swapInputAmount,
+        executionMinimum(order, BigInt(quote.minDestinationOut ?? "0")),
+        owner,
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      store.updateOrder(order.id, { status: "refunding", error: message }, `reverse Solana swap failed: ${message}`);
+      return;
+    }
   }
 
   if (serviceFee > 0n) {
@@ -526,7 +539,7 @@ async function executeSwapAndSolanaPayout(order: Order, quote: Quote): Promise<v
     {
       status: "completed",
       destinationAmount: swap.outAmount.toString(),
-      swapSignature: swap.signature,
+      swapSignature: swap.signature || order.solanaMintSignature,
       withdrawalSignature: payoutSignature,
     },
     `Solana payout delivered ${swap.outAmount}: ${payoutSignature}`,
@@ -745,6 +758,17 @@ function executionMinimum(order: Order, lockedMinimum: bigint): bigint {
 
 function shouldRefundOnSlippage(order: Order): boolean {
   return order.executionPolicy !== "execute-anyway";
+}
+
+function requiresSolanaHotWalletPayout(quote: Quote): boolean {
+  return quote.direction === "asset-to-asset" &&
+    quote.sourceChain !== "solana" &&
+    quote.destinationChain === "solana" &&
+    isWxmrMint(quote.destinationToken);
+}
+
+function isWxmrMint(value: string | undefined): boolean {
+  return Boolean(value && value.toLowerCase() === WXMR_MINT_ADDRESS.toLowerCase());
 }
 
 function mustGetQuote(quoteId: string): Quote {
