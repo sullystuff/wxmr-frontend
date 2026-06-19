@@ -54,6 +54,10 @@ const DEFAULT_DESTINATION_CHAIN: SourceChainId = 'monero';
 const DEFAULT_EXECUTION_POLICY: ExecutionPolicy = 'execute-anyway';
 const DEFAULT_SLIPPAGE_BPS = 200;
 const AUTO_REFRESH_QUOTE_MS = 10_000;
+const QUOTE_PLACEHOLDER_XMR_ADDRESS = '45ZYpKmPaPmh3bnRP1XpMz8cASJQf1cfUgq32H8trCYA4RodzXhsmt2VYkQX9QQ65CetiGja65tH2JmKC3gEZtZjB7AzMpd';
+const QUOTE_PLACEHOLDER_SOLANA_ADDRESS = '9wtvVxue6wfwVf27cG11tyfQXyHZnyz5gHR5okWh26sX';
+const QUOTE_PLACEHOLDER_EVM_ADDRESS = '0x000000000000000000000000000000000000dEaD';
+const QUOTE_PLACEHOLDER_SUI_ADDRESS = `0x${'1'.repeat(64)}`;
 const TOKEN_RELEVANCE_BY_CHAIN: Partial<Record<SourceChainId, readonly string[]>> = {
   bitcoin: ['BTC'],
   ethereum: ['ETH', 'USDC', 'USDT', 'WBTC', 'DAI', 'LINK', 'UNI', 'AAVE', 'ENA', 'PEPE', 'SHIB'],
@@ -343,6 +347,12 @@ export default function SwapPage() {
       : Boolean(destinationAddress.trim());
   const requiresXmrAddress = sourceChain === 'monero' || destinationChain === 'monero';
   const hasValidXmrAddress = isValidMoneroAddress(xmrAddress);
+  const quoteXmrAddress = requiresXmrAddress
+    ? hasValidXmrAddress ? xmrAddress.trim() : QUOTE_PLACEHOLDER_XMR_ADDRESS
+    : undefined;
+  const quoteDestinationAddress = requiresDestinationAddress
+    ? destinationAddressOk ? destinationAddress.trim() : placeholderAddressForChain(destinationChain)
+    : undefined;
   const hasBitcoinRefundAddress = Boolean(sourceAddress.trim());
   const sourceTokenReady = Boolean(sourceToken) && Boolean(selectedToken);
   const destinationTokenReady = Boolean(destinationToken) && Boolean(selectedDestinationToken);
@@ -350,9 +360,7 @@ export default function SwapPage() {
   const canPreviewQuote = sourceTokenReady &&
     destinationTokenReady &&
     !isSameAsset &&
-    parsedAmount > BigInt(0) &&
-    destinationAddressOk &&
-    (!requiresXmrAddress || hasValidXmrAddress);
+    parsedAmount > BigInt(0);
   const quoteRequestKey = useMemo(() => {
     if (!canPreviewQuote) return null;
     return [
@@ -362,12 +370,12 @@ export default function SwapPage() {
       destinationChain,
       destinationToken,
       parsedAmount.toString(),
-      requiresXmrAddress && hasValidXmrAddress ? xmrAddress.trim() : '',
-      requiresDestinationAddress ? destinationAddress.trim() : '',
+      quoteXmrAddress ?? '',
+      quoteDestinationAddress ?? '',
       refundAddress.trim(),
       executionPolicy,
     ].join('|');
-  }, [canPreviewQuote, destinationAddress, destinationChain, destinationToken, direction, executionPolicy, hasValidXmrAddress, parsedAmount, refundAddress, requiresDestinationAddress, requiresXmrAddress, sourceChain, sourceToken, xmrAddress]);
+  }, [canPreviewQuote, destinationChain, destinationToken, direction, executionPolicy, parsedAmount, quoteDestinationAddress, quoteXmrAddress, refundAddress, sourceChain, sourceToken]);
   const quoteMatchesInputs = Boolean(quote && quoteKey && quoteKey === quoteRequestKey);
   const quoteExpiresIn = useCountdown(quote?.expiresAt);
   const quoteExpired = quoteExpiresIn === 0;
@@ -451,8 +459,8 @@ export default function SwapPage() {
           destinationChain,
           destinationToken,
           amount: parsedAmount.toString(),
-          xmrAddress: requiresXmrAddress && hasValidXmrAddress ? xmrAddress : undefined,
-          destinationAddress: requiresDestinationAddress ? destinationAddress.trim() : undefined,
+          xmrAddress: quoteXmrAddress,
+          destinationAddress: quoteDestinationAddress,
           refundAddress: refundAddress || undefined,
           slippageBps: DEFAULT_SLIPPAGE_BPS,
           executionPolicy,
@@ -475,7 +483,7 @@ export default function SwapPage() {
         setIsQuoteRefreshing(false);
       }
     }
-  }, [canPreviewQuote, destinationAddress, destinationChain, destinationToken, direction, executionPolicy, hasValidXmrAddress, parsedAmount, quoteRequestKey, refundAddress, requiresDestinationAddress, requiresXmrAddress, sourceChain, sourceToken, xmrAddress]);
+  }, [canPreviewQuote, destinationChain, destinationToken, direction, executionPolicy, parsedAmount, quoteDestinationAddress, quoteRequestKey, quoteXmrAddress, refundAddress, sourceChain, sourceToken]);
 
   useEffect(() => {
     if (!canPreviewQuote || !quoteRequestKey || order || quoteMatchesInputs) return;
@@ -508,6 +516,7 @@ export default function SwapPage() {
         body: JSON.stringify({
           quoteId: quote.id,
           sourceAddress: sourceChain === 'bitcoin' ? sourceAddress.trim() : undefined,
+          destinationAddress: requiresDestinationAddress ? destinationAddress.trim() : undefined,
           refundAddress: refundAddress || undefined,
           xmrAddress: requiresXmrAddress ? xmrAddress.trim() : undefined,
           executionPolicy,
@@ -2450,6 +2459,15 @@ function isPotentialSolanaAddress(value: string): boolean {
   } catch {
     return false;
   }
+}
+
+function placeholderAddressForChain(chainId: SourceChainId): string {
+  const chain = CHAINS[chainId];
+  if (chainId === 'solana') return QUOTE_PLACEHOLDER_SOLANA_ADDRESS;
+  if (chainId === 'sui') return QUOTE_PLACEHOLDER_SUI_ADDRESS;
+  if (chainId === 'monero') return QUOTE_PLACEHOLDER_XMR_ADDRESS;
+  if (chain.kind === 'evm' || chain.kind === 'hypercore') return QUOTE_PLACEHOLDER_EVM_ADDRESS;
+  return QUOTE_PLACEHOLDER_SOLANA_ADDRESS;
 }
 
 function shortAddress(value: string): string {

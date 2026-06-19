@@ -285,7 +285,14 @@ function registerRoutes(prefix: "" | "/api"): void {
   });
 
   app.post(route("/orders"), async (request, reply) => {
-    const body = request.body as { quoteId?: string; sourceAddress?: string; refundAddress?: string; xmrAddress?: string; executionPolicy?: ExecutionPolicy };
+    const body = request.body as {
+      quoteId?: string;
+      sourceAddress?: string;
+      destinationAddress?: string;
+      refundAddress?: string;
+      xmrAddress?: string;
+      executionPolicy?: ExecutionPolicy;
+    };
     if (!body.quoteId) {
       return reply.code(400).send({ error: "quoteId is required" });
     }
@@ -306,6 +313,21 @@ function registerRoutes(prefix: "" | "/api"): void {
     const sourceAddress = body.sourceAddress ?? quote.sourceAddress;
     const xmrAddress = body.xmrAddress ?? quote.xmrAddress;
     const executionPolicy = normalizeExecutionPolicy(body.executionPolicy ?? quote.executionPolicy);
+    if (quote.direction !== "mayan-to-xmr") {
+      if (!body.destinationAddress) {
+        return reply.code(400).send({ error: "destinationAddress is required" });
+      }
+      if (quote.destinationAddress && body.destinationAddress !== quote.destinationAddress) {
+        return reply.code(400).send({ error: "destination address changed; refresh quote" });
+      }
+      if (quote.destinationChain === "solana") {
+        try {
+          new PublicKey(body.destinationAddress);
+        } catch {
+          return reply.code(400).send({ error: "destinationAddress must be a Solana wallet address" });
+        }
+      }
+    }
     if (quote.direction !== "asset-to-asset") {
       assertValidMoneroAddress(xmrAddress ?? "");
     }
