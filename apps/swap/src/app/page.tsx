@@ -383,12 +383,12 @@ export default function SwapPage() {
 
   return (
     <main className="min-h-screen xmr-pattern">
-      <header className="mx-auto flex w-full max-w-6xl items-center justify-between gap-4 px-4 py-5 md:px-8">
+      <header className="mx-auto flex w-full max-w-3xl items-center justify-between gap-4 px-4 py-4 md:px-8">
         <div className="flex min-w-0 items-center gap-3">
-          <MoneroLogo className="h-9 w-9 shrink-0" />
+          <MoneroLogo className="h-8 w-8 shrink-0" />
           <div className="min-w-0">
             <h1 className="truncate text-xl font-semibold text-white">Swap XMR</h1>
-            <p className="text-xs text-[var(--muted)]">Mayan Swift v2, Jupiter, Monero Bridge</p>
+            <p className="text-xs text-[var(--muted)]">Cross-chain assets into native Monero</p>
           </div>
         </div>
         <div className="hidden items-center gap-2 rounded-full border border-[#273226] bg-[#111711] px-3 py-2 text-xs text-[#9ee6a8] sm:flex">
@@ -397,9 +397,9 @@ export default function SwapPage() {
         </div>
       </header>
 
-      <section className="mx-auto grid w-full max-w-6xl gap-5 px-4 pb-10 md:px-8 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <section className="mx-auto w-full max-w-3xl px-4 pb-8 md:px-8">
         <div className="overflow-hidden rounded-[24px] border border-[#26272d] bg-[#111216] shadow-2xl shadow-black/40">
-          <div className="border-b border-[#24252b] bg-[#15161b] px-5 py-4">
+          <div className="border-b border-[#24252b] bg-[#15161b] px-4 py-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-medium text-white">Exchange</div>
@@ -413,7 +413,7 @@ export default function SwapPage() {
             </div>
           </div>
 
-          <div className="space-y-4 p-4 md:p-5">
+          <div className="space-y-3 p-3 md:p-4">
             {direction === FORWARD_DIRECTION ? (
               <TradeAmountPanel
                 amount={amount}
@@ -477,7 +477,7 @@ export default function SwapPage() {
             <button
               onClick={onPrimaryAction}
               disabled={primaryDisabled}
-              className="xmr-btn-primary flex min-h-14 w-full items-center justify-center rounded-2xl px-5 py-4 text-base font-semibold text-white disabled:translate-y-0"
+              className="xmr-btn-primary flex min-h-12 w-full items-center justify-center rounded-2xl px-5 py-3 text-base font-semibold text-white disabled:translate-y-0"
             >
               {primaryLabel}
             </button>
@@ -497,13 +497,19 @@ export default function SwapPage() {
                 onError={(message) => setError(message)}
               />
             )}
+
+            <details className="group">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-2xl border border-[#292b31] bg-[#0c0d11] px-4 py-3 text-sm font-semibold text-white transition-colors hover:border-[#f26822]">
+                <span>Route and order details</span>
+                <span className="text-xs text-[#8f949d] group-open:rotate-180">v</span>
+              </summary>
+              <div className="mt-3 space-y-3">
+                <RoutePanel legs={routeLegs} quote={quote} />
+                {order && <OrderStatusPanel order={order} />}
+              </div>
+            </details>
           </div>
         </div>
-
-        <aside className="space-y-5">
-          <RoutePanel legs={routeLegs} quote={quote} />
-          <OrderStatusPanel order={order} />
-        </aside>
       </section>
 
       {isTokenPickerOpen && (
@@ -545,9 +551,9 @@ function DirectionSwapButton({
         onClick={onClick}
         title={label}
         aria-label={label}
-        className="group flex h-11 w-11 items-center justify-center rounded-full border border-[#343740] bg-[#15161b] text-[#f26822] shadow-lg shadow-black/25 transition-colors hover:border-[#f26822] hover:bg-[#1b1714] focus:outline-none focus:ring-2 focus:ring-[#f26822]/60"
+        className="group flex h-9 w-9 items-center justify-center rounded-full border border-[#343740] bg-[#15161b] text-[#f26822] shadow-lg shadow-black/25 transition-colors hover:border-[#f26822] hover:bg-[#1b1714] focus:outline-none focus:ring-2 focus:ring-[#f26822]/60"
       >
-        <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden>
+        <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden>
           <path
             d="M7 4v13m0 0 4-4m-4 4-4-4M17 20V7m0 0-4 4m4-4 4 4"
             fill="none"
@@ -579,8 +585,8 @@ function TradeAmountPanel({
 }) {
   const chainName = CHAINS[chainId].name;
   return (
-    <div className="rounded-2xl border border-[#292b31] bg-[#0c0d11] p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
+    <div className="rounded-2xl border border-[#292b31] bg-[#0c0d11] p-3">
+      <div className="mb-2 flex items-center justify-between gap-3">
         <div className="text-sm text-[#9aa0aa]">{label}</div>
         <div className="rounded-full border border-[#30333b] bg-[#17191f] px-3 py-1 text-xs text-[#9aa0aa]">
           {chainName}
@@ -594,11 +600,11 @@ function TradeAmountPanel({
           value={amount}
           onChange={(event) => onAmountChange(event.target.value)}
           placeholder="0.00"
-          className="min-w-0 flex-1 bg-transparent text-4xl font-semibold text-white outline-none placeholder:text-[#3e424b] md:text-5xl"
+          className="min-w-0 flex-1 bg-transparent text-3xl font-semibold text-white outline-none placeholder:text-[#3e424b] md:text-4xl"
         />
         <button
           onClick={onOpenTokenPicker}
-          className="flex min-w-[132px] items-center justify-between gap-2 rounded-2xl border border-[#30333b] bg-[#17191f] px-3 py-3 text-left text-white transition-colors hover:border-[#f26822]"
+          className="flex min-w-[124px] items-center justify-between gap-2 rounded-2xl border border-[#30333b] bg-[#17191f] px-3 py-2.5 text-left text-white transition-colors hover:border-[#f26822]"
         >
           <TokenLogo token={token} />
           <span className="min-w-0 flex-1">
@@ -620,8 +626,8 @@ function XmrAmountPanel({
   onAmountChange: (value: string) => void;
 }) {
   return (
-    <div className="rounded-2xl border border-[#292b31] bg-[#0c0d11] p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
+    <div className="rounded-2xl border border-[#292b31] bg-[#0c0d11] p-3">
+      <div className="mb-2 flex items-center justify-between gap-3">
         <div className="text-sm text-[#9aa0aa]">You send</div>
         <div className="rounded-full border border-[#30333b] bg-[#17191f] px-3 py-1 text-xs text-[#9aa0aa]">
           Native Monero
@@ -635,9 +641,9 @@ function XmrAmountPanel({
           value={amount}
           onChange={(event) => onAmountChange(event.target.value)}
           placeholder="0.000000"
-          className="min-w-0 flex-1 bg-transparent text-4xl font-semibold text-white outline-none placeholder:text-[#3e424b] md:text-5xl"
+          className="min-w-0 flex-1 bg-transparent text-3xl font-semibold text-white outline-none placeholder:text-[#3e424b] md:text-4xl"
         />
-        <div className="flex min-w-[132px] items-center gap-2 rounded-2xl border border-[#30333b] bg-[#17191f] px-3 py-3">
+        <div className="flex min-w-[124px] items-center gap-2 rounded-2xl border border-[#30333b] bg-[#17191f] px-3 py-2.5">
           <MoneroLogo className="h-8 w-8 shrink-0" />
           <span>
             <span className="block text-sm font-semibold text-white">XMR</span>
@@ -651,18 +657,18 @@ function XmrAmountPanel({
 
 function ReceivePanel({ value, quote, isLoading }: { value: string; quote: Quote | null; isLoading: boolean }) {
   return (
-    <div className="rounded-2xl border border-[#292b31] bg-[#0c0d11] p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
+    <div className="rounded-2xl border border-[#292b31] bg-[#0c0d11] p-3">
+      <div className="mb-2 flex items-center justify-between gap-3">
         <div className="text-sm text-[#9aa0aa]">You get</div>
         <div className="rounded-full border border-[#30333b] bg-[#17191f] px-3 py-1 text-xs text-[#9aa0aa]">
           Native Monero
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <div className={`min-w-0 flex-1 text-4xl font-semibold transition-colors md:text-5xl ${isLoading ? 'text-[#6f747d]' : 'text-white'}`}>
+        <div className={`min-w-0 flex-1 text-3xl font-semibold transition-colors md:text-4xl ${isLoading ? 'text-[#6f747d]' : 'text-white'}`}>
           {value}
         </div>
-        <div className="flex min-w-[132px] items-center gap-2 rounded-2xl border border-[#30333b] bg-[#17191f] px-3 py-3">
+        <div className="flex min-w-[124px] items-center gap-2 rounded-2xl border border-[#30333b] bg-[#17191f] px-3 py-2.5">
           <MoneroLogo className="h-8 w-8 shrink-0" />
           <span>
             <span className="block text-sm font-semibold text-white">XMR</span>
@@ -689,20 +695,20 @@ function MayanReceivePanel({
 }) {
   const chainName = CHAINS[chainId].name;
   return (
-    <div className="rounded-2xl border border-[#292b31] bg-[#0c0d11] p-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
+    <div className="rounded-2xl border border-[#292b31] bg-[#0c0d11] p-3">
+      <div className="mb-2 flex items-center justify-between gap-3">
         <div className="text-sm text-[#9aa0aa]">You get</div>
         <div className="rounded-full border border-[#30333b] bg-[#17191f] px-3 py-1 text-xs text-[#9aa0aa]">
           {chainName}
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <div className={`min-w-0 flex-1 text-4xl font-semibold transition-colors md:text-5xl ${isLoading ? 'text-[#6f747d]' : 'text-white'}`}>
+        <div className={`min-w-0 flex-1 text-3xl font-semibold transition-colors md:text-4xl ${isLoading ? 'text-[#6f747d]' : 'text-white'}`}>
           {value}
         </div>
         <button
           onClick={onOpenTokenPicker}
-          className="flex min-w-[132px] items-center justify-between gap-2 rounded-2xl border border-[#30333b] bg-[#17191f] px-3 py-3 text-left text-white transition-colors hover:border-[#f26822]"
+          className="flex min-w-[124px] items-center justify-between gap-2 rounded-2xl border border-[#30333b] bg-[#17191f] px-3 py-2.5 text-left text-white transition-colors hover:border-[#f26822]"
         >
           <TokenLogo token={token} />
           <span className="min-w-0 flex-1">
@@ -775,7 +781,7 @@ function RecipientPanel({
   const destinationPlaceholder = sourceChain === 'solana' ? 'Solana wallet address' : 'Wallet on the destination chain';
 
   return (
-    <div className="grid gap-3 rounded-2xl border border-[#292b31] bg-[#0f1015] p-4">
+    <div className="grid gap-3 rounded-2xl border border-[#292b31] bg-[#0f1015] p-3">
       {direction === FORWARD_DIRECTION ? (
         <>
           <label>
@@ -788,37 +794,39 @@ function RecipientPanel({
             <textarea
               value={xmrAddress}
               onChange={(event) => onXmrAddressChange(event.target.value.trim())}
-              rows={3}
+              rows={2}
               placeholder="4..."
               className="w-full resize-none rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
             />
           </label>
-          <label>
-            <div className="mb-2 text-sm text-[#9aa0aa]">Solana refund address</div>
-            <input
-              value={refundAddress}
-              onChange={(event) => onRefundAddressChange(event.target.value.trim())}
-              placeholder="Optional"
-              className="w-full rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
-            />
-          </label>
-          {isBitcoinSource && (
+          <div className={`grid gap-3 ${isBitcoinSource ? 'md:grid-cols-2' : ''}`}>
             <label>
-              <div className="mb-2 flex items-center justify-between gap-3">
-                <span className="text-sm text-[#9aa0aa]">BTC refund address</span>
-                <span className={bitcoinRefundOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff7777]'}>
-                  {needsBitcoinRefundAddress ? (bitcoinRefundOk ? 'Ready' : 'Required') : 'Before swap'}
-                </span>
-              </div>
-              <textarea
-                value={sourceAddress}
-                onChange={(event) => onSourceAddressChange(event.target.value.trim())}
-                rows={2}
-                placeholder="bc1..."
-                className="w-full resize-none rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
+              <div className="mb-2 text-sm text-[#9aa0aa]">Solana refund address</div>
+              <input
+                value={refundAddress}
+                onChange={(event) => onRefundAddressChange(event.target.value.trim())}
+                placeholder="Optional"
+                className="w-full rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
               />
             </label>
-          )}
+            {isBitcoinSource && (
+              <label>
+                <div className="mb-2 flex items-center justify-between gap-3">
+                  <span className="text-sm text-[#9aa0aa]">BTC refund address</span>
+                  <span className={bitcoinRefundOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff7777]'}>
+                    {needsBitcoinRefundAddress ? (bitcoinRefundOk ? 'Ready' : 'Required') : 'Before swap'}
+                  </span>
+                </div>
+                <textarea
+                  value={sourceAddress}
+                  onChange={(event) => onSourceAddressChange(event.target.value.trim())}
+                  rows={2}
+                  placeholder="bc1..."
+                  className="w-full resize-none rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
+                />
+              </label>
+            )}
+          </div>
         </>
       ) : (
         <>
@@ -827,7 +835,7 @@ function RecipientPanel({
             <textarea
               value={destinationAddress}
               onChange={(event) => onDestinationAddressChange(event.target.value.trim())}
-              rows={2}
+              rows={1}
               placeholder={destinationPlaceholder}
               className="w-full resize-none rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
             />
@@ -842,7 +850,7 @@ function RecipientPanel({
             <textarea
               value={xmrAddress}
               onChange={(event) => onXmrAddressChange(event.target.value.trim())}
-              rows={3}
+              rows={2}
               placeholder="4..."
               className="w-full resize-none rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-3 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
             />
@@ -874,27 +882,29 @@ function ExecutionPolicyPanel({
   ];
 
   return (
-    <div className="rounded-2xl border border-[#292b31] bg-[#0f1015] p-3">
-      <div className="mb-2 text-sm text-[#9aa0aa]">If the price moves</div>
-      <div className="grid gap-2 sm:grid-cols-2">
-        {options.map((option) => {
-          const selected = option.value === value;
-          return (
-            <button
-              key={option.value}
-              type="button"
-              onClick={() => onChange(option.value)}
-              className={`rounded-xl border px-3 py-3 text-left transition-colors ${
-                selected
-                  ? 'border-[#f26822] bg-[#22170f] text-white'
-                  : 'border-[#30333b] bg-[#090a0e] text-[#c8cbd1] hover:border-[#f26822]'
-              }`}
-            >
-              <span className="block text-sm font-semibold">{option.title}</span>
-              <span className="mt-1 block text-xs text-[#8f949d]">{option.caption}</span>
-            </button>
-          );
-        })}
+    <div className="rounded-2xl border border-[#292b31] bg-[#0f1015] p-2">
+      <div className="grid gap-2 sm:grid-cols-[132px_minmax(0,1fr)] sm:items-center">
+        <div className="px-1 text-sm text-[#9aa0aa]">If price moves</div>
+        <div className="grid gap-1.5 sm:grid-cols-2">
+          {options.map((option) => {
+            const selected = option.value === value;
+            return (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => onChange(option.value)}
+                className={`rounded-xl border px-3 py-3 text-left transition-colors ${
+                  selected
+                    ? 'border-[#f26822] bg-[#22170f] text-white'
+                    : 'border-[#30333b] bg-[#090a0e] text-[#c8cbd1] hover:border-[#f26822]'
+                }`}
+              >
+                <span className="block text-sm font-semibold">{option.title}</span>
+                <span className="mt-0.5 block truncate text-xs text-[#8f949d]">{option.caption}</span>
+              </button>
+            );
+          })}
+        </div>
       </div>
     </div>
   );
@@ -1006,11 +1016,11 @@ function QuoteSummary({
   const destinationSymbol = quote.destinationTokenSymbol ?? quote.sourceTokenSymbol ?? mayan?.quote.toToken.symbol ?? 'Token';
   const destinationDecimals = quote.destinationTokenDecimals ?? quote.sourceTokenDecimals ?? mayan?.quote.toToken.decimals ?? 6;
   const isSolanaDirect = quote.route === 'solana';
-  const expectedLabel = isReverse ? `Expected ${destinationSymbol}` : 'Expected XMR';
+  const expectedLabel = isReverse ? `Expected ${destinationSymbol}` : 'Expected';
   const expectedValue = isReverse
     ? `${formatBaseUnits(quote.estimatedDestinationOut ?? '0', destinationDecimals)} ${destinationSymbol}`
     : `${formatXmr(quote.estimatedXmrOut)} XMR`;
-  const minimumLabel = isReverse ? `Minimum ${destinationSymbol}` : 'Minimum XMR';
+  const minimumLabel = isReverse ? `Minimum ${destinationSymbol}` : 'Minimum';
   const minimumValue = isReverse
     ? `${formatBaseUnits(quote.minDestinationOut ?? '0', destinationDecimals)} ${destinationSymbol}`
     : `${formatXmr(quote.minXmrOut)} XMR`;
@@ -1023,21 +1033,23 @@ function QuoteSummary({
       : `${formatBps(mayan?.protocolBps ?? 0)} Mayan + ${formatBps(quote.bridgeFeeBps)} bridge`;
 
   return (
-    <div className="rounded-2xl border border-[#292b31] bg-[#101116] p-4">
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-        <div>
+    <div className="rounded-2xl border border-[#292b31] bg-[#101116] p-3">
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0">
           <div className="text-sm font-semibold text-white">Quote ready</div>
-          <div className="text-xs text-[#8f949d]">{quote.routeSummary ?? 'Mayan Swift v2 route'}</div>
+          <div className="truncate text-xs text-[#8f949d]">{quote.routeSummary ?? 'Mayan Swift v2 route'}</div>
         </div>
         <div className={`rounded-full px-3 py-1 text-xs font-semibold ${quoteExpired ? 'bg-[#351919] text-[#ff8c8c]' : 'bg-[#142316] text-[#9ee6a8]'}`}>
           {quoteExpired ? 'Expired' : `Expires in ${formatCountdown(quoteExpiresIn)}`}
         </div>
       </div>
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <Metric label="Sending" value={`${formatBaseUnits(quote.inputAmount, sourceDecimals)} ${sourceSymbol}`} />
+      <div className="grid gap-2 sm:grid-cols-3">
         <Metric label={expectedLabel} value={expectedValue} />
         <Metric label={minimumLabel} value={minimumValue} />
         <Metric label="Fees" value={fees} />
+      </div>
+      <div className="mt-2 text-xs text-[#6f747d]">
+        Sending {formatBaseUnits(quote.inputAmount, sourceDecimals)} {sourceSymbol}
       </div>
     </div>
   );
