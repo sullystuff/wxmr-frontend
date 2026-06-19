@@ -120,9 +120,11 @@ export interface ThorchainQuoteMetadata {
   estimatedTimeSeconds?: number;
   fees?: unknown;
   mayan?: MayanQuoteMetadata;
+  directDestination?: boolean;
 }
 
 export interface ChainflipQuoteMetadata {
+  mode?: "direct-solana" | "direct-destination" | "eth-usdc-forward";
   fromAsset: string;
   toAsset: string;
   quote: unknown;
@@ -132,6 +134,7 @@ export interface ChainflipQuoteMetadata {
   estimatedTimeSeconds?: number;
   fees?: unknown;
   directDestination?: boolean;
+  mayan?: MayanQuoteMetadata;
 }
 
 export interface MayanSwiftFunding {

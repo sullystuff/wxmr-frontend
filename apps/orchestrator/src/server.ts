@@ -61,6 +61,7 @@ type BtcSolanaUsdcRouteBase = {
   routePrefix: string;
   sourceToken: string;
   sourceTokenDecimals: number;
+  priority: number;
 };
 
 type BtcSolanaUsdcRoute =
@@ -495,13 +496,19 @@ async function quoteSolanaToXmr(input: QuoteRequest): Promise<Quote> {
   };
 }
 
-async function quoteBtcToSolanaUsdc(input: QuoteRequest, slippageBps: number): Promise<BtcSolanaUsdcRoute> {
+async function quoteBtcToSolanaUsdc(
+  input: QuoteRequest,
+  slippageBps: number,
+  destinationAddress = env.solanaHotWallet.publicKey.toBase58(),
+  directDestination = false,
+): Promise<BtcSolanaUsdcRoute> {
+  const candidates: BtcSolanaUsdcRoute[] = [];
   let directError: unknown;
   const directQuote = await thorchain.fetchSwapQuote({
     fromAsset: THORCHAIN.btcAsset,
     toAsset: THORCHAIN.solanaUsdcAsset,
     amount: input.amount,
-    destination: env.solanaHotWallet.publicKey.toBase58(),
+    destination: destinationAddress,
     toleranceBps: slippageBps,
   }).catch((error) => {
     directError = error;
@@ -510,37 +517,49 @@ async function quoteBtcToSolanaUsdc(input: QuoteRequest, slippageBps: number): P
 
   if (directQuote) {
     const expectedSolanaUsdcOut = thorchainAmountToBaseUnits(directQuote.expected_amount_out, USDC_DECIMALS);
-    return {
+    const minSolanaUsdcOut = applyBps(BigInt(expectedSolanaUsdcOut), 10_000 - slippageBps).toString();
+    candidates.push({
       route: "thorchain",
       providerName: "THORChain",
       sourceToken: THORCHAIN.btcAsset,
       sourceTokenDecimals: 8,
       expectedSolanaUsdcOut,
-      minSolanaUsdcOut: applyBps(BigInt(expectedSolanaUsdcOut), 10_000 - slippageBps).toString(),
+      minSolanaUsdcOut,
       expiresAt: new Date(directQuote.expiry * 1000).toISOString(),
       routePrefix: "BTC -> USDC-SOL via THORChain",
+      priority: 10,
       thorchain: {
-        mode: "direct-solana",
+        mode: directDestination ? "direct-destination" : "direct-solana",
         fromAsset: THORCHAIN.btcAsset,
         toAsset: THORCHAIN.solanaUsdcAsset,
         expectedOut: directQuote.expected_amount_out,
         expectedSolanaUsdcOut,
-        minSolanaUsdcOut: applyBps(BigInt(expectedSolanaUsdcOut), 10_000 - slippageBps).toString(),
+        minSolanaUsdcOut,
         inboundAddress: directQuote.inbound_address!,
         memo: directQuote.memo!,
         expiry: directQuote.expiry,
         estimatedTimeSeconds: thorchainSeconds(directQuote),
         fees: directQuote.fees,
+        directDestination,
       },
-    };
+    });
   }
+
+  const thorchainEthForward = await quoteBtcToEthUsdc(
+    input,
+    slippageBps,
+    directError,
+    destinationAddress,
+    directDestination,
+  ).catch(() => null);
+  if (thorchainEthForward) candidates.push(thorchainEthForward);
 
   const chainflipQuote = await chainflip.fetchBtcToSolanaUsdcQuote({
     amount: input.amount,
   }).catch(() => null);
 
   if (chainflipQuote) {
-    return {
+    candidates.push({
       route: "chainflip",
       providerName: "Chainflip",
       sourceToken: input.sourceToken,
@@ -549,7 +568,9 @@ async function quoteBtcToSolanaUsdc(input: QuoteRequest, slippageBps: number): P
       minSolanaUsdcOut: chainflipMinSolanaUsdcOut(chainflipQuote, slippageBps),
       expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
       routePrefix: "BTC -> USDC-SOL via Chainflip",
+      priority: 30,
       chainflip: {
+        mode: directDestination ? "direct-destination" : "direct-solana",
         fromAsset: "BTC",
         toAsset: "USDC-SOL",
         quote: chainflipQuote,
@@ -558,11 +579,24 @@ async function quoteBtcToSolanaUsdc(input: QuoteRequest, slippageBps: number): P
         slippageBps,
         estimatedTimeSeconds: chainflipQuote.estimatedDurationSeconds,
         fees: chainflipQuote.includedFees,
+        directDestination,
       },
-    };
+    });
   }
 
-  return quoteBtcToEthUsdc(input, slippageBps, directError);
+  const chainflipEthForward = await quoteChainflipBtcToEthUsdcForward(
+    input,
+    slippageBps,
+    destinationAddress,
+    directDestination,
+  );
+  if (chainflipEthForward) candidates.push(chainflipEthForward);
+
+  const best = bestBtcSolanaUsdcRoute(candidates);
+  if (best) return best;
+
+  const reason = directError instanceof Error ? directError.message : "no route returned a quote";
+  throw new Error(`BTC -> USDC-SOL route unavailable: ${reason}`);
 }
 
 async function quoteBtcToXmr(input: QuoteRequest): Promise<Quote> {
@@ -612,6 +646,8 @@ async function quoteBtcToEthUsdc(
   input: QuoteRequest,
   slippageBps: number,
   directError: unknown,
+  destinationAddress = env.solanaHotWallet.publicKey.toBase58(),
+  directDestination = false,
 ): Promise<BtcSolanaUsdcRoute> {
   if (!env.evmHotWalletAddress) {
     const reason = directError instanceof Error ? directError.message : "direct route unavailable";
@@ -632,7 +668,7 @@ async function quoteBtcToEthUsdc(
     toChain: "solana",
     toToken: USDC_MINT_ADDRESS,
     amount: expectedEthUsdcOut,
-    destinationAddress: env.solanaHotWallet.publicKey.toBase58(),
+    destinationAddress,
     slippageBps,
   });
   const mayanMetadata = {
@@ -653,6 +689,7 @@ async function quoteBtcToEthUsdc(
     minSolanaUsdcOut: mayanMetadata.minSolanaUsdcOut,
     expiresAt: new Date(quote.expiry * 1000).toISOString(),
     routePrefix: "BTC -> USDC-ETH via THORChain -> USDC-SOL via Mayan Swift v2",
+    priority: 20,
     thorchain: {
       mode: "eth-usdc-fallback",
       fromAsset: THORCHAIN.btcAsset,
@@ -666,6 +703,69 @@ async function quoteBtcToEthUsdc(
       estimatedTimeSeconds: (thorchainSeconds(quote) ?? 0) + (mayanQuote.etaSeconds ?? 0),
       fees: quote.fees,
       mayan: mayanMetadata,
+      directDestination,
+    },
+  };
+}
+
+async function quoteChainflipBtcToEthUsdcForward(
+  input: QuoteRequest,
+  slippageBps: number,
+  destinationAddress = env.solanaHotWallet.publicKey.toBase58(),
+  directDestination = false,
+): Promise<BtcSolanaUsdcRoute | null> {
+  if (!env.evmHotWalletAddress) return null;
+
+  const quote = await chainflip.fetchBtcQuote({
+    amount: input.amount,
+    destChain: CHAINFLIP.ethereumUsdc.chain,
+    destAsset: CHAINFLIP.ethereumUsdc.asset,
+  }).catch(() => null);
+  if (!quote) return null;
+
+  const mayanQuote = await mayan.fetchSwiftQuoteForRoute({
+    fromChain: "ethereum",
+    fromToken: CHAINS.ethereum.usdc!,
+    toChain: "solana",
+    toToken: USDC_MINT_ADDRESS,
+    amount: quote.egressAmount,
+    destinationAddress,
+    slippageBps,
+  }).catch(() => null);
+  if (!mayanQuote) return null;
+
+  const mayanMetadata = {
+    quote: mayanQuote,
+    expectedSolanaUsdcOut: mayanQuote.expectedAmountOutBaseUnits,
+    minSolanaUsdcOut: mayanQuote.minReceivedBaseUnits,
+    etaSeconds: mayanQuote.etaSeconds,
+    clientEta: mayanQuote.clientEta,
+    protocolBps: mayanQuote.protocolBps,
+    quoteId: mayanQuote.quoteId,
+  };
+
+  return {
+    route: "chainflip",
+    providerName: "Chainflip",
+    sourceToken: input.sourceToken,
+    sourceTokenDecimals: CHAINFLIP.btcDecimals,
+    expectedSolanaUsdcOut: mayanMetadata.expectedSolanaUsdcOut,
+    minSolanaUsdcOut: mayanMetadata.minSolanaUsdcOut,
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    routePrefix: "BTC -> USDC-ETH via Chainflip -> USDC-SOL via Mayan Swift v2",
+    priority: 40,
+    chainflip: {
+      mode: "eth-usdc-forward",
+      fromAsset: "BTC",
+      toAsset: "USDC-ETH",
+      quote,
+      expectedSolanaUsdcOut: mayanMetadata.expectedSolanaUsdcOut,
+      minSolanaUsdcOut: mayanMetadata.minSolanaUsdcOut,
+      slippageBps,
+      estimatedTimeSeconds: (quote.estimatedDurationSeconds ?? 0) + (mayanQuote.etaSeconds ?? 0),
+      fees: quote.includedFees,
+      mayan: mayanMetadata,
+      directDestination,
     },
   };
 }
@@ -865,6 +965,41 @@ async function quoteBtcDirectToAsset(input: QuoteRequest, slippageBps: number): 
   if (!direct) return null;
 
   const destinationToken = await findToken(input.destinationChain, input.destinationToken);
+  if (input.destinationChain === "solana" && sameToken(input.destinationToken, USDC_MINT_ADDRESS)) {
+    const btcRoute = await quoteBtcToSolanaUsdc(input, slippageBps, input.destinationAddress, true);
+    return {
+      id: crypto.randomUUID(),
+      direction: "asset-to-asset",
+      sourceChain: "bitcoin",
+      sourceToken: btcRoute.sourceToken,
+      sourceTokenSymbol: "BTC",
+      sourceTokenDecimals: btcRoute.sourceTokenDecimals,
+      destinationChain: "solana",
+      destinationToken: destinationToken.contract ?? input.destinationToken,
+      inputAmount: input.amount,
+      sourceAddress: input.sourceAddress,
+      xmrAddress: "",
+      destinationAddress: input.destinationAddress,
+      destinationTokenSymbol: destinationToken.symbol,
+      destinationTokenDecimals: destinationToken.decimals,
+      refundAddress: input.refundAddress,
+      estimatedWxmrOut: "0",
+      estimatedXmrOut: "0",
+      minWxmrOut: "0",
+      minXmrOut: "0",
+      estimatedDestinationOut: btcRoute.expectedSolanaUsdcOut,
+      minDestinationOut: btcRoute.minSolanaUsdcOut,
+      bridgeFeeBps: 0,
+      serviceFeeBps: 0,
+      executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
+      jupiterPriceImpactPct: "0",
+      expiresAt: btcRoute.expiresAt,
+      route: btcRoute.route,
+      routeSummary: btcRoute.routePrefix,
+      ...(btcRoute.route === "chainflip" ? { chainflip: btcRoute.chainflip } : { thorchain: btcRoute.thorchain }),
+    };
+  }
+
   const thorchainQuote = await thorchain.fetchSwapQuote({
     fromAsset: THORCHAIN.btcAsset,
     toAsset: direct.thorchainAsset,
@@ -1408,6 +1543,23 @@ function btcDirectDestination(destinationChain: SourceChainId, destinationToken:
     };
   }
   return null;
+}
+
+function bestBtcSolanaUsdcRoute(candidates: BtcSolanaUsdcRoute[]): BtcSolanaUsdcRoute | null {
+  if (!candidates.length) return null;
+  return [...candidates].sort((left, right) => {
+    const outputDiff = compareBigIntStrings(right.expectedSolanaUsdcOut, left.expectedSolanaUsdcOut);
+    if (outputDiff !== 0) return outputDiff;
+    return left.priority - right.priority;
+  })[0];
+}
+
+function compareBigIntStrings(left: string, right: string): number {
+  const leftValue = BigInt(left);
+  const rightValue = BigInt(right);
+  if (leftValue > rightValue) return 1;
+  if (leftValue < rightValue) return -1;
+  return 0;
 }
 
 function sameToken(left: string | undefined, right: string | undefined): boolean {

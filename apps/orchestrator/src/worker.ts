@@ -221,6 +221,11 @@ async function processChainflipBridge(order: Order): Promise<void> {
     throw new Error("BTC order is missing Chainflip quote metadata");
   }
 
+  if (quote.chainflip.mode === "eth-usdc-forward" && order.solanaMintSignature) {
+    await processChainflipMayanForward(order, quote);
+    return;
+  }
+
   const status = await chainflip.fetchStatus(channelId);
   if (chainflipSwapFailed(status)) {
     store.updateOrder(order.id, { status: "failed", error: `Chainflip swap ${status.state}` }, "Chainflip swap failed");
@@ -242,6 +247,51 @@ async function processChainflipBridge(order: Order): Promise<void> {
       "Chainflip delivered below locked minimum",
     );
     return;
+  }
+
+  if (quote.chainflip.mode === "eth-usdc-forward") {
+    if (!evm) {
+      throw new Error("EVM_HOTWALLET_PRIVATE_KEY and ETHEREUM_RPC_URL are required to forward Chainflip ETH USDC to Solana");
+    }
+    const mayanDestination = quote.chainflip.directDestination
+      ? order.destinationAddress
+      : env.solanaHotWallet.publicKey.toBase58();
+    if (!mayanDestination) {
+      throw new Error("Chainflip Mayan forwarding route is missing destination address");
+    }
+    const mayanQuote = await mayan.fetchSwiftQuoteForRoute({
+      fromChain: "ethereum",
+      fromToken: CHAINS.ethereum.usdc!,
+      toChain: "solana",
+      toToken: USDC_MINT_ADDRESS,
+      amount: destinationAmount,
+      destinationAddress: mayanDestination,
+      slippageBps: quote.chainflip.mayan?.quote.slippageBps ?? DEFAULT_SLIPPAGE_BPS,
+    });
+    const lockedMinimum = BigInt(quote.chainflip.directDestination
+      ? quote.minDestinationOut ?? quote.chainflip.minSolanaUsdcOut
+      : quote.chainflip.minSolanaUsdcOut);
+    if (shouldRefundOnSlippage(order) && BigInt(mayanQuote.minReceivedBaseUnits) < lockedMinimum) {
+      store.updateOrder(
+        order.id,
+        {
+          status: "failed",
+          error: `Mayan forwarding minimum ${mayanQuote.minReceivedBaseUnits} is below locked minimum ${lockedMinimum}`,
+        },
+        "Chainflip ETH USDC Mayan quote below locked minimum",
+      );
+      return;
+    }
+
+    const mayanTx = await evm.executeMayanSwift(mayanQuote, mayanDestination);
+    store.updateOrder(
+      order.id,
+      {
+        solanaMintSignature: mayanTx,
+      },
+      `Mayan ETH USDC -> Solana USDC submitted after Chainflip BTC swap: ${mayanTx}`,
+    );
+    throw new Error(`Mayan forwarding pending: ${mayanTx}`);
   }
 
   if (quote.direction === "asset-to-asset" && quote.chainflip.directDestination) {
@@ -355,22 +405,30 @@ async function processThorchainBridge(order: Order): Promise<void> {
     toChain: "solana",
     toToken: USDC_MINT_ADDRESS,
     amount: ethUsdcAmount,
-    destinationAddress: env.solanaHotWallet.publicKey.toBase58(),
+    destinationAddress: quote.thorchain.directDestination
+      ? order.destinationAddress ?? env.solanaHotWallet.publicKey.toBase58()
+      : env.solanaHotWallet.publicKey.toBase58(),
     slippageBps: quote.thorchain.mayan?.quote.slippageBps ?? DEFAULT_SLIPPAGE_BPS,
   });
-  if (shouldRefundOnSlippage(order) && BigInt(mayanQuote.minReceivedBaseUnits) < BigInt(quote.thorchain.minSolanaUsdcOut)) {
+  const lockedMinimum = BigInt(quote.thorchain.directDestination
+    ? quote.minDestinationOut ?? quote.thorchain.minSolanaUsdcOut
+    : quote.thorchain.minSolanaUsdcOut);
+  if (shouldRefundOnSlippage(order) && BigInt(mayanQuote.minReceivedBaseUnits) < lockedMinimum) {
     store.updateOrder(
       order.id,
       {
         status: "failed",
-        error: `Mayan forwarding minimum ${mayanQuote.minReceivedBaseUnits} is below locked minimum ${quote.thorchain.minSolanaUsdcOut}`,
+        error: `Mayan forwarding minimum ${mayanQuote.minReceivedBaseUnits} is below locked minimum ${lockedMinimum}`,
       },
       "THORChain fallback Mayan quote below locked minimum",
     );
     return;
   }
 
-  const mayanTx = await evm.executeMayanSwift(mayanQuote, env.solanaHotWallet.publicKey.toBase58());
+  const mayanDestination = quote.thorchain.directDestination
+    ? order.destinationAddress ?? env.solanaHotWallet.publicKey.toBase58()
+    : env.solanaHotWallet.publicKey.toBase58();
+  const mayanTx = await evm.executeMayanSwift(mayanQuote, mayanDestination);
   store.updateOrder(
     order.id,
     {
@@ -379,6 +437,61 @@ async function processThorchainBridge(order: Order): Promise<void> {
     `Mayan ETH USDC -> Solana USDC submitted: ${mayanTx}`,
   );
   throw new Error(`Mayan swap pending: ${mayanTx}`);
+}
+
+async function processChainflipMayanForward(order: Order, quote: Quote): Promise<void> {
+  if (!order.solanaMintSignature) {
+    throw new Error("Chainflip BTC ETH-USDC forward has no Mayan forwarding transaction");
+  }
+  if (!quote.chainflip) {
+    throw new Error("Chainflip BTC order is missing quote metadata");
+  }
+  const details = await mayan.fetchSwapByTx(order.solanaMintSignature);
+  if (mayanSwapFailed(details)) {
+    store.updateOrder(order.id, { status: "failed", error: `Mayan forwarding ${details.clientStatus ?? details.status}` }, "Chainflip Mayan forwarding failed");
+    return;
+  }
+  if (!mayanSwapSucceeded(details)) {
+    throw new Error(`Mayan forwarding pending: ${details.clientStatus ?? details.status ?? "unknown"}`);
+  }
+
+  const destinationAmount = mayanDeliveredBaseUnits(details, 6);
+  const destinationTx = mayanDestinationTx(details) ?? order.solanaMintSignature;
+  const minimum = BigInt(quote.chainflip.directDestination
+    ? quote.minDestinationOut ?? quote.chainflip.minSolanaUsdcOut
+    : quote.chainflip.minSolanaUsdcOut);
+  if (shouldRefundOnSlippage(order) && BigInt(destinationAmount) < minimum) {
+    store.updateOrder(
+      order.id,
+      {
+        status: "failed",
+        error: `Mayan forwarding delivered ${destinationAmount}, below locked minimum ${minimum}`,
+      },
+      "Mayan forwarding delivered below locked minimum",
+    );
+    return;
+  }
+  if (quote.chainflip.directDestination) {
+    store.updateOrder(
+      order.id,
+      {
+        status: "completed",
+        destinationAmount,
+        withdrawalSignature: destinationTx,
+      },
+      `Mayan delivered ${destinationAmount} USDC to destination after Chainflip BTC swap`,
+    );
+    return;
+  }
+  store.updateOrder(
+    order.id,
+    {
+      status: "minted",
+      destinationAmount,
+      solanaMintSignature: destinationTx,
+    },
+    `Mayan delivered ${destinationAmount} USDC on Solana after Chainflip BTC swap`,
+  );
 }
 
 async function processThorchainMayanForward(order: Order, quote: Quote): Promise<void> {
@@ -396,7 +509,9 @@ async function processThorchainMayanForward(order: Order, quote: Quote): Promise
 
   const destinationAmount = mayanDeliveredBaseUnits(details, 6);
   const destinationTx = mayanDestinationTx(details) ?? order.solanaMintSignature;
-  const minimum = BigInt(quote.thorchain?.minSolanaUsdcOut ?? "0");
+  const minimum = BigInt(quote.thorchain?.directDestination
+    ? quote.minDestinationOut ?? quote.thorchain.minSolanaUsdcOut
+    : quote.thorchain?.minSolanaUsdcOut ?? "0");
   if (shouldRefundOnSlippage(order) && BigInt(destinationAmount) < minimum) {
     store.updateOrder(
       order.id,
@@ -405,6 +520,18 @@ async function processThorchainMayanForward(order: Order, quote: Quote): Promise
         error: `Mayan forwarding delivered ${destinationAmount}, below locked minimum ${minimum}`,
       },
       "Mayan forwarding delivered below locked minimum",
+    );
+    return;
+  }
+  if (quote.thorchain?.directDestination) {
+    store.updateOrder(
+      order.id,
+      {
+        status: "completed",
+        destinationAmount,
+        withdrawalSignature: destinationTx,
+      },
+      `Mayan delivered ${destinationAmount} USDC to destination after THORChain BTC swap`,
     );
     return;
   }
