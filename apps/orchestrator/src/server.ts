@@ -76,6 +76,11 @@ type BtcSolanaUsdcRoute =
     thorchain: NonNullable<Quote["thorchain"]>;
   });
 
+type QuoteCandidate = {
+  quote: Quote;
+  priority: number;
+};
+
 const app = Fastify({ logger: true });
 await app.register(cors, {
   origin: true,
@@ -1008,53 +1013,58 @@ async function quoteBtcDirectToAsset(input: QuoteRequest, slippageBps: number): 
     toleranceBps: slippageBps,
   }).catch(() => null);
 
+  const candidates: QuoteCandidate[] = [];
   if (thorchainQuote) {
     const destinationDecimals = destinationToken.decimals ?? USDC_DECIMALS;
     const expectedOut = thorchainAmountToBaseUnits(thorchainQuote.expected_amount_out, destinationDecimals);
     const minOut = applyBps(BigInt(expectedOut), 10_000 - slippageBps).toString();
-    return {
-      id: crypto.randomUUID(),
-      direction: "asset-to-asset",
-      sourceChain: "bitcoin",
-      sourceToken: THORCHAIN.btcAsset,
-      sourceTokenSymbol: "BTC",
-      sourceTokenDecimals: 8,
-      destinationChain: input.destinationChain,
-      destinationToken: destinationToken.contract ?? input.destinationToken,
-      inputAmount: input.amount,
-      sourceAddress: input.sourceAddress,
-      xmrAddress: "",
-      destinationAddress: input.destinationAddress,
-      destinationTokenSymbol: destinationToken.symbol,
-      destinationTokenDecimals: destinationToken.decimals,
-      refundAddress: input.refundAddress,
-      estimatedWxmrOut: "0",
-      estimatedXmrOut: "0",
-      minWxmrOut: "0",
-      minXmrOut: "0",
-      estimatedDestinationOut: expectedOut,
-      minDestinationOut: minOut,
-      bridgeFeeBps: 0,
-      serviceFeeBps: 0,
-      executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
-      jupiterPriceImpactPct: "0",
-      expiresAt: new Date(thorchainQuote.expiry * 1000).toISOString(),
-      route: "thorchain",
-      routeSummary: `BTC -> ${destinationToken.symbol ?? "Token"} on ${CHAINS[input.destinationChain].name} via THORChain`,
-      thorchain: {
-        mode: "direct-destination",
-        fromAsset: THORCHAIN.btcAsset,
-        toAsset: direct.thorchainAsset,
-        expectedOut: thorchainQuote.expected_amount_out,
-        expectedSolanaUsdcOut: expectedOut,
-        minSolanaUsdcOut: minOut,
-        inboundAddress: thorchainQuote.inbound_address!,
-        memo: thorchainQuote.memo!,
-        expiry: thorchainQuote.expiry,
-        estimatedTimeSeconds: thorchainSeconds(thorchainQuote),
-        fees: thorchainQuote.fees,
+    candidates.push({
+      priority: 10,
+      quote: {
+        id: crypto.randomUUID(),
+        direction: "asset-to-asset",
+        sourceChain: "bitcoin",
+        sourceToken: THORCHAIN.btcAsset,
+        sourceTokenSymbol: "BTC",
+        sourceTokenDecimals: 8,
+        destinationChain: input.destinationChain,
+        destinationToken: destinationToken.contract ?? input.destinationToken,
+        inputAmount: input.amount,
+        sourceAddress: input.sourceAddress,
+        xmrAddress: "",
+        destinationAddress: input.destinationAddress,
+        destinationTokenSymbol: destinationToken.symbol,
+        destinationTokenDecimals: destinationToken.decimals,
+        refundAddress: input.refundAddress,
+        estimatedWxmrOut: "0",
+        estimatedXmrOut: "0",
+        minWxmrOut: "0",
+        minXmrOut: "0",
+        estimatedDestinationOut: expectedOut,
+        minDestinationOut: minOut,
+        bridgeFeeBps: 0,
+        serviceFeeBps: 0,
+        executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
+        jupiterPriceImpactPct: "0",
+        expiresAt: new Date(thorchainQuote.expiry * 1000).toISOString(),
+        route: "thorchain",
+        routeSummary: `BTC -> ${destinationToken.symbol ?? "Token"} on ${CHAINS[input.destinationChain].name} via THORChain`,
+        thorchain: {
+          mode: "direct-destination",
+          fromAsset: THORCHAIN.btcAsset,
+          toAsset: direct.thorchainAsset,
+          expectedOut: thorchainQuote.expected_amount_out,
+          expectedSolanaUsdcOut: expectedOut,
+          minSolanaUsdcOut: minOut,
+          inboundAddress: thorchainQuote.inbound_address!,
+          memo: thorchainQuote.memo!,
+          expiry: thorchainQuote.expiry,
+          estimatedTimeSeconds: thorchainSeconds(thorchainQuote),
+          fees: thorchainQuote.fees,
+          directDestination: true,
+        },
       },
-    };
+    });
   }
 
   const chainflipQuote = await chainflip.fetchBtcQuote({
@@ -1062,50 +1072,56 @@ async function quoteBtcDirectToAsset(input: QuoteRequest, slippageBps: number): 
     destChain: direct.chainflip.chain,
     destAsset: direct.chainflip.asset,
   }).catch(() => null);
-  if (!chainflipQuote) return null;
+  if (chainflipQuote) {
+    const minOut = applyBps(BigInt(chainflipQuote.egressAmount), 10_000 - slippageBps).toString();
+    candidates.push({
+      priority: 11,
+      quote: {
+        id: crypto.randomUUID(),
+        direction: "asset-to-asset",
+        sourceChain: "bitcoin",
+        sourceToken: input.sourceToken,
+        sourceTokenSymbol: "BTC",
+        sourceTokenDecimals: CHAINFLIP.btcDecimals,
+        destinationChain: input.destinationChain,
+        destinationToken: destinationToken.contract ?? input.destinationToken,
+        inputAmount: input.amount,
+        sourceAddress: input.sourceAddress,
+        xmrAddress: "",
+        destinationAddress: input.destinationAddress,
+        destinationTokenSymbol: destinationToken.symbol,
+        destinationTokenDecimals: destinationToken.decimals,
+        refundAddress: input.refundAddress,
+        estimatedWxmrOut: "0",
+        estimatedXmrOut: "0",
+        minWxmrOut: "0",
+        minXmrOut: "0",
+        estimatedDestinationOut: chainflipQuote.egressAmount,
+        minDestinationOut: minOut,
+        bridgeFeeBps: 0,
+        serviceFeeBps: 0,
+        executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
+        jupiterPriceImpactPct: "0",
+        expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+        route: "chainflip",
+        routeSummary: `BTC -> ${destinationToken.symbol ?? "Token"} on ${CHAINS[input.destinationChain].name} via Chainflip`,
+        chainflip: {
+          mode: "direct-destination",
+          fromAsset: "BTC",
+          toAsset: direct.chainflipLabel,
+          quote: chainflipQuote,
+          expectedSolanaUsdcOut: chainflipQuote.egressAmount,
+          minSolanaUsdcOut: minOut,
+          slippageBps,
+          estimatedTimeSeconds: chainflipQuote.estimatedDurationSeconds,
+          fees: chainflipQuote.includedFees,
+          directDestination: true,
+        },
+      },
+    });
+  }
 
-  const minOut = applyBps(BigInt(chainflipQuote.egressAmount), 10_000 - slippageBps).toString();
-  return {
-    id: crypto.randomUUID(),
-    direction: "asset-to-asset",
-    sourceChain: "bitcoin",
-    sourceToken: input.sourceToken,
-    sourceTokenSymbol: "BTC",
-    sourceTokenDecimals: CHAINFLIP.btcDecimals,
-    destinationChain: input.destinationChain,
-    destinationToken: destinationToken.contract ?? input.destinationToken,
-    inputAmount: input.amount,
-    sourceAddress: input.sourceAddress,
-    xmrAddress: "",
-    destinationAddress: input.destinationAddress,
-    destinationTokenSymbol: destinationToken.symbol,
-    destinationTokenDecimals: destinationToken.decimals,
-    refundAddress: input.refundAddress,
-    estimatedWxmrOut: "0",
-    estimatedXmrOut: "0",
-    minWxmrOut: "0",
-    minXmrOut: "0",
-    estimatedDestinationOut: chainflipQuote.egressAmount,
-    minDestinationOut: minOut,
-    bridgeFeeBps: 0,
-    serviceFeeBps: 0,
-    executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
-    jupiterPriceImpactPct: "0",
-    expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-    route: "chainflip",
-    routeSummary: `BTC -> ${destinationToken.symbol ?? "Token"} on ${CHAINS[input.destinationChain].name} via Chainflip`,
-    chainflip: {
-      fromAsset: "BTC",
-      toAsset: direct.chainflipLabel,
-      quote: chainflipQuote,
-      expectedSolanaUsdcOut: chainflipQuote.egressAmount,
-      minSolanaUsdcOut: minOut,
-      slippageBps,
-      estimatedTimeSeconds: chainflipQuote.estimatedDurationSeconds,
-      fees: chainflipQuote.includedFees,
-      directDestination: true,
-    },
-  };
+  return bestDestinationQuote(candidates);
 }
 
 async function quoteMayanAssetToAsset(input: QuoteRequest): Promise<Quote> {
@@ -1266,11 +1282,27 @@ async function quoteSolanaToMayanAsset(input: QuoteRequest): Promise<Quote> {
 
 async function quoteBtcToAsset(input: QuoteRequest): Promise<Quote> {
   const slippageBps = normalizeSlippageBps(input.slippageBps);
-  const direct = await quoteBtcDirectToAsset(input, slippageBps);
-  if (direct) return direct;
+  const candidates: QuoteCandidate[] = [];
+  const direct = await quoteBtcDirectToAsset(input, slippageBps).catch(() => null);
+  if (direct) candidates.push({ quote: direct, priority: 10 });
+
+  const viaEthUsdc = await quoteBtcViaEthUsdcToAsset(input, slippageBps).catch(() => []);
+  candidates.push(...viaEthUsdc);
+
+  const viaSolanaUsdc = await quoteBtcViaSolanaUsdcToAsset(input, slippageBps).catch(() => null);
+  if (viaSolanaUsdc) candidates.push({ quote: viaSolanaUsdc, priority: 30 });
+
+  const best = bestDestinationQuote(candidates);
+  if (best) return best;
+
+  throw new Error("BTC route unavailable for this destination asset");
+}
+
+async function quoteBtcViaSolanaUsdcToAsset(input: QuoteRequest, slippageBps: number): Promise<Quote | null> {
+  const destinationChain = input.destinationChain!;
+  if (!input.destinationToken || !input.destinationAddress) return null;
 
   const base = await quoteBtcToSolanaUsdc(input, slippageBps);
-  const destinationChain = input.destinationChain!;
   const expectedSolanaUsdcOut = base.expectedSolanaUsdcOut;
   const minSolanaUsdcOut = base.minSolanaUsdcOut;
   if (!expectedSolanaUsdcOut || !minSolanaUsdcOut) {
@@ -1392,6 +1424,189 @@ async function quoteBtcToAsset(input: QuoteRequest): Promise<Quote> {
   };
 }
 
+async function quoteBtcViaEthUsdcToAsset(input: QuoteRequest, slippageBps: number): Promise<QuoteCandidate[]> {
+  const destinationChain = input.destinationChain!;
+  const destinationTokenAddress = input.destinationToken!;
+  if (!input.destinationAddress || !env.evmHotWalletAddress) return [];
+  if (!CHAINS[destinationChain]?.mayanChain) return [];
+  if (destinationChain === "ethereum" && sameToken(destinationTokenAddress, CHAINS.ethereum.usdc)) return [];
+  if (destinationChain === "solana" && sameToken(destinationTokenAddress, USDC_MINT_ADDRESS)) return [];
+
+  const destinationToken = await findToken(destinationChain, destinationTokenAddress);
+  const candidates: QuoteCandidate[] = [];
+  const mayanDestinationAddress = input.destinationAddress;
+
+  const thorchainQuote = await thorchain.fetchSwapQuote({
+    fromAsset: THORCHAIN.btcAsset,
+    toAsset: THORCHAIN.ethUsdcAsset,
+    amount: input.amount,
+    destination: env.evmHotWalletAddress,
+    toleranceBps: slippageBps,
+  }).catch(() => null);
+  if (thorchainQuote) {
+    const expectedEthUsdcOut = thorchainAmountToBaseUnits(thorchainQuote.expected_amount_out, USDC_DECIMALS);
+    const minEthUsdcOut = applyBps(BigInt(expectedEthUsdcOut), 10_000 - slippageBps).toString();
+    const mayanQuote = await mayan.fetchSwiftQuoteForRoute({
+      fromChain: "ethereum",
+      fromToken: CHAINS.ethereum.usdc!,
+      toChain: destinationChain,
+      toToken: destinationTokenAddress,
+      amount: expectedEthUsdcOut,
+      destinationAddress: mayanDestinationAddress,
+      slippageBps,
+    }).catch(() => null);
+    const minMayanQuote = mayanQuote
+      ? await mayan.fetchSwiftQuoteForRoute({
+        fromChain: "ethereum",
+        fromToken: CHAINS.ethereum.usdc!,
+        toChain: destinationChain,
+        toToken: destinationTokenAddress,
+        amount: minEthUsdcOut,
+        destinationAddress: mayanDestinationAddress,
+        slippageBps,
+      }).catch(() => null)
+      : null;
+    if (mayanQuote && minMayanQuote) {
+      candidates.push({
+        priority: 20,
+        quote: buildBtcEthUsdcMayanQuote({
+          input,
+          destinationChain,
+          destinationToken,
+          expectedOut: mayanQuote.expectedAmountOutBaseUnits,
+          minOut: minMayanQuote.minReceivedBaseUnits,
+          expiresAt: new Date(thorchainQuote.expiry * 1000).toISOString(),
+          route: "thorchain",
+          routeSummary: `BTC -> USDC-ETH via THORChain -> ${mayanQuote.toToken.symbol ?? "Token"} on ${CHAINS[destinationChain].name} via Mayan Swift v2`,
+          mayanQuote,
+          thorchain: {
+            mode: "eth-usdc-fallback",
+            fromAsset: THORCHAIN.btcAsset,
+            toAsset: THORCHAIN.ethUsdcAsset,
+            expectedOut: thorchainQuote.expected_amount_out,
+            expectedSolanaUsdcOut: mayanQuote.expectedAmountOutBaseUnits,
+            minSolanaUsdcOut: minMayanQuote.minReceivedBaseUnits,
+            inboundAddress: thorchainQuote.inbound_address!,
+            memo: thorchainQuote.memo!,
+            expiry: thorchainQuote.expiry,
+            estimatedTimeSeconds: (thorchainSeconds(thorchainQuote) ?? 0) + (mayanQuote.etaSeconds ?? 0),
+            fees: thorchainQuote.fees,
+            mayan: mayanMetadata(mayanQuote),
+            directDestination: true,
+          },
+        }),
+      });
+    }
+  }
+
+  const chainflipQuote = await chainflip.fetchBtcQuote({
+    amount: input.amount,
+    destChain: CHAINFLIP.ethereumUsdc.chain,
+    destAsset: CHAINFLIP.ethereumUsdc.asset,
+  }).catch(() => null);
+  if (chainflipQuote) {
+    const minEthUsdcOut = applyBps(BigInt(chainflipQuote.egressAmount), 10_000 - slippageBps).toString();
+    const mayanQuote = await mayan.fetchSwiftQuoteForRoute({
+      fromChain: "ethereum",
+      fromToken: CHAINS.ethereum.usdc!,
+      toChain: destinationChain,
+      toToken: destinationTokenAddress,
+      amount: chainflipQuote.egressAmount,
+      destinationAddress: mayanDestinationAddress,
+      slippageBps,
+    }).catch(() => null);
+    const minMayanQuote = mayanQuote
+      ? await mayan.fetchSwiftQuoteForRoute({
+        fromChain: "ethereum",
+        fromToken: CHAINS.ethereum.usdc!,
+        toChain: destinationChain,
+        toToken: destinationTokenAddress,
+        amount: minEthUsdcOut,
+        destinationAddress: mayanDestinationAddress,
+        slippageBps,
+      }).catch(() => null)
+      : null;
+    if (mayanQuote && minMayanQuote) {
+      candidates.push({
+        priority: 21,
+        quote: buildBtcEthUsdcMayanQuote({
+          input,
+          destinationChain,
+          destinationToken,
+          expectedOut: mayanQuote.expectedAmountOutBaseUnits,
+          minOut: minMayanQuote.minReceivedBaseUnits,
+          expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+          route: "chainflip",
+          routeSummary: `BTC -> USDC-ETH via Chainflip -> ${mayanQuote.toToken.symbol ?? "Token"} on ${CHAINS[destinationChain].name} via Mayan Swift v2`,
+          mayanQuote,
+          chainflip: {
+            mode: "eth-usdc-forward",
+            fromAsset: "BTC",
+            toAsset: "USDC-ETH",
+            quote: chainflipQuote,
+            expectedSolanaUsdcOut: mayanQuote.expectedAmountOutBaseUnits,
+            minSolanaUsdcOut: minMayanQuote.minReceivedBaseUnits,
+            slippageBps,
+            estimatedTimeSeconds: (chainflipQuote.estimatedDurationSeconds ?? 0) + (mayanQuote.etaSeconds ?? 0),
+            fees: chainflipQuote.includedFees,
+            directDestination: true,
+            mayan: mayanMetadata(mayanQuote),
+          },
+        }),
+      });
+    }
+  }
+
+  return candidates;
+}
+
+function buildBtcEthUsdcMayanQuote(params: {
+  input: QuoteRequest;
+  destinationChain: SourceChainId;
+  destinationToken: MayanToken;
+  expectedOut: string;
+  minOut: string;
+  expiresAt: string;
+  route: "thorchain" | "chainflip";
+  routeSummary: string;
+  mayanQuote: NonNullable<Quote["mayan"]>["quote"];
+  thorchain?: NonNullable<Quote["thorchain"]>;
+  chainflip?: NonNullable<Quote["chainflip"]>;
+}): Quote {
+  return {
+    id: crypto.randomUUID(),
+    direction: "asset-to-asset",
+    sourceChain: "bitcoin",
+    sourceToken: params.route === "thorchain" ? THORCHAIN.btcAsset : params.input.sourceToken,
+    sourceTokenSymbol: "BTC",
+    sourceTokenDecimals: 8,
+    destinationChain: params.destinationChain,
+    destinationToken: params.mayanQuote.toToken.contract ?? params.mayanQuote.toToken.mint ?? params.input.destinationToken,
+    inputAmount: params.input.amount,
+    sourceAddress: params.input.sourceAddress,
+    xmrAddress: "",
+    destinationAddress: params.input.destinationAddress,
+    destinationTokenSymbol: params.mayanQuote.toToken.symbol ?? params.destinationToken.symbol,
+    destinationTokenDecimals: params.mayanQuote.toToken.decimals ?? params.destinationToken.decimals,
+    refundAddress: params.input.refundAddress,
+    estimatedWxmrOut: "0",
+    estimatedXmrOut: "0",
+    minWxmrOut: "0",
+    minXmrOut: "0",
+    estimatedDestinationOut: params.expectedOut,
+    minDestinationOut: params.minOut,
+    bridgeFeeBps: 0,
+    serviceFeeBps: 0,
+    executionPolicy: params.input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
+    jupiterPriceImpactPct: String(params.mayanQuote.priceImpact ?? 0),
+    expiresAt: params.expiresAt,
+    route: params.route,
+    routeSummary: params.routeSummary,
+    mayan: mayanMetadata(params.mayanQuote),
+    ...(params.route === "chainflip" ? { chainflip: params.chainflip } : { thorchain: params.thorchain }),
+  };
+}
+
 async function buildFundingInstructions(orderId: string, quote: Quote): Promise<FundingInstructions> {
   if (quote.direction === "xmr-to-mayan") {
     const owner = deriveReverseDepositOwner(env.solanaHotWallet, orderId);
@@ -1465,9 +1680,14 @@ async function buildFundingInstructions(orderId: string, quote: Quote): Promise<
   if (quote.route === "chainflip") {
     if (!quote.chainflip) throw new Error("Chainflip quote metadata is missing");
     if (!quote.sourceAddress) throw new Error("BTC refund address is required for Chainflip");
+    if (quote.chainflip.mode === "eth-usdc-forward" && !env.evmHotWalletAddress) {
+      throw new Error("EVM_HOTWALLET_PRIVATE_KEY is required for Chainflip ETH USDC forwarding");
+    }
     const deposit = await chainflip.openDepositAddress({
       quote: quote.chainflip.quote as ChainflipQuote,
-      destinationAddress: quote.chainflip.directDestination
+      destinationAddress: quote.chainflip.mode === "eth-usdc-forward"
+        ? env.evmHotWalletAddress!
+        : quote.chainflip.directDestination
         ? quote.destinationAddress ?? env.solanaHotWallet.publicKey.toBase58()
         : env.solanaHotWallet.publicKey.toBase58(),
       refundAddress: quote.sourceAddress,
@@ -1552,6 +1772,31 @@ function bestBtcSolanaUsdcRoute(candidates: BtcSolanaUsdcRoute[]): BtcSolanaUsdc
     if (outputDiff !== 0) return outputDiff;
     return left.priority - right.priority;
   })[0];
+}
+
+function bestDestinationQuote(candidates: QuoteCandidate[]): Quote | null {
+  const usable = candidates.filter((candidate) => quoteHasPositiveOutput(candidate.quote));
+  if (!usable.length) return null;
+  return [...usable].sort((left, right) => {
+    const outputDiff = compareBigIntStrings(
+      right.quote.estimatedDestinationOut ?? "0",
+      left.quote.estimatedDestinationOut ?? "0",
+    );
+    if (outputDiff !== 0) return outputDiff;
+    return left.priority - right.priority;
+  })[0].quote;
+}
+
+function mayanMetadata(quote: NonNullable<Quote["mayan"]>["quote"]): NonNullable<Quote["mayan"]> {
+  return {
+    quote,
+    expectedSolanaUsdcOut: quote.expectedAmountOutBaseUnits,
+    minSolanaUsdcOut: quote.minReceivedBaseUnits,
+    etaSeconds: quote.etaSeconds,
+    clientEta: quote.clientEta,
+    protocolBps: quote.protocolBps,
+    quoteId: quote.quoteId,
+  };
 }
 
 function compareBigIntStrings(left: string, right: string): number {

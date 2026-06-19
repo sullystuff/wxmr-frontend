@@ -236,8 +236,8 @@ async function processChainflipBridge(order: Order): Promise<void> {
   }
 
   const destinationAmount = chainflipDeliveredBaseUnits(status);
-  const minimum = BigInt(quote.chainflip.minSolanaUsdcOut);
-  if (shouldRefundOnSlippage(order) && BigInt(destinationAmount) < minimum) {
+  const minimum = quote.chainflip.mode === "eth-usdc-forward" ? null : BigInt(quote.chainflip.minSolanaUsdcOut);
+  if (minimum !== null && shouldRefundOnSlippage(order) && BigInt(destinationAmount) < minimum) {
     store.updateOrder(
       order.id,
       {
@@ -262,8 +262,8 @@ async function processChainflipBridge(order: Order): Promise<void> {
     const mayanQuote = await mayan.fetchSwiftQuoteForRoute({
       fromChain: "ethereum",
       fromToken: CHAINS.ethereum.usdc!,
-      toChain: "solana",
-      toToken: USDC_MINT_ADDRESS,
+      toChain: quote.chainflip.directDestination ? getDestinationChain(order, quote) : "solana",
+      toToken: quote.chainflip.directDestination ? getDestinationToken(order, quote) : USDC_MINT_ADDRESS,
       amount: destinationAmount,
       destinationAddress: mayanDestination,
       slippageBps: quote.chainflip.mayan?.quote.slippageBps ?? DEFAULT_SLIPPAGE_BPS,
@@ -289,7 +289,7 @@ async function processChainflipBridge(order: Order): Promise<void> {
       {
         solanaMintSignature: mayanTx,
       },
-      `Mayan ETH USDC -> Solana USDC submitted after Chainflip BTC swap: ${mayanTx}`,
+      `Mayan ETH USDC forwarding submitted after Chainflip BTC swap: ${mayanTx}`,
     );
     throw new Error(`Mayan forwarding pending: ${mayanTx}`);
   }
@@ -402,8 +402,8 @@ async function processThorchainBridge(order: Order): Promise<void> {
   const mayanQuote = await mayan.fetchSwiftQuoteForRoute({
     fromChain: "ethereum",
     fromToken: CHAINS.ethereum.usdc!,
-    toChain: "solana",
-    toToken: USDC_MINT_ADDRESS,
+    toChain: quote.thorchain.directDestination ? getDestinationChain(order, quote) : "solana",
+    toToken: quote.thorchain.directDestination ? getDestinationToken(order, quote) : USDC_MINT_ADDRESS,
     amount: ethUsdcAmount,
     destinationAddress: quote.thorchain.directDestination
       ? order.destinationAddress ?? env.solanaHotWallet.publicKey.toBase58()
@@ -431,10 +431,10 @@ async function processThorchainBridge(order: Order): Promise<void> {
   const mayanTx = await evm.executeMayanSwift(mayanQuote, mayanDestination);
   store.updateOrder(
     order.id,
-    {
-      solanaMintSignature: mayanTx,
-    },
-    `Mayan ETH USDC -> Solana USDC submitted: ${mayanTx}`,
+      {
+        solanaMintSignature: mayanTx,
+      },
+    `Mayan ETH USDC forwarding submitted: ${mayanTx}`,
   );
   throw new Error(`Mayan swap pending: ${mayanTx}`);
 }
@@ -455,7 +455,10 @@ async function processChainflipMayanForward(order: Order, quote: Quote): Promise
     throw new Error(`Mayan forwarding pending: ${details.clientStatus ?? details.status ?? "unknown"}`);
   }
 
-  const destinationAmount = mayanDeliveredBaseUnits(details, 6);
+  const destinationAmount = mayanDeliveredBaseUnits(
+    details,
+    quote.chainflip.directDestination ? quote.destinationTokenDecimals ?? 6 : 6,
+  );
   const destinationTx = mayanDestinationTx(details) ?? order.solanaMintSignature;
   const minimum = BigInt(quote.chainflip.directDestination
     ? quote.minDestinationOut ?? quote.chainflip.minSolanaUsdcOut
@@ -479,7 +482,7 @@ async function processChainflipMayanForward(order: Order, quote: Quote): Promise
         destinationAmount,
         withdrawalSignature: destinationTx,
       },
-      `Mayan delivered ${destinationAmount} USDC to destination after Chainflip BTC swap`,
+      `Mayan delivered ${destinationAmount} to destination after Chainflip BTC swap`,
     );
     return;
   }
@@ -507,7 +510,10 @@ async function processThorchainMayanForward(order: Order, quote: Quote): Promise
     throw new Error(`Mayan forwarding pending: ${details.clientStatus ?? details.status ?? "unknown"}`);
   }
 
-  const destinationAmount = mayanDeliveredBaseUnits(details, 6);
+  const destinationAmount = mayanDeliveredBaseUnits(
+    details,
+    quote.thorchain?.directDestination ? quote.destinationTokenDecimals ?? 6 : 6,
+  );
   const destinationTx = mayanDestinationTx(details) ?? order.solanaMintSignature;
   const minimum = BigInt(quote.thorchain?.directDestination
     ? quote.minDestinationOut ?? quote.thorchain.minSolanaUsdcOut
@@ -531,7 +537,7 @@ async function processThorchainMayanForward(order: Order, quote: Quote): Promise
         destinationAmount,
         withdrawalSignature: destinationTx,
       },
-      `Mayan delivered ${destinationAmount} USDC to destination after THORChain BTC swap`,
+      `Mayan delivered ${destinationAmount} to destination after THORChain BTC swap`,
     );
     return;
   }
