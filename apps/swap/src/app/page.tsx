@@ -1035,24 +1035,33 @@ function QuoteSummary({
       : `${formatBps(mayan?.protocolBps ?? 0)} Mayan + ${formatBps(quote.bridgeFeeBps)} bridge`;
 
   return (
-    <div className="rounded-2xl border border-[#292b31] bg-[#101116] p-3">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+    <div className="rounded-xl border border-[#292b31] bg-[#101116] p-2.5">
+      <div className="mb-2 flex items-center justify-between gap-2">
         <div className="min-w-0">
-          <div className="text-sm font-semibold text-white">Quote ready</div>
+          <div className="text-sm font-semibold text-white">Quote</div>
           <div className="truncate text-xs text-[#8f949d]">{quote.routeSummary ?? 'Mayan Swift v2 route'}</div>
         </div>
-        <div className={`rounded-full px-3 py-1 text-xs font-semibold ${quoteExpired ? 'bg-[#351919] text-[#ff8c8c]' : 'bg-[#142316] text-[#9ee6a8]'}`}>
+        <div className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${quoteExpired ? 'bg-[#351919] text-[#ff8c8c]' : 'bg-[#142316] text-[#9ee6a8]'}`}>
           {quoteExpired ? 'Expired' : `Expires in ${formatCountdown(quoteExpiresIn)}`}
         </div>
       </div>
-      <div className="grid gap-2 sm:grid-cols-3">
-        <Metric label={expectedLabel} value={expectedValue} />
-        <Metric label={minimumLabel} value={minimumValue} />
-        <Metric label="Fees" value={fees} />
+      <div className="grid gap-1.5 sm:grid-cols-3">
+        <QuoteSummaryItem label={expectedLabel} value={expectedValue} />
+        <QuoteSummaryItem label={minimumLabel} value={minimumValue} />
+        <QuoteSummaryItem label="Fees" value={fees} />
       </div>
-      <div className="mt-2 text-xs text-[#6f747d]">
+      <div className="mt-1.5 text-[11px] text-[#6f747d]">
         Sending {formatBaseUnits(quote.inputAmount, sourceDecimals)} {sourceSymbol}
       </div>
+    </div>
+  );
+}
+
+function QuoteSummaryItem({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-lg border border-[#252831] bg-[#0b0c10] px-2.5 py-2">
+      <div className="truncate text-[10px] uppercase tracking-[0.08em] text-[#737982]">{label}</div>
+      <div className="mt-0.5 break-words text-xs font-semibold leading-snug text-white">{value}</div>
     </div>
   );
 }
