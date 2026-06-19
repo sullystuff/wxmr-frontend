@@ -86,6 +86,22 @@ const BLUE_CHIP_TOKEN_SYMBOLS = new Set([
   'MON',
   'SUI',
 ]);
+const CHAIN_BADGES: Partial<Record<SourceChainId, { short: string; className: string }>> = {
+  bitcoin: { short: 'BTC', className: 'bg-[#f7931a] text-black' },
+  ethereum: { short: 'ETH', className: 'bg-[#627eea] text-white' },
+  base: { short: 'B', className: 'bg-[#0052ff] text-white' },
+  arbitrum: { short: 'ARB', className: 'bg-[#28a0f0] text-white' },
+  optimism: { short: 'OP', className: 'bg-[#ff0420] text-white' },
+  polygon: { short: 'POL', className: 'bg-[#8247e5] text-white' },
+  avalanche: { short: 'AVAX', className: 'bg-[#e84142] text-white' },
+  bsc: { short: 'BNB', className: 'bg-[#f3ba2f] text-black' },
+  linea: { short: 'L', className: 'bg-[#61dfff] text-black' },
+  hyperevm: { short: 'HYPE', className: 'bg-[#64ffda] text-black' },
+  hyperliquid: { short: 'HL', className: 'bg-[#64ffda] text-black' },
+  monad: { short: 'MON', className: 'bg-[#836ef9] text-white' },
+  sui: { short: 'SUI', className: 'bg-[#6fbcf0] text-black' },
+  solana: { short: 'SOL', className: 'bg-[#14f195] text-black' },
+};
 
 type RouteLeg = {
   title: string;
@@ -719,7 +735,7 @@ function MayanReceivePanel({
   );
 }
 
-function ChainSelect({
+function NetworkPillSelector({
   value,
   chains,
   onChange,
@@ -729,19 +745,35 @@ function ChainSelect({
   onChange: (value: SourceChainId) => void;
 }) {
   return (
-    <label className="relative block">
-      <span className="sr-only">Network</span>
-      <select
-        value={value}
-        onChange={(event) => onChange(event.target.value as SourceChainId)}
-        className="w-full appearance-none rounded-xl border border-[#30333b] bg-[#17191f] py-3 pl-3 pr-9 text-sm font-medium text-white outline-none transition-colors hover:border-[#f26822] focus:border-[#f26822]"
-      >
-        {chains.map((chain) => (
-          <option key={chain} value={chain}>{CHAINS[chain].name}</option>
-        ))}
-      </select>
-      <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-[#8f949d]">v</span>
-    </label>
+    <div className="-mx-1 flex gap-2 overflow-x-auto px-1 pb-1">
+      {chains.map((chain) => {
+        const selected = chain === value;
+        return (
+          <button
+            key={chain}
+            type="button"
+            onClick={() => onChange(chain)}
+            className={`flex shrink-0 items-center gap-2 rounded-full border px-2.5 py-2 text-sm transition-colors ${
+              selected
+                ? 'border-[#f26822] bg-[#22170f] text-white shadow-sm shadow-[#f26822]/20'
+                : 'border-[#30333b] bg-[#15171c] text-[#c8cbd1] hover:border-[#f26822]'
+            }`}
+          >
+            <ChainBadge chain={chain} />
+            <span className="font-medium">{CHAINS[chain].name}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ChainBadge({ chain }: { chain: SourceChainId }) {
+  const badge = CHAIN_BADGES[chain] ?? { short: CHAINS[chain].name.slice(0, 2).toUpperCase(), className: 'bg-[#30333b] text-white' };
+  return (
+    <span className={`flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-[10px] font-black ${badge.className}`}>
+      {badge.short}
+    </span>
   );
 }
 
@@ -949,7 +981,7 @@ function TokenPicker({
         className="max-h-[88vh] w-full max-w-lg overflow-hidden rounded-3xl border border-[#292b31] bg-[#111216] shadow-2xl shadow-black"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="border-b border-[#24252b] p-4">
+        <div className="border-b border-[#24252b] p-3">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <div className="text-base font-semibold text-white">Select asset</div>
@@ -959,16 +991,22 @@ function TokenPicker({
               Close
             </button>
           </div>
-          <div className="mb-3 rounded-2xl border border-[#292b31] bg-[#0c0d11] p-3">
-            <div className="mb-2 text-xs font-medium uppercase tracking-[0.08em] text-[#6f747d]">Network</div>
-            <ChainSelect value={chainId} chains={chains} onChange={onChainChange} />
+          <div className="mb-2 rounded-2xl border border-[#292b31] bg-[#0c0d11] p-2">
+            <div className="mb-1.5 flex items-center justify-between gap-3 px-1">
+              <div className="text-xs font-medium uppercase tracking-[0.08em] text-[#6f747d]">Network</div>
+              <div className="flex items-center gap-1.5 text-xs text-[#c8cbd1]">
+                <ChainBadge chain={chainId} />
+                {CHAINS[chainId].name}
+              </div>
+            </div>
+            <NetworkPillSelector value={chainId} chains={chains} onChange={onChainChange} />
           </div>
           <input
             value={search}
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder="Search token"
             autoFocus
-            className="w-full rounded-2xl border border-[#2c2f37] bg-[#090a0e] px-4 py-3 text-sm text-white outline-none placeholder:text-[#444954] focus:border-[#f26822]"
+            className="w-full rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-2.5 text-sm text-white outline-none placeholder:text-[#444954] focus:border-[#f26822]"
           />
         </div>
         <div className="max-h-[58vh] overflow-y-auto p-2">
