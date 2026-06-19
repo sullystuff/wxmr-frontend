@@ -1150,7 +1150,8 @@ async function quoteMayanAssetToAsset(input: QuoteRequest): Promise<Quote> {
   const slippageBps = normalizeSlippageBps(input.slippageBps);
   const destinationChain = input.destinationChain!;
   const destinationToken = input.destinationToken!;
-  const mayanQuote = await mayan.fetchSwiftQuoteForRoute({
+  const candidates: QuoteCandidate[] = [];
+  const directQuote = await mayan.fetchSwiftQuoteForRoute({
     fromChain: input.sourceChain,
     fromToken: input.sourceToken,
     toChain: destinationChain,
@@ -1158,45 +1159,114 @@ async function quoteMayanAssetToAsset(input: QuoteRequest): Promise<Quote> {
     amount: input.amount,
     destinationAddress: input.destinationAddress!,
     slippageBps,
-  });
+  }).catch(() => null);
+  if (directQuote) {
+    candidates.push({
+      priority: 10,
+      quote: buildMayanAssetQuote({
+        input,
+        destinationChain,
+        mayanQuote: directQuote,
+        estimatedDestinationOut: directQuote.expectedAmountOutBaseUnits,
+        minDestinationOut: directQuote.minReceivedBaseUnits,
+        jupiterPriceImpactPct: String(directQuote.priceImpact ?? 0),
+        routeSummary: `${directQuote.fromToken.symbol ?? "Token"} on ${CHAINS[input.sourceChain].name} -> ${directQuote.toToken.symbol ?? "Token"} on ${CHAINS[destinationChain].name} via Mayan Swift v2`,
+      }),
+    });
+  }
 
+  if (destinationChain === "solana" && !sameToken(destinationToken, USDC_MINT_ADDRESS)) {
+    const viaSolanaUsdc = await quoteMayanViaSolanaUsdcToAsset(input, slippageBps).catch(() => null);
+    if (viaSolanaUsdc) candidates.push({ quote: viaSolanaUsdc, priority: 20 });
+  }
+
+  const best = bestDestinationQuote(candidates);
+  if (best) return best;
+
+  throw new Error("Mayan route unavailable for this destination asset");
+}
+
+async function quoteMayanViaSolanaUsdcToAsset(input: QuoteRequest, slippageBps: number): Promise<Quote | null> {
+  const destinationToken = input.destinationToken!;
+  const solanaToken = await findToken("solana", destinationToken);
+  const mayanQuote = await mayan.fetchSwiftQuoteForRoute({
+    fromChain: input.sourceChain,
+    fromToken: input.sourceToken,
+    toChain: "solana",
+    toToken: USDC_MINT_ADDRESS,
+    amount: input.amount,
+    destinationAddress: env.solanaHotWallet.publicKey.toBase58(),
+    slippageBps,
+  });
+  const expectedJupiterQuote = await jupiter.quote({
+    inputMint: USDC_MINT_ADDRESS,
+    outputMint: destinationToken,
+    amount: mayanQuote.expectedAmountOutBaseUnits,
+    taker: env.solanaHotWallet.publicKey.toBase58(),
+  });
+  const minJupiterQuote = await jupiter.quote({
+    inputMint: USDC_MINT_ADDRESS,
+    outputMint: destinationToken,
+    amount: mayanQuote.minReceivedBaseUnits,
+    taker: env.solanaHotWallet.publicKey.toBase58(),
+  });
+  const minDestinationOut = applyBps(BigInt(minJupiterQuote.outAmount), 10_000 - slippageBps).toString();
+
+  return buildMayanAssetQuote({
+    input,
+    destinationChain: "solana",
+    destinationToken: solanaToken,
+    mayanQuote,
+    estimatedDestinationOut: expectedJupiterQuote.outAmount,
+    minDestinationOut,
+    jupiterPriceImpactPct: expectedJupiterQuote.priceImpactPct ?? "0",
+    routeSummary: `${mayanQuote.fromToken.symbol ?? "Token"} on ${CHAINS[input.sourceChain].name} -> USDC-SOL via Mayan Swift v2 -> ${solanaToken.symbol ?? "Token"} on Solana via jup.ag`,
+  });
+}
+
+function buildMayanAssetQuote(params: {
+  input: QuoteRequest;
+  destinationChain: SourceChainId;
+  destinationToken?: MayanToken;
+  mayanQuote: NonNullable<Quote["mayan"]>["quote"];
+  estimatedDestinationOut: string;
+  minDestinationOut: string;
+  jupiterPriceImpactPct: string;
+  routeSummary: string;
+}): Quote {
   return {
     id: crypto.randomUUID(),
     direction: "asset-to-asset",
-    sourceChain: input.sourceChain,
-    sourceToken: mayanQuote.fromToken.contract ?? input.sourceToken,
-    sourceTokenSymbol: mayanQuote.fromToken.symbol,
-    sourceTokenDecimals: mayanQuote.fromToken.decimals,
-    destinationChain,
-    destinationToken: mayanQuote.toToken.contract ?? mayanQuote.toToken.mint ?? destinationToken,
-    inputAmount: input.amount,
+    sourceChain: params.input.sourceChain,
+    sourceToken: params.mayanQuote.fromToken.contract ?? params.input.sourceToken,
+    sourceTokenSymbol: params.mayanQuote.fromToken.symbol,
+    sourceTokenDecimals: params.mayanQuote.fromToken.decimals,
+    destinationChain: params.destinationChain,
+    destinationToken: params.destinationToken?.contract ??
+      params.destinationToken?.mint ??
+      params.mayanQuote.toToken.contract ??
+      params.mayanQuote.toToken.mint ??
+      params.input.destinationToken,
+    inputAmount: params.input.amount,
     xmrAddress: "",
-    destinationAddress: input.destinationAddress,
-    destinationTokenSymbol: mayanQuote.toToken.symbol,
-    destinationTokenDecimals: mayanQuote.toToken.decimals,
-    refundAddress: input.refundAddress,
+    destinationAddress: params.input.destinationAddress,
+    destinationTokenSymbol: params.destinationToken?.symbol ?? params.mayanQuote.toToken.symbol,
+    destinationTokenDecimals: params.destinationToken?.decimals ?? params.mayanQuote.toToken.decimals,
+    refundAddress: params.input.refundAddress,
     estimatedWxmrOut: "0",
     estimatedXmrOut: "0",
     minWxmrOut: "0",
     minXmrOut: "0",
-    estimatedDestinationOut: mayanQuote.expectedAmountOutBaseUnits,
-    minDestinationOut: mayanQuote.minReceivedBaseUnits,
+    estimatedDestinationOut: params.estimatedDestinationOut,
+    minDestinationOut: params.minDestinationOut,
     bridgeFeeBps: 0,
     serviceFeeBps: 0,
-    executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
-    jupiterPriceImpactPct: String(mayanQuote.priceImpact ?? 0),
+    executionPolicy: params.input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
+    jupiterPriceImpactPct: params.jupiterPriceImpactPct,
     expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
     route: "mayan",
-    routeSummary: `${mayanQuote.fromToken.symbol ?? "Token"} on ${CHAINS[input.sourceChain].name} -> ${mayanQuote.toToken.symbol ?? "Token"} on ${CHAINS[destinationChain].name} via Mayan Swift v2`,
-    mayan: {
-      quote: mayanQuote,
-      expectedSolanaUsdcOut: mayanQuote.expectedAmountOutBaseUnits,
-      minSolanaUsdcOut: mayanQuote.minReceivedBaseUnits,
-      etaSeconds: mayanQuote.etaSeconds,
-      clientEta: mayanQuote.clientEta,
-      protocolBps: mayanQuote.protocolBps,
-      quoteId: mayanQuote.quoteId,
-    },
+    routeSummary: params.routeSummary,
+    mayan: mayanMetadata(params.mayanQuote),
   };
 }
 
@@ -1867,10 +1937,16 @@ function inferDirection(sourceChain: SourceChainId, destinationChain: SourceChai
 }
 
 function requiresSolanaHotWalletPayout(quote: Quote): boolean {
-  return quote.direction === "asset-to-asset" &&
-    quote.sourceChain !== "solana" &&
-    quote.destinationChain === "solana" &&
-    isWxmrMint(quote.destinationToken);
+  if (
+    quote.direction !== "asset-to-asset" ||
+    quote.sourceChain === "solana" ||
+    quote.destinationChain !== "solana"
+  ) {
+    return false;
+  }
+  const deliveredToken = quote.mayan?.quote.toToken.contract ?? quote.mayan?.quote.toToken.mint;
+  if (!deliveredToken) return isWxmrMint(quote.destinationToken);
+  return !sameToken(deliveredToken, quote.destinationToken);
 }
 
 function isWxmrMint(value: string | undefined): boolean {

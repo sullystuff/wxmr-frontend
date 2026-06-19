@@ -942,14 +942,24 @@ function shouldRefundOnSlippage(order: Order): boolean {
 }
 
 function requiresSolanaHotWalletPayout(quote: Quote): boolean {
-  return quote.direction === "asset-to-asset" &&
-    quote.sourceChain !== "solana" &&
-    quote.destinationChain === "solana" &&
-    isWxmrMint(quote.destinationToken);
+  if (
+    quote.direction !== "asset-to-asset" ||
+    quote.sourceChain === "solana" ||
+    quote.destinationChain !== "solana"
+  ) {
+    return false;
+  }
+  const deliveredToken = quote.mayan?.quote.toToken.contract ?? quote.mayan?.quote.toToken.mint;
+  if (!deliveredToken) return isWxmrMint(quote.destinationToken);
+  return !sameToken(deliveredToken, quote.destinationToken);
 }
 
 function isWxmrMint(value: string | undefined): boolean {
   return Boolean(value && value.toLowerCase() === WXMR_MINT_ADDRESS.toLowerCase());
+}
+
+function sameToken(left: string | undefined, right: string | undefined): boolean {
+  return Boolean(left && right && left.toLowerCase() === right.toLowerCase());
 }
 
 function mustGetQuote(quoteId: string): Quote {
