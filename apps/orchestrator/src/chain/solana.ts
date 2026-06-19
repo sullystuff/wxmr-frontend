@@ -28,6 +28,7 @@ import {
   claimPendingMintWithKeypair,
   createDepositAccountWithKeypair,
   fetchDepositAccount,
+  findDepositAccountByXmrAddress,
   requestWithdrawalWithKeypair,
   type DepositAccountInfo,
 } from "@wxmr/core/bridge";
@@ -130,6 +131,10 @@ export class SolanaExecutor {
 
   fetchMoneroDeposit(owner: PublicKey): Promise<DepositAccountInfo | null> {
     return fetchDepositAccount(this.connection, owner, this.bridgeProgramId);
+  }
+
+  findMoneroDepositByAddress(xmrAddress: string): Promise<DepositAccountInfo | null> {
+    return findDepositAccountByXmrAddress(this.connection, xmrAddress, this.bridgeProgramId);
   }
 
   async claimMoneroDeposit(owner: Keypair): Promise<string> {

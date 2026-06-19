@@ -70,6 +70,29 @@ function registerRoutes(prefix: "" | "/api"): void {
 
   app.get(route("/health"), async () => ({ ok: true }));
 
+  app.get(route("/deposit-address/:address"), async (request) => {
+    const { address } = request.params as { address: string };
+    const xmrAddress = address.trim();
+    try {
+      assertValidMoneroAddress(xmrAddress);
+    } catch {
+      return { found: false };
+    }
+
+    const deposit = await solana.findMoneroDepositByAddress(xmrAddress);
+    if (!deposit || deposit.status === "closed") {
+      return { found: false };
+    }
+
+    return {
+      found: true,
+      owner: deposit.owner,
+      depositPda: deposit.depositPda,
+      xmrDepositAddress: deposit.xmrDepositAddress,
+      status: deposit.status,
+    };
+  });
+
   app.get(route("/tokens/:sourceChain"), async (request, reply) => {
     const { sourceChain } = request.params as { sourceChain: SourceChainId };
     if (sourceChain === "bitcoin") {

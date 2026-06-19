@@ -213,6 +213,25 @@ export async function fetchDepositAccount(
   }
 }
 
+export async function findDepositAccountByXmrAddress(
+  connection: Connection,
+  xmrAddress: string,
+  programId: PublicKey | string = BRIDGE_PROGRAM_ID,
+): Promise<DepositAccountInfo | null> {
+  const normalizedAddress = xmrAddress.trim();
+  if (!normalizedAddress) return null;
+
+  const wallet = createKeypairWallet(Keypair.generate());
+  const program = createBridgeProgram(connection, wallet);
+  try {
+    const deposits = await program.account.depositRecord.all();
+    const match = deposits.find(({ account }) => account.xmrDepositAddress === normalizedAddress);
+    return match ? decodeDepositAccount(match.publicKey, match.account) : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function claimPendingMintWithKeypair(
   options: DepositAccountOptions,
 ): Promise<string> {

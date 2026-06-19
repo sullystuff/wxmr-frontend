@@ -127,6 +127,14 @@ type RouteLeg = {
   detail: string;
 };
 
+type DepositAddressLookup = {
+  found: boolean;
+  owner?: string;
+  depositPda?: string;
+  xmrDepositAddress?: string;
+  status?: string;
+};
+
 function MoneroLogo({ className = 'w-8 h-8' }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 3756.09 3756.49" xmlns="http://www.w3.org/2000/svg" aria-hidden>
@@ -157,8 +165,11 @@ export default function SwapPage() {
   const [isQuoteRefreshing, setIsQuoteRefreshing] = useState(false);
   const [tokenPickerTarget, setTokenPickerTarget] = useState<'source' | 'destination' | null>(null);
   const [tokenSearch, setTokenSearch] = useState('');
+  const [depositAddressMatch, setDepositAddressMatch] = useState<DepositAddressLookup | null>(null);
+  const [isCheckingDepositAddress, setIsCheckingDepositAddress] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const quoteRequestSeq = useRef(0);
+  const depositLookupSeq = useRef(0);
   const direction: SwapDirection = sourceChain === 'monero'
     ? REVERSE_DIRECTION
     : destinationChain === 'monero'
@@ -280,6 +291,38 @@ export default function SwapPage() {
     return () => clearInterval(timer);
   }, [order]);
 
+  useEffect(() => {
+    const trimmedAddress = xmrAddress.trim();
+    const shouldCheck = direction === FORWARD_DIRECTION &&
+      destinationChain === 'monero' &&
+      isValidMoneroAddress(trimmedAddress);
+    const requestSeq = depositLookupSeq.current + 1;
+    depositLookupSeq.current = requestSeq;
+    setDepositAddressMatch(null);
+
+    if (!shouldCheck) {
+      setIsCheckingDepositAddress(false);
+      return;
+    }
+
+    setIsCheckingDepositAddress(true);
+    const timer = setTimeout(() => {
+      api<DepositAddressLookup>(`/deposit-address/${encodeURIComponent(trimmedAddress)}`)
+        .then((result) => {
+          if (depositLookupSeq.current !== requestSeq) return;
+          setDepositAddressMatch(result.found && result.owner ? result : null);
+        })
+        .catch(() => {
+          if (depositLookupSeq.current === requestSeq) setDepositAddressMatch(null);
+        })
+        .finally(() => {
+          if (depositLookupSeq.current === requestSeq) setIsCheckingDepositAddress(false);
+        });
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [destinationChain, direction, xmrAddress]);
+
   const selectedToken = useMemo(
     () => sourceTokens.find((token) => tokenAddress(token) === sourceToken),
     [sourceToken, sourceTokens],
@@ -382,6 +425,15 @@ export default function SwapPage() {
     resetTrade();
   };
 
+  const useDirectDepositRoute = () => {
+    if (!depositAddressMatch?.owner) return;
+    setDestinationChain('solana');
+    setDestinationToken(WXMR_MINT_ADDRESS);
+    setDestinationAddress(depositAddressMatch.owner);
+    setTokenPickerTarget(null);
+    resetTrade({ preserveQuote: parsedAmount > BigInt(0) });
+  };
+
   const fetchQuote = useCallback(async ({ showLoading }: { showLoading: boolean }) => {
     if (!canPreviewQuote || !quoteRequestKey) return;
     const requestSeq = quoteRequestSeq.current + 1;
@@ -457,7 +509,7 @@ export default function SwapPage() {
           quoteId: quote.id,
           sourceAddress: sourceChain === 'bitcoin' ? sourceAddress.trim() : undefined,
           refundAddress: refundAddress || undefined,
-          xmrAddress: xmrAddress.trim(),
+          xmrAddress: requiresXmrAddress ? xmrAddress.trim() : undefined,
           executionPolicy,
         }),
       });
@@ -540,6 +592,8 @@ export default function SwapPage() {
               xmrAddress={xmrAddress}
               sourceAddress={sourceAddress}
               destinationAddress={destinationAddress}
+              depositAddressMatch={depositAddressMatch}
+              isCheckingDepositAddress={isCheckingDepositAddress}
               onXmrAddressChange={(next) => {
                 setXmrAddress(next);
               }}
@@ -550,6 +604,7 @@ export default function SwapPage() {
                 setDestinationAddress(next);
                 resetTrade();
               }}
+              onUseDirectDepositRoute={useDirectDepositRoute}
             />
 
             <SwapOptionsPanel
@@ -836,9 +891,12 @@ function RecipientPanel({
   xmrAddress,
   sourceAddress,
   destinationAddress,
+  depositAddressMatch,
+  isCheckingDepositAddress,
   onXmrAddressChange,
   onSourceAddressChange,
   onDestinationAddressChange,
+  onUseDirectDepositRoute,
 }: {
   direction: SwapDirection;
   destinationChain: SourceChainId;
@@ -846,15 +904,23 @@ function RecipientPanel({
   xmrAddress: string;
   sourceAddress: string;
   destinationAddress: string;
+  depositAddressMatch: DepositAddressLookup | null;
+  isCheckingDepositAddress: boolean;
   onXmrAddressChange: (value: string) => void;
   onSourceAddressChange: (value: string) => void;
   onDestinationAddressChange: (value: string) => void;
+  onUseDirectDepositRoute: () => void;
 }) {
   const addressOk = !xmrAddress || isValidMoneroAddress(xmrAddress);
   const needsBitcoinRefundAddress = quote?.route === 'chainflip';
   const bitcoinRefundOk = !needsBitcoinRefundAddress || Boolean(sourceAddress.trim());
   const destinationLabel = destinationChain === 'solana' ? 'Solana receive address' : `${CHAINS[destinationChain].name} receive address`;
   const destinationPlaceholder = destinationChain === 'solana' ? 'Solana wallet address' : `Wallet on ${CHAINS[destinationChain].name}`;
+  const addressStatus = isCheckingDepositAddress && addressOk && xmrAddress
+    ? 'Checking'
+    : addressOk
+      ? 'Ready'
+      : 'Invalid';
 
   return (
     <div className="grid gap-2.5 rounded-xl border border-[#292b31] bg-[#0f1015] p-2.5">
@@ -864,7 +930,7 @@ function RecipientPanel({
             <div className="mb-1.5 flex items-center justify-between gap-3">
               <span className="text-sm text-[#9aa0aa]">XMR receive address</span>
               <span className={addressOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff7777]'}>
-                {addressOk ? 'Ready' : 'Invalid'}
+                {addressStatus}
               </span>
             </div>
             <input
@@ -874,6 +940,21 @@ function RecipientPanel({
               className="w-full rounded-lg border border-[#2c2f37] bg-[#090a0e] px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
             />
           </label>
+          {depositAddressMatch?.owner && (
+            <div className="rounded-lg border border-[#f26822]/35 bg-[#1a120c] p-3">
+              <div className="text-sm font-semibold text-white">This is an XMR-SOL deposit address</div>
+              <div className="mt-1 text-xs leading-relaxed text-[#c59a7c]">
+                Send XMR-SOL directly to {shortAddress(depositAddressMatch.owner)} instead of withdrawing native XMR and depositing it again.
+              </div>
+              <button
+                type="button"
+                onClick={onUseDirectDepositRoute}
+                className="mt-3 w-full rounded-lg border border-[#493424] bg-[#23170e] px-3 py-2 text-sm font-semibold text-white transition-colors hover:border-[#f26822]"
+              >
+                Send XMR-SOL directly
+              </button>
+            </div>
+          )}
           {needsBitcoinRefundAddress && (
             <label>
               <div className="mb-1.5 flex items-center justify-between gap-3">
