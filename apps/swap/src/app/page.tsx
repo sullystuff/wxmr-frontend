@@ -1256,9 +1256,9 @@ function QuoteSummary({
   return (
     <div className="rounded-xl border border-[#292b31] bg-[#101116] p-2.5">
       <div className="mb-2 flex items-center justify-between gap-2">
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold text-white">Quote</div>
-          <div className="truncate text-xs text-[#8f949d]">{quote.routeSummary ?? 'Mayan Swift v2 route'}</div>
+          <div className="line-clamp-2 text-xs leading-snug text-[#8f949d]">{quote.routeSummary ?? 'Mayan Swift v2 route'}</div>
         </div>
         <div className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${quoteExpired ? 'bg-[#351919] text-[#ff8c8c]' : 'bg-[#142316] text-[#9ee6a8]'}`}>
           {quoteExpired ? 'Expired' : `Expires in ${formatCountdown(quoteExpiresIn)}`}
