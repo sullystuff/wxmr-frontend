@@ -244,6 +244,19 @@ async function processChainflipBridge(order: Order): Promise<void> {
     return;
   }
 
+  if (quote.direction === "asset-to-asset" && quote.chainflip.directDestination) {
+    store.updateOrder(
+      order.id,
+      {
+        status: "completed",
+        destinationAmount,
+        withdrawalSignature: chainflipDestinationTx(status) ?? order.sourceTxHash,
+      },
+      `Chainflip delivered ${destinationAmount} to destination`,
+    );
+    return;
+  }
+
   store.updateOrder(
     order.id,
     {
@@ -276,6 +289,41 @@ async function processThorchainBridge(order: Order): Promise<void> {
   const refund = thorchainPlannedRefund(details);
   if (refund) {
     store.updateOrder(order.id, { status: "refunded", error: "THORChain planned a refund for the BTC deposit" }, "THORChain planned a refund");
+    return;
+  }
+
+  if (quote.thorchain.mode === "direct-destination") {
+    if (!order.destinationAddress) {
+      throw new Error("THORChain direct order is missing destination address");
+    }
+    const outTx = thorchainOutTx(details, quote.thorchain.toAsset, order.destinationAddress);
+    if (!outTx) throw new Error("THORChain swap pending: waiting for destination outbound");
+    const destinationAmount = thorchainAmountToBaseUnits(
+      thorchainTxAmount(outTx, quote.thorchain.toAsset),
+      quote.destinationTokenDecimals ?? 6,
+    );
+    const delivered = BigInt(destinationAmount);
+    const minimum = BigInt(quote.minDestinationOut ?? "0");
+    if (shouldRefundOnSlippage(order) && delivered < minimum) {
+      store.updateOrder(
+        order.id,
+        {
+          status: "failed",
+          error: `THORChain delivered ${destinationAmount}, below locked minimum ${minimum}`,
+        },
+        "THORChain delivered below locked minimum",
+      );
+      return;
+    }
+    store.updateOrder(
+      order.id,
+      {
+        status: "completed",
+        destinationAmount: destinationAmount.toString(),
+        withdrawalSignature: outTx.id ?? order.sourceTxHash,
+      },
+      `THORChain delivered ${destinationAmount} to destination`,
+    );
     return;
   }
 

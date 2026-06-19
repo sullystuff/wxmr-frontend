@@ -3,6 +3,7 @@ export const CHAINFLIP = {
   sdkVersion: "2.2.1",
   btc: { chain: "Bitcoin", asset: "BTC" },
   solanaUsdc: { chain: "Solana", asset: "USDC" },
+  ethereumUsdc: { chain: "Ethereum", asset: "USDC" },
   btcDecimals: 8,
   usdcDecimals: 6,
   blockTimeSeconds: 6,
@@ -116,12 +117,25 @@ export class ChainflipClient {
     amount: string | bigint;
     brokerCommissionBps?: number;
   }): Promise<ChainflipQuote> {
+    return this.fetchBtcQuote({
+      ...params,
+      destChain: CHAINFLIP.solanaUsdc.chain,
+      destAsset: CHAINFLIP.solanaUsdc.asset,
+    });
+  }
+
+  async fetchBtcQuote(params: {
+    amount: string | bigint;
+    destChain: string;
+    destAsset: string;
+    brokerCommissionBps?: number;
+  }): Promise<ChainflipQuote> {
     const url = new URL(`${this.backendUrl}/v2/quote`);
     url.searchParams.set("amount", params.amount.toString());
     url.searchParams.set("srcChain", CHAINFLIP.btc.chain);
     url.searchParams.set("srcAsset", CHAINFLIP.btc.asset);
-    url.searchParams.set("destChain", CHAINFLIP.solanaUsdc.chain);
-    url.searchParams.set("destAsset", CHAINFLIP.solanaUsdc.asset);
+    url.searchParams.set("destChain", params.destChain);
+    url.searchParams.set("destAsset", params.destAsset);
     url.searchParams.set("isVaultSwap", "false");
     url.searchParams.set("isOnChain", "false");
     url.searchParams.set("dcaV2Enabled", "true");

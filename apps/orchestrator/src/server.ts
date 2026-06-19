@@ -54,6 +54,27 @@ const DEFAULT_SLIPPAGE_BPS = 200;
 const MAX_SLIPPAGE_BPS = 2_000;
 const USDC_DECIMALS = 6;
 
+type BtcSolanaUsdcRouteBase = {
+  expectedSolanaUsdcOut: string;
+  minSolanaUsdcOut: string;
+  expiresAt: string;
+  routePrefix: string;
+  sourceToken: string;
+  sourceTokenDecimals: number;
+};
+
+type BtcSolanaUsdcRoute =
+  | (BtcSolanaUsdcRouteBase & {
+    route: "chainflip";
+    providerName: "Chainflip";
+    chainflip: NonNullable<Quote["chainflip"]>;
+  })
+  | (BtcSolanaUsdcRouteBase & {
+    route: "thorchain";
+    providerName: "THORChain";
+    thorchain: NonNullable<Quote["thorchain"]>;
+  });
+
 const app = Fastify({ logger: true });
 await app.register(cors, {
   origin: true,
@@ -474,63 +495,7 @@ async function quoteSolanaToXmr(input: QuoteRequest): Promise<Quote> {
   };
 }
 
-async function quoteBtcToXmr(input: QuoteRequest): Promise<Quote> {
-  const slippageBps = normalizeSlippageBps(input.slippageBps);
-
-  const chainflipQuote = await chainflip.fetchBtcToSolanaUsdcQuote({
-    amount: input.amount,
-  }).catch(() => null);
-
-  if (chainflipQuote) {
-    const expectedSolanaUsdcOut = chainflipQuote.egressAmount;
-    const minSolanaUsdcOut = chainflipMinSolanaUsdcOut(chainflipQuote, slippageBps);
-    const expectedJupiterQuote = await jupiter.quoteUsdcToWxmr(expectedSolanaUsdcOut);
-    const minJupiterQuote = await jupiter.quoteUsdcToWxmr(minSolanaUsdcOut);
-    const grossWxmr = BigInt(expectedJupiterQuote.outAmount);
-    const minGrossWxmr = BigInt(minJupiterQuote.outAmount);
-    const afterService = applyBps(grossWxmr, 10_000 - env.serviceFeeBps);
-    const minAfterService = applyBps(minGrossWxmr, 10_000 - env.serviceFeeBps);
-    const minWxmrOut = applyBps(minAfterService, 10_000 - slippageBps);
-    const estimatedXmrOut = applyBps(afterService, 10_000 - BRIDGE_FEE_BPS);
-    const minXmrOut = applyBps(minWxmrOut, 10_000 - BRIDGE_FEE_BPS);
-
-    return {
-      id: crypto.randomUUID(),
-      direction: "mayan-to-xmr",
-      sourceChain: "bitcoin",
-      sourceToken: input.sourceToken,
-      sourceTokenSymbol: "BTC",
-      sourceTokenDecimals: CHAINFLIP.btcDecimals,
-      destinationChain: "monero",
-      destinationToken: "XMR",
-      inputAmount: input.amount,
-      sourceAddress: input.sourceAddress,
-      xmrAddress: input.xmrAddress ?? "",
-      refundAddress: input.refundAddress,
-      estimatedWxmrOut: afterService.toString(),
-      estimatedXmrOut: estimatedXmrOut.toString(),
-      minWxmrOut: minWxmrOut.toString(),
-      minXmrOut: minXmrOut.toString(),
-      bridgeFeeBps: BRIDGE_FEE_BPS,
-      serviceFeeBps: env.serviceFeeBps,
-      executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
-      jupiterPriceImpactPct: expectedJupiterQuote.priceImpactPct ?? "0",
-      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
-      route: "chainflip",
-      routeSummary: "BTC -> USDC-SOL via Chainflip -> XMR-SOL via jup.ag -> native XMR via Monero Bridge",
-      chainflip: {
-        fromAsset: "BTC",
-        toAsset: "USDC-SOL",
-        quote: chainflipQuote,
-        expectedSolanaUsdcOut,
-        minSolanaUsdcOut,
-        slippageBps,
-        estimatedTimeSeconds: chainflipQuote.estimatedDurationSeconds,
-        fees: chainflipQuote.includedFees,
-      },
-    };
-  }
-
+async function quoteBtcToSolanaUsdc(input: QuoteRequest, slippageBps: number): Promise<BtcSolanaUsdcRoute> {
   let directError: unknown;
   const directQuote = await thorchain.fetchSwapQuote({
     fromAsset: THORCHAIN.btcAsset,
@@ -543,21 +508,68 @@ async function quoteBtcToXmr(input: QuoteRequest): Promise<Quote> {
     return null;
   });
 
-  const thorQuote = directQuote ? {
-    mode: "direct-solana" as const,
-    toAsset: THORCHAIN.solanaUsdcAsset,
-    quote: directQuote,
-    expectedSolanaUsdcOut: thorchainAmountToBaseUnits(directQuote.expected_amount_out, USDC_DECIMALS),
-    minSolanaUsdcOut: applyBps(
-      BigInt(thorchainAmountToBaseUnits(directQuote.expected_amount_out, USDC_DECIMALS)),
-      10_000 - slippageBps,
-    ).toString(),
-    estimatedTimeSeconds: thorchainSeconds(directQuote),
-    mayan: undefined,
-    routeSummary: "BTC -> USDC-SOL via THORChain -> XMR-SOL via jup.ag -> native XMR via Monero Bridge",
-  } : await quoteBtcToEthUsdc(input, slippageBps, directError);
-  const expectedSolanaUsdcOut = thorQuote.expectedSolanaUsdcOut;
-  const minSolanaUsdcOut = thorQuote.minSolanaUsdcOut;
+  if (directQuote) {
+    const expectedSolanaUsdcOut = thorchainAmountToBaseUnits(directQuote.expected_amount_out, USDC_DECIMALS);
+    return {
+      route: "thorchain",
+      providerName: "THORChain",
+      sourceToken: THORCHAIN.btcAsset,
+      sourceTokenDecimals: 8,
+      expectedSolanaUsdcOut,
+      minSolanaUsdcOut: applyBps(BigInt(expectedSolanaUsdcOut), 10_000 - slippageBps).toString(),
+      expiresAt: new Date(directQuote.expiry * 1000).toISOString(),
+      routePrefix: "BTC -> USDC-SOL via THORChain",
+      thorchain: {
+        mode: "direct-solana",
+        fromAsset: THORCHAIN.btcAsset,
+        toAsset: THORCHAIN.solanaUsdcAsset,
+        expectedOut: directQuote.expected_amount_out,
+        expectedSolanaUsdcOut,
+        minSolanaUsdcOut: applyBps(BigInt(expectedSolanaUsdcOut), 10_000 - slippageBps).toString(),
+        inboundAddress: directQuote.inbound_address!,
+        memo: directQuote.memo!,
+        expiry: directQuote.expiry,
+        estimatedTimeSeconds: thorchainSeconds(directQuote),
+        fees: directQuote.fees,
+      },
+    };
+  }
+
+  const chainflipQuote = await chainflip.fetchBtcToSolanaUsdcQuote({
+    amount: input.amount,
+  }).catch(() => null);
+
+  if (chainflipQuote) {
+    return {
+      route: "chainflip",
+      providerName: "Chainflip",
+      sourceToken: input.sourceToken,
+      sourceTokenDecimals: CHAINFLIP.btcDecimals,
+      expectedSolanaUsdcOut: chainflipQuote.egressAmount,
+      minSolanaUsdcOut: chainflipMinSolanaUsdcOut(chainflipQuote, slippageBps),
+      expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+      routePrefix: "BTC -> USDC-SOL via Chainflip",
+      chainflip: {
+        fromAsset: "BTC",
+        toAsset: "USDC-SOL",
+        quote: chainflipQuote,
+        expectedSolanaUsdcOut: chainflipQuote.egressAmount,
+        minSolanaUsdcOut: chainflipMinSolanaUsdcOut(chainflipQuote, slippageBps),
+        slippageBps,
+        estimatedTimeSeconds: chainflipQuote.estimatedDurationSeconds,
+        fees: chainflipQuote.includedFees,
+      },
+    };
+  }
+
+  return quoteBtcToEthUsdc(input, slippageBps, directError);
+}
+
+async function quoteBtcToXmr(input: QuoteRequest): Promise<Quote> {
+  const slippageBps = normalizeSlippageBps(input.slippageBps);
+  const btcRoute = await quoteBtcToSolanaUsdc(input, slippageBps);
+  const expectedSolanaUsdcOut = btcRoute.expectedSolanaUsdcOut;
+  const minSolanaUsdcOut = btcRoute.minSolanaUsdcOut;
   const expectedJupiterQuote = await jupiter.quoteUsdcToWxmr(expectedSolanaUsdcOut);
   const minJupiterQuote = await jupiter.quoteUsdcToWxmr(minSolanaUsdcOut);
   const grossWxmr = BigInt(expectedJupiterQuote.outAmount);
@@ -572,9 +584,9 @@ async function quoteBtcToXmr(input: QuoteRequest): Promise<Quote> {
     id: crypto.randomUUID(),
     direction: "mayan-to-xmr",
     sourceChain: "bitcoin",
-    sourceToken: THORCHAIN.btcAsset,
+    sourceToken: btcRoute.sourceToken,
     sourceTokenSymbol: "BTC",
-    sourceTokenDecimals: 8,
+    sourceTokenDecimals: btcRoute.sourceTokenDecimals,
     destinationChain: "monero",
     destinationToken: "XMR",
     inputAmount: input.amount,
@@ -589,23 +601,10 @@ async function quoteBtcToXmr(input: QuoteRequest): Promise<Quote> {
     serviceFeeBps: env.serviceFeeBps,
     executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
     jupiterPriceImpactPct: expectedJupiterQuote.priceImpactPct ?? "0",
-    expiresAt: new Date(thorQuote.quote.expiry * 1000).toISOString(),
-    route: "thorchain",
-    routeSummary: thorQuote.routeSummary,
-    thorchain: {
-      mode: thorQuote.mode,
-      fromAsset: THORCHAIN.btcAsset,
-      toAsset: thorQuote.toAsset,
-      expectedOut: thorQuote.quote.expected_amount_out,
-      expectedSolanaUsdcOut,
-      minSolanaUsdcOut,
-      inboundAddress: thorQuote.quote.inbound_address!,
-      memo: thorQuote.quote.memo!,
-      expiry: thorQuote.quote.expiry,
-      estimatedTimeSeconds: thorQuote.estimatedTimeSeconds,
-      fees: thorQuote.quote.fees,
-      mayan: thorQuote.mayan,
-    },
+    expiresAt: btcRoute.expiresAt,
+    route: btcRoute.route,
+    routeSummary: `${btcRoute.routePrefix} -> XMR-SOL via jup.ag -> native XMR via Monero Bridge`,
+    ...(btcRoute.route === "chainflip" ? { chainflip: btcRoute.chainflip } : { thorchain: btcRoute.thorchain }),
   };
 }
 
@@ -613,16 +612,7 @@ async function quoteBtcToEthUsdc(
   input: QuoteRequest,
   slippageBps: number,
   directError: unknown,
-): Promise<{
-  mode: "eth-usdc-fallback";
-  toAsset: string;
-  quote: Awaited<ReturnType<ThorchainClient["fetchSwapQuote"]>>;
-  mayan: NonNullable<Quote["mayan"]>;
-  expectedSolanaUsdcOut: string;
-  minSolanaUsdcOut: string;
-  estimatedTimeSeconds?: number;
-  routeSummary: string;
-}> {
+): Promise<BtcSolanaUsdcRoute> {
   if (!env.evmHotWalletAddress) {
     const reason = directError instanceof Error ? directError.message : "direct route unavailable";
     throw new Error(`Direct THORChain BTC -> USDC-SOL is unavailable (${reason}); EVM_HOTWALLET_PRIVATE_KEY is required for BTC -> ETH USDC fallback`);
@@ -655,14 +645,28 @@ async function quoteBtcToEthUsdc(
     quoteId: mayanQuote.quoteId,
   };
   return {
-    mode: "eth-usdc-fallback",
-    toAsset: THORCHAIN.ethUsdcAsset,
-    quote,
-    mayan: mayanMetadata,
+    route: "thorchain",
+    providerName: "THORChain",
+    sourceToken: THORCHAIN.btcAsset,
+    sourceTokenDecimals: 8,
     expectedSolanaUsdcOut: mayanMetadata.expectedSolanaUsdcOut,
     minSolanaUsdcOut: mayanMetadata.minSolanaUsdcOut,
-    estimatedTimeSeconds: (thorchainSeconds(quote) ?? 0) + (mayanQuote.etaSeconds ?? 0),
-    routeSummary: "BTC -> USDC-ETH via THORChain -> USDC-SOL via Mayan Swift v2 -> XMR-SOL via jup.ag -> native XMR via Monero Bridge",
+    expiresAt: new Date(quote.expiry * 1000).toISOString(),
+    routePrefix: "BTC -> USDC-ETH via THORChain -> USDC-SOL via Mayan Swift v2",
+    thorchain: {
+      mode: "eth-usdc-fallback",
+      fromAsset: THORCHAIN.btcAsset,
+      toAsset: THORCHAIN.ethUsdcAsset,
+      expectedOut: quote.expected_amount_out,
+      expectedSolanaUsdcOut: mayanMetadata.expectedSolanaUsdcOut,
+      minSolanaUsdcOut: mayanMetadata.minSolanaUsdcOut,
+      inboundAddress: quote.inbound_address!,
+      memo: quote.memo!,
+      expiry: quote.expiry,
+      estimatedTimeSeconds: (thorchainSeconds(quote) ?? 0) + (mayanQuote.etaSeconds ?? 0),
+      fees: quote.fees,
+      mayan: mayanMetadata,
+    },
   };
 }
 
@@ -855,6 +859,120 @@ async function quoteAssetToWxmrSolana(input: QuoteRequest): Promise<Quote> {
   };
 }
 
+async function quoteBtcDirectToAsset(input: QuoteRequest, slippageBps: number): Promise<Quote | null> {
+  if (!input.destinationChain || !input.destinationToken || !input.destinationAddress) return null;
+  const direct = btcDirectDestination(input.destinationChain, input.destinationToken);
+  if (!direct) return null;
+
+  const destinationToken = await findToken(input.destinationChain, input.destinationToken);
+  const thorchainQuote = await thorchain.fetchSwapQuote({
+    fromAsset: THORCHAIN.btcAsset,
+    toAsset: direct.thorchainAsset,
+    amount: input.amount,
+    destination: input.destinationAddress,
+    toleranceBps: slippageBps,
+  }).catch(() => null);
+
+  if (thorchainQuote) {
+    const destinationDecimals = destinationToken.decimals ?? USDC_DECIMALS;
+    const expectedOut = thorchainAmountToBaseUnits(thorchainQuote.expected_amount_out, destinationDecimals);
+    const minOut = applyBps(BigInt(expectedOut), 10_000 - slippageBps).toString();
+    return {
+      id: crypto.randomUUID(),
+      direction: "asset-to-asset",
+      sourceChain: "bitcoin",
+      sourceToken: THORCHAIN.btcAsset,
+      sourceTokenSymbol: "BTC",
+      sourceTokenDecimals: 8,
+      destinationChain: input.destinationChain,
+      destinationToken: destinationToken.contract ?? input.destinationToken,
+      inputAmount: input.amount,
+      sourceAddress: input.sourceAddress,
+      xmrAddress: "",
+      destinationAddress: input.destinationAddress,
+      destinationTokenSymbol: destinationToken.symbol,
+      destinationTokenDecimals: destinationToken.decimals,
+      refundAddress: input.refundAddress,
+      estimatedWxmrOut: "0",
+      estimatedXmrOut: "0",
+      minWxmrOut: "0",
+      minXmrOut: "0",
+      estimatedDestinationOut: expectedOut,
+      minDestinationOut: minOut,
+      bridgeFeeBps: 0,
+      serviceFeeBps: 0,
+      executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
+      jupiterPriceImpactPct: "0",
+      expiresAt: new Date(thorchainQuote.expiry * 1000).toISOString(),
+      route: "thorchain",
+      routeSummary: `BTC -> ${destinationToken.symbol ?? "Token"} on ${CHAINS[input.destinationChain].name} via THORChain`,
+      thorchain: {
+        mode: "direct-destination",
+        fromAsset: THORCHAIN.btcAsset,
+        toAsset: direct.thorchainAsset,
+        expectedOut: thorchainQuote.expected_amount_out,
+        expectedSolanaUsdcOut: expectedOut,
+        minSolanaUsdcOut: minOut,
+        inboundAddress: thorchainQuote.inbound_address!,
+        memo: thorchainQuote.memo!,
+        expiry: thorchainQuote.expiry,
+        estimatedTimeSeconds: thorchainSeconds(thorchainQuote),
+        fees: thorchainQuote.fees,
+      },
+    };
+  }
+
+  const chainflipQuote = await chainflip.fetchBtcQuote({
+    amount: input.amount,
+    destChain: direct.chainflip.chain,
+    destAsset: direct.chainflip.asset,
+  }).catch(() => null);
+  if (!chainflipQuote) return null;
+
+  const minOut = applyBps(BigInt(chainflipQuote.egressAmount), 10_000 - slippageBps).toString();
+  return {
+    id: crypto.randomUUID(),
+    direction: "asset-to-asset",
+    sourceChain: "bitcoin",
+    sourceToken: input.sourceToken,
+    sourceTokenSymbol: "BTC",
+    sourceTokenDecimals: CHAINFLIP.btcDecimals,
+    destinationChain: input.destinationChain,
+    destinationToken: destinationToken.contract ?? input.destinationToken,
+    inputAmount: input.amount,
+    sourceAddress: input.sourceAddress,
+    xmrAddress: "",
+    destinationAddress: input.destinationAddress,
+    destinationTokenSymbol: destinationToken.symbol,
+    destinationTokenDecimals: destinationToken.decimals,
+    refundAddress: input.refundAddress,
+    estimatedWxmrOut: "0",
+    estimatedXmrOut: "0",
+    minWxmrOut: "0",
+    minXmrOut: "0",
+    estimatedDestinationOut: chainflipQuote.egressAmount,
+    minDestinationOut: minOut,
+    bridgeFeeBps: 0,
+    serviceFeeBps: 0,
+    executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
+    jupiterPriceImpactPct: "0",
+    expiresAt: new Date(Date.now() + 10 * 60 * 1000).toISOString(),
+    route: "chainflip",
+    routeSummary: `BTC -> ${destinationToken.symbol ?? "Token"} on ${CHAINS[input.destinationChain].name} via Chainflip`,
+    chainflip: {
+      fromAsset: "BTC",
+      toAsset: direct.chainflipLabel,
+      quote: chainflipQuote,
+      expectedSolanaUsdcOut: chainflipQuote.egressAmount,
+      minSolanaUsdcOut: minOut,
+      slippageBps,
+      estimatedTimeSeconds: chainflipQuote.estimatedDurationSeconds,
+      fees: chainflipQuote.includedFees,
+      directDestination: true,
+    },
+  };
+}
+
 async function quoteMayanAssetToAsset(input: QuoteRequest): Promise<Quote> {
   const slippageBps = normalizeSlippageBps(input.slippageBps);
   const destinationChain = input.destinationChain!;
@@ -1012,11 +1130,14 @@ async function quoteSolanaToMayanAsset(input: QuoteRequest): Promise<Quote> {
 }
 
 async function quoteBtcToAsset(input: QuoteRequest): Promise<Quote> {
-  const base = await quoteBtcToXmr(input);
   const slippageBps = normalizeSlippageBps(input.slippageBps);
+  const direct = await quoteBtcDirectToAsset(input, slippageBps);
+  if (direct) return direct;
+
+  const base = await quoteBtcToSolanaUsdc(input, slippageBps);
   const destinationChain = input.destinationChain!;
-  const expectedSolanaUsdcOut = base.chainflip?.expectedSolanaUsdcOut ?? base.thorchain?.expectedSolanaUsdcOut;
-  const minSolanaUsdcOut = base.chainflip?.minSolanaUsdcOut ?? base.thorchain?.minSolanaUsdcOut;
+  const expectedSolanaUsdcOut = base.expectedSolanaUsdcOut;
+  const minSolanaUsdcOut = base.minSolanaUsdcOut;
   if (!expectedSolanaUsdcOut || !minSolanaUsdcOut) {
     throw new Error("BTC route did not return a Solana USDC output");
   }
@@ -1041,13 +1162,21 @@ async function quoteBtcToAsset(input: QuoteRequest): Promise<Quote> {
         taker: env.solanaHotWallet.publicKey.toBase58(),
       })).outAmount;
     return {
-      ...base,
+      id: crypto.randomUUID(),
       direction: "asset-to-asset",
+      sourceChain: "bitcoin",
+      sourceToken: base.sourceToken,
+      sourceTokenSymbol: "BTC",
+      sourceTokenDecimals: base.sourceTokenDecimals,
       destinationChain,
       destinationToken: destinationToken.contract ?? input.destinationToken,
+      inputAmount: input.amount,
+      sourceAddress: input.sourceAddress,
+      xmrAddress: "",
       destinationAddress: input.destinationAddress,
       destinationTokenSymbol: destinationToken.symbol,
       destinationTokenDecimals: destinationToken.decimals,
+      refundAddress: input.refundAddress,
       estimatedWxmrOut: "0",
       estimatedXmrOut: "0",
       minWxmrOut: "0",
@@ -1056,9 +1185,14 @@ async function quoteBtcToAsset(input: QuoteRequest): Promise<Quote> {
       minDestinationOut: applyBps(BigInt(minOut), 10_000 - slippageBps).toString(),
       bridgeFeeBps: 0,
       serviceFeeBps: 0,
+      executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
+      jupiterPriceImpactPct: "0",
+      expiresAt: base.expiresAt,
+      route: base.route,
       routeSummary: sameMint
-        ? `BTC -> USDC-SOL via ${base.route === "chainflip" ? "Chainflip" : "THORChain"}`
-        : `BTC -> USDC-SOL via ${base.route === "chainflip" ? "Chainflip" : "THORChain"} -> ${destinationToken.symbol ?? "Token"} on Solana via jup.ag`,
+        ? base.routePrefix
+        : `${base.routePrefix} -> ${destinationToken.symbol ?? "Token"} on Solana via jup.ag`,
+      ...(base.route === "chainflip" ? { chainflip: base.chainflip } : { thorchain: base.thorchain }),
     };
   }
 
@@ -1082,13 +1216,21 @@ async function quoteBtcToAsset(input: QuoteRequest): Promise<Quote> {
   });
 
   return {
-    ...base,
+    id: crypto.randomUUID(),
     direction: "asset-to-asset",
+    sourceChain: "bitcoin",
+    sourceToken: base.sourceToken,
+    sourceTokenSymbol: "BTC",
+    sourceTokenDecimals: base.sourceTokenDecimals,
     destinationChain,
     destinationToken: expectedMayanQuote.toToken.contract ?? expectedMayanQuote.toToken.mint ?? input.destinationToken,
+    inputAmount: input.amount,
+    sourceAddress: input.sourceAddress,
+    xmrAddress: "",
     destinationAddress: input.destinationAddress,
     destinationTokenSymbol: expectedMayanQuote.toToken.symbol,
     destinationTokenDecimals: expectedMayanQuote.toToken.decimals,
+    refundAddress: input.refundAddress,
     estimatedWxmrOut: "0",
     estimatedXmrOut: "0",
     minWxmrOut: "0",
@@ -1097,7 +1239,12 @@ async function quoteBtcToAsset(input: QuoteRequest): Promise<Quote> {
     minDestinationOut: minMayanQuote.minReceivedBaseUnits,
     bridgeFeeBps: 0,
     serviceFeeBps: 0,
-    routeSummary: `BTC -> USDC-SOL via ${base.route === "chainflip" ? "Chainflip" : "THORChain"} -> ${expectedMayanQuote.toToken.symbol ?? "Token"} on ${CHAINS[destinationChain].name} via Mayan Swift v2`,
+    executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
+    jupiterPriceImpactPct: "0",
+    expiresAt: base.expiresAt,
+    route: base.route,
+    routeSummary: `${base.routePrefix} -> ${expectedMayanQuote.toToken.symbol ?? "Token"} on ${CHAINS[destinationChain].name} via Mayan Swift v2`,
+    ...(base.route === "chainflip" ? { chainflip: base.chainflip } : { thorchain: base.thorchain }),
     mayan: {
       quote: expectedMayanQuote,
       expectedSolanaUsdcOut: expectedMayanQuote.expectedAmountOutBaseUnits,
@@ -1185,7 +1332,9 @@ async function buildFundingInstructions(orderId: string, quote: Quote): Promise<
     if (!quote.sourceAddress) throw new Error("BTC refund address is required for Chainflip");
     const deposit = await chainflip.openDepositAddress({
       quote: quote.chainflip.quote as ChainflipQuote,
-      destinationAddress: env.solanaHotWallet.publicKey.toBase58(),
+      destinationAddress: quote.chainflip.directDestination
+        ? quote.destinationAddress ?? env.solanaHotWallet.publicKey.toBase58()
+        : env.solanaHotWallet.publicKey.toBase58(),
       refundAddress: quote.sourceAddress,
       slippageBps: quote.chainflip.slippageBps,
     });
@@ -1237,6 +1386,32 @@ async function buildMayanPayload(funding: MayanSwiftFunding, swapperAddress: str
     value: (payload.value ?? "0x0") as MayanEvmTxPayload["value"],
     chainId: Number(payload.chainId),
   };
+}
+
+function btcDirectDestination(destinationChain: SourceChainId, destinationToken: string): {
+  thorchainAsset: string;
+  chainflip: { chain: string; asset: string };
+  chainflipLabel: string;
+} | null {
+  if (destinationChain === "ethereum" && sameToken(destinationToken, CHAINS.ethereum.usdc)) {
+    return {
+      thorchainAsset: THORCHAIN.ethUsdcAsset,
+      chainflip: CHAINFLIP.ethereumUsdc,
+      chainflipLabel: "USDC-ETH",
+    };
+  }
+  if (destinationChain === "solana" && sameToken(destinationToken, USDC_MINT_ADDRESS)) {
+    return {
+      thorchainAsset: THORCHAIN.solanaUsdcAsset,
+      chainflip: CHAINFLIP.solanaUsdc,
+      chainflipLabel: "USDC-SOL",
+    };
+  }
+  return null;
+}
+
+function sameToken(left: string | undefined, right: string | undefined): boolean {
+  return Boolean(left && right && left.toLowerCase() === right.toLowerCase());
 }
 
 async function findToken(sourceChain: SourceChainId, contract: string): Promise<MayanToken> {

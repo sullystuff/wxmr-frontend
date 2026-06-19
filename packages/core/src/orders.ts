@@ -108,7 +108,7 @@ export interface MayanQuoteMetadata {
 }
 
 export interface ThorchainQuoteMetadata {
-  mode: "direct-solana" | "eth-usdc-fallback";
+  mode: "direct-solana" | "direct-destination" | "eth-usdc-fallback";
   fromAsset: string;
   toAsset: string;
   expectedOut: string;
@@ -131,6 +131,7 @@ export interface ChainflipQuoteMetadata {
   slippageBps: number;
   estimatedTimeSeconds?: number;
   fees?: unknown;
+  directDestination?: boolean;
 }
 
 export interface MayanSwiftFunding {
