@@ -86,21 +86,21 @@ const BLUE_CHIP_TOKEN_SYMBOLS = new Set([
   'MON',
   'SUI',
 ]);
-const CHAIN_BADGES: Partial<Record<SourceChainId, { short: string; className: string }>> = {
-  bitcoin: { short: 'BTC', className: 'bg-[#f7931a] text-black' },
-  ethereum: { short: 'ETH', className: 'bg-[#627eea] text-white' },
-  base: { short: 'B', className: 'bg-[#0052ff] text-white' },
-  arbitrum: { short: 'ARB', className: 'bg-[#28a0f0] text-white' },
-  optimism: { short: 'OP', className: 'bg-[#ff0420] text-white' },
-  polygon: { short: 'POL', className: 'bg-[#8247e5] text-white' },
-  avalanche: { short: 'AVAX', className: 'bg-[#e84142] text-white' },
-  bsc: { short: 'BNB', className: 'bg-[#f3ba2f] text-black' },
-  linea: { short: 'L', className: 'bg-[#61dfff] text-black' },
-  hyperevm: { short: 'HYPE', className: 'bg-[#64ffda] text-black' },
-  hyperliquid: { short: 'HL', className: 'bg-[#64ffda] text-black' },
-  monad: { short: 'MON', className: 'bg-[#836ef9] text-white' },
-  sui: { short: 'SUI', className: 'bg-[#6fbcf0] text-black' },
-  solana: { short: 'SOL', className: 'bg-[#14f195] text-black' },
+const CHAIN_LOGOS: Partial<Record<SourceChainId, { fallback: string; src: string }>> = {
+  bitcoin: { fallback: 'BTC', src: 'https://icons.llamao.fi/icons/chains/rsz_bitcoin.jpg' },
+  ethereum: { fallback: 'ETH', src: 'https://icons.llamao.fi/icons/chains/rsz_ethereum.jpg' },
+  base: { fallback: 'B', src: 'https://icons.llamao.fi/icons/chains/rsz_base.jpg' },
+  arbitrum: { fallback: 'ARB', src: 'https://icons.llamao.fi/icons/chains/rsz_arbitrum.jpg' },
+  optimism: { fallback: 'OP', src: 'https://icons.llamao.fi/icons/chains/rsz_optimism.jpg' },
+  polygon: { fallback: 'POL', src: 'https://icons.llamao.fi/icons/chains/rsz_polygon.jpg' },
+  avalanche: { fallback: 'AVAX', src: 'https://icons.llamao.fi/icons/chains/rsz_avalanche.jpg' },
+  bsc: { fallback: 'BNB', src: 'https://icons.llamao.fi/icons/chains/rsz_bsc.jpg' },
+  linea: { fallback: 'L', src: 'https://icons.llamao.fi/icons/chains/rsz_linea.jpg' },
+  hyperevm: { fallback: 'HYPE', src: 'https://icons.llamao.fi/icons/chains/rsz_hyperevm.jpg' },
+  hyperliquid: { fallback: 'HL', src: 'https://icons.llamao.fi/icons/chains/rsz_hyperliquid.jpg' },
+  monad: { fallback: 'MON', src: 'https://icons.llamao.fi/icons/chains/rsz_monad.jpg' },
+  sui: { fallback: 'SUI', src: 'https://icons.llamao.fi/icons/chains/rsz_sui.jpg' },
+  solana: { fallback: 'SOL', src: 'https://icons.llamao.fi/icons/chains/rsz_solana.jpg' },
 };
 
 type RouteLeg = {
@@ -769,10 +769,29 @@ function NetworkPillSelector({
 }
 
 function ChainBadge({ chain }: { chain: SourceChainId }) {
-  const badge = CHAIN_BADGES[chain] ?? { short: CHAINS[chain].name.slice(0, 2).toUpperCase(), className: 'bg-[#30333b] text-white' };
+  const [failed, setFailed] = useState(false);
+  const logo = CHAIN_LOGOS[chain];
+  const fallback = logo?.fallback ?? CHAINS[chain].name.slice(0, 2).toUpperCase();
+
+  if (logo && !failed) {
+    return (
+      <span className="flex h-6 w-6 items-center justify-center overflow-hidden rounded-full border border-white/10 bg-[#24272f]">
+        {/* eslint-disable-next-line @next/next/no-img-element -- Chain icons are small lazy-loaded remote assets from DefiLlama. */}
+        <img
+          src={logo.src}
+          alt=""
+          loading="lazy"
+          decoding="async"
+          className="h-full w-full object-cover"
+          onError={() => setFailed(true)}
+        />
+      </span>
+    );
+  }
+
   return (
-    <span className={`flex h-6 min-w-6 items-center justify-center rounded-full px-1.5 text-[10px] font-black ${badge.className}`}>
-      {badge.short}
+    <span className="flex h-6 min-w-6 items-center justify-center rounded-full bg-[#30333b] px-1.5 text-[10px] font-black text-white">
+      {fallback}
     </span>
   );
 }
