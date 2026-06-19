@@ -78,6 +78,16 @@ export interface Quote {
   chainflip?: ChainflipQuoteMetadata;
 }
 
+export function quoteOutputAmount(quote: Quote): string {
+  return quote.direction === "mayan-to-xmr"
+    ? quote.estimatedXmrOut
+    : quote.estimatedDestinationOut ?? "0";
+}
+
+export function quoteHasPositiveOutput(quote: Quote): boolean {
+  return BigInt(quoteOutputAmount(quote)) > BigInt(0);
+}
+
 export type FundingInstructions =
   | MayanSwiftFunding
   | SolanaTransferFunding

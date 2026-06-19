@@ -10,6 +10,7 @@ import {
   XMR_DECIMALS,
   filterMayanTokensForChain,
   isValidMoneroAddress,
+  quoteHasPositiveOutput,
   type ExecutionPolicy,
   type FundingInstructions,
   type MayanEvmTxPayload,
@@ -236,6 +237,7 @@ export default function SwapPage() {
   const createOrderBlocker = getCreateOrderBlocker({
     direction,
     quote,
+    hasPositiveQuoteOutput: !quote || quoteHasPositiveOutput(quote),
     hasBitcoinRefundAddress,
     hasValidXmrAddress,
     destinationAddressOk,
@@ -2053,18 +2055,23 @@ function getPrimaryLabel({
 function getCreateOrderBlocker({
   direction,
   quote,
+  hasPositiveQuoteOutput,
   hasBitcoinRefundAddress,
   hasValidXmrAddress,
   destinationAddressOk,
 }: {
   direction: SwapDirection;
   quote: Quote | null;
+  hasPositiveQuoteOutput: boolean;
   hasBitcoinRefundAddress: boolean;
   hasValidXmrAddress: boolean;
   destinationAddressOk: boolean;
 }): string | null {
   if (!hasValidXmrAddress) {
     return direction === FORWARD_DIRECTION ? 'Enter XMR address' : 'Enter XMR refund address';
+  }
+  if (quote && !hasPositiveQuoteOutput) {
+    return 'Quote output is zero';
   }
   if (direction === FORWARD_DIRECTION && quote?.route === 'chainflip' && !hasBitcoinRefundAddress) {
     return 'Enter BTC refund address';

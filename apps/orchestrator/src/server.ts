@@ -19,6 +19,7 @@ import {
   chainflipDepositExpiresAt,
   chainflipMinSolanaUsdcOut,
   filterMayanTokensForChain,
+  quoteHasPositiveOutput,
   thorchainAmountToBaseUnits,
   thorchainSeconds,
   type ChainflipQuote,
@@ -199,6 +200,9 @@ function registerRoutes(prefix: "" | "/api"): void {
     }
     if (Date.parse(quote.expiresAt) <= Date.now()) {
       return reply.code(400).send({ error: "quote expired" });
+    }
+    if (!quoteHasPositiveOutput(quote)) {
+      return reply.code(400).send({ error: "quote output is zero" });
     }
 
     const now = new Date().toISOString();
