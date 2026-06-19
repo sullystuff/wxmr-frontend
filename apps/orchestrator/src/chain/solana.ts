@@ -62,13 +62,21 @@ export class SolanaExecutor {
     outAmount: bigint;
     quote: JupiterQuote;
   }> {
+    return this.swapTokenToToken(inputMint, WXMR_MINT_ADDRESS, amount, minWxmrOut);
+  }
+
+  async swapTokenToToken(inputMint: string, outputMint: string, amount: bigint, minOutAmount: bigint): Promise<{
+    signature: string;
+    outAmount: bigint;
+    quote: JupiterQuote;
+  }> {
     const quote = await this.jupiter.quote({
       inputMint,
-      outputMint: WXMR_MINT_ADDRESS,
+      outputMint,
       amount,
       taker: this.hotWallet.publicKey.toBase58(),
     });
-    return this.executeJupiterQuote(quote, minWxmrOut, this.hotWallet);
+    return this.executeJupiterQuote(quote, minOutAmount, this.hotWallet);
   }
 
   async swapWxmrToUsdc(amount: bigint, minUsdcOut: bigint, signer: Keypair): Promise<{

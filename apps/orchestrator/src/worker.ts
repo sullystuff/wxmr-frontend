@@ -23,6 +23,7 @@ import {
   thorchainTxAmount,
   type Order,
   type Quote,
+  type SourceChainId,
 } from "@wxmr/core";
 import { loadEnv } from "./env.js";
 import { Store } from "./db.js";
@@ -97,13 +98,15 @@ async function processOrder(order: Order): Promise<void> {
   if (order.status === "minted") {
     if (order.direction === "xmr-to-mayan") {
       await executeSwapAndMayanPayout(order);
+    } else if (order.direction === "asset-to-asset") {
+      await executeAssetPayout(order);
     } else {
       await executeSwapAndWithdrawal(order);
     }
     return;
   }
 
-  if (order.status === "withdrawing" && order.direction === "xmr-to-mayan") {
+  if (order.status === "withdrawing" && (order.direction === "xmr-to-mayan" || order.direction === "asset-to-asset")) {
     await processReverseMayanSettlement(order);
     return;
   }
@@ -177,8 +180,22 @@ async function processMayanBridge(order: Order): Promise<void> {
     throw new Error(`Mayan swap pending: ${details.clientStatus ?? details.status ?? "unknown"}`);
   }
 
+  const quote = mustGetQuote(order.quoteId);
   const destinationAmount = mayanDeliveredBaseUnits(details, order.funding.mayanQuote.toToken.decimals ?? 6);
   const destinationTx = mayanDestinationTx(details) ?? order.sourceTxHash;
+  if (quote.direction === "asset-to-asset") {
+    store.updateOrder(
+      order.id,
+      {
+        status: "completed",
+        destinationAmount,
+        withdrawalSignature: destinationTx,
+      },
+      `Mayan delivered ${destinationAmount} to destination`,
+    );
+    return;
+  }
+
   store.updateOrder(
     order.id,
     {
@@ -397,7 +414,9 @@ async function executeSwapAndWithdrawal(order: Order): Promise<void> {
 
 async function executeSwapAndMayanPayout(order: Order): Promise<void> {
   const quote = mustGetQuote(order.quoteId);
-  if (quote.route === "solana") {
+  const outputChain = getDestinationChain(order, quote);
+  const outputToken = getDestinationToken(order, quote);
+  if (quote.route === "solana" || outputChain === "solana") {
     await executeSwapAndSolanaPayout(order, quote);
     return;
   }
@@ -434,8 +453,8 @@ async function executeSwapAndMayanPayout(order: Order): Promise<void> {
   const payoutQuote = await mayan.fetchSwiftQuoteForRoute({
     fromChain: "solana",
     fromToken: USDC_MINT_ADDRESS,
-    toChain: order.sourceChain,
-    toToken: order.sourceToken,
+    toChain: outputChain,
+    toToken: outputToken,
     amount: swap.outAmount,
     destinationAddress: order.destinationAddress,
     slippageBps: quote.mayan.quote.slippageBps ?? DEFAULT_SLIPPAGE_BPS,
@@ -470,6 +489,7 @@ async function executeSwapAndSolanaPayout(order: Order, quote: Quote): Promise<v
   if (!order.destinationAddress) {
     throw new Error("reverse order is missing Solana destination address");
   }
+  const outputToken = getDestinationToken(order, quote);
 
   store.updateOrder(order.id, { status: "swapping" }, "starting Jupiter wXMR -> Solana token swap");
   const owner = deriveReverseDepositOwner(env.solanaHotWallet, order.id);
@@ -480,7 +500,7 @@ async function executeSwapAndSolanaPayout(order: Order, quote: Quote): Promise<v
   let swap;
   try {
     swap = await solana.swapWxmrToToken(
-      order.sourceToken,
+      outputToken,
       swapInputAmount,
       executionMinimum(order, BigInt(quote.minDestinationOut ?? "0")),
       owner,
@@ -496,7 +516,7 @@ async function executeSwapAndSolanaPayout(order: Order, quote: Quote): Promise<v
   }
 
   const payoutSignature = await solana.transferToken(
-    order.sourceToken,
+    outputToken,
     owner,
     new PublicKey(order.destinationAddress),
     swap.outAmount,
@@ -510,6 +530,123 @@ async function executeSwapAndSolanaPayout(order: Order, quote: Quote): Promise<v
       withdrawalSignature: payoutSignature,
     },
     `Solana payout delivered ${swap.outAmount}: ${payoutSignature}`,
+  );
+}
+
+async function executeAssetPayout(order: Order): Promise<void> {
+  const quote = mustGetQuote(order.quoteId);
+  const outputChain = getDestinationChain(order, quote);
+  const outputToken = getDestinationToken(order, quote);
+  if (!order.destinationAddress) {
+    throw new Error("asset order is missing destination address");
+  }
+
+  if (outputChain === "solana") {
+    await executeSolanaAssetPayout(order, quote, outputToken);
+    return;
+  }
+
+  await executeMayanAssetPayout(order, quote, outputChain, outputToken);
+}
+
+async function executeSolanaAssetPayout(order: Order, quote: Quote, outputToken: string): Promise<void> {
+  const inputMint = getSolanaInputMint(order);
+  const inputAmount = getSolanaInputAmount(order);
+  const minimum = BigInt(quote.minDestinationOut ?? "0");
+
+  store.updateOrder(order.id, { status: "swapping" }, "starting Solana asset payout");
+
+  if (inputMint.toLowerCase() === outputToken.toLowerCase()) {
+    const payoutSignature = await solana.transferToken(
+      outputToken,
+      env.solanaHotWallet,
+      new PublicKey(order.destinationAddress!),
+      inputAmount,
+    );
+    store.updateOrder(
+      order.id,
+      {
+        status: "completed",
+        destinationAmount: inputAmount.toString(),
+        withdrawalSignature: payoutSignature,
+      },
+      `Solana payout delivered ${inputAmount}: ${payoutSignature}`,
+    );
+    return;
+  }
+
+  let swap;
+  try {
+    swap = await solana.swapTokenToToken(
+      inputMint,
+      outputToken,
+      inputAmount,
+      executionMinimum(order, minimum),
+    );
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    store.updateOrder(order.id, { status: "refunding", error: message }, `asset payout swap failed: ${message}`);
+    return;
+  }
+
+  const payoutSignature = await solana.transferToken(
+    outputToken,
+    env.solanaHotWallet,
+    new PublicKey(order.destinationAddress!),
+    swap.outAmount,
+  );
+  store.updateOrder(
+    order.id,
+    {
+      status: "completed",
+      destinationAmount: swap.outAmount.toString(),
+      swapSignature: swap.signature,
+      withdrawalSignature: payoutSignature,
+    },
+    `Solana payout delivered ${swap.outAmount}: ${payoutSignature}`,
+  );
+}
+
+async function executeMayanAssetPayout(
+  order: Order,
+  quote: Quote,
+  outputChain: Exclude<Order["destinationChain"], undefined>,
+  outputToken: string,
+): Promise<void> {
+  const inputMint = getSolanaInputMint(order);
+  const inputAmount = getSolanaInputAmount(order);
+  store.updateOrder(order.id, { status: "swapping" }, "starting Mayan asset payout");
+
+  const payoutQuote = await mayan.fetchSwiftQuoteForRoute({
+    fromChain: "solana",
+    fromToken: inputMint,
+    toChain: outputChain,
+    toToken: outputToken,
+    amount: inputAmount,
+    destinationAddress: order.destinationAddress!,
+    slippageBps: quote.mayan?.quote.slippageBps ?? DEFAULT_SLIPPAGE_BPS,
+  });
+  const minDestinationOut = BigInt(quote.minDestinationOut ?? "0");
+  if (shouldRefundOnSlippage(order) && BigInt(payoutQuote.minReceivedBaseUnits) < minDestinationOut) {
+    store.updateOrder(
+      order.id,
+      {
+        status: "failed",
+        error: `Mayan payout minimum ${payoutQuote.minReceivedBaseUnits} is below locked minimum ${minDestinationOut}`,
+      },
+      "Mayan asset payout quote below locked minimum",
+    );
+    return;
+  }
+
+  const payout = await solana.executeMayanSwiftFromSolana(payoutQuote, env.solanaHotWallet, order.destinationAddress!);
+  store.updateOrder(
+    order.id,
+    {
+      status: "withdrawing",
+      withdrawalSignature: payout.signature,
+    },
+    `Mayan asset payout submitted: ${payout.signature}`,
   );
 }
 
@@ -592,6 +729,14 @@ function getSolanaInputMint(order: Order): string {
     return USDC_MINT_ADDRESS;
   }
   return order.sourceToken;
+}
+
+function getDestinationChain(order: Order, quote: Quote): SourceChainId {
+  return quote.destinationChain ?? order.destinationChain ?? order.sourceChain;
+}
+
+function getDestinationToken(order: Order, quote: Quote): string {
+  return quote.destinationToken ?? order.destinationToken ?? order.sourceToken;
 }
 
 function executionMinimum(order: Order, lockedMinimum: bigint): bigint {

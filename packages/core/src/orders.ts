@@ -17,7 +17,7 @@ export type SourceChainId =
   | "solana"
   | "bitcoin";
 
-export type SwapDirection = "mayan-to-xmr" | "xmr-to-mayan";
+export type SwapDirection = "mayan-to-xmr" | "xmr-to-mayan" | "asset-to-asset";
 export type ExecutionPolicy = "refund-on-slippage" | "execute-anyway";
 
 export type OrderStatus =
@@ -37,6 +37,8 @@ export interface QuoteRequest {
   direction?: SwapDirection;
   sourceChain: SourceChainId;
   sourceToken: string;
+  destinationChain?: SourceChainId;
+  destinationToken?: string;
   amount: string;
   sourceAddress?: string;
   xmrAddress?: string;
@@ -53,6 +55,8 @@ export interface Quote {
   sourceToken: string;
   sourceTokenSymbol?: string;
   sourceTokenDecimals?: number;
+  destinationChain?: SourceChainId;
+  destinationToken?: string;
   inputAmount: string;
   sourceAddress?: string;
   xmrAddress: string;
@@ -263,6 +267,8 @@ export interface Order {
   status: OrderStatus;
   sourceChain: SourceChainId;
   sourceToken: string;
+  destinationChain?: SourceChainId;
+  destinationToken?: string;
   amount: string;
   xmrAddress: string;
   destinationAddress?: string;

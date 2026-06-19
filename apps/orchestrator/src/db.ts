@@ -9,6 +9,8 @@ export interface OrderRow {
   status: OrderStatus;
   source_chain: string;
   source_token: string;
+  destination_chain: string | null;
+  destination_token: string | null;
   amount: string;
   xmr_address: string;
   destination_address: string | null;
@@ -63,11 +65,11 @@ export class Store {
       .prepare(
         `INSERT INTO orders (
           id, quote_id, direction, status, source_chain, source_token, amount, xmr_address,
-          destination_address, destination_token_symbol, destination_token_decimals,
+          destination_chain, destination_token, destination_address, destination_token_symbol, destination_token_decimals,
           refund_address, execution_policy, funding_json, created_at, updated_at, expires_at
         ) VALUES (
           @id, @quote_id, @direction, @status, @source_chain, @source_token, @amount,
-          @xmr_address, @destination_address, @destination_token_symbol, @destination_token_decimals,
+          @xmr_address, @destination_chain, @destination_token, @destination_address, @destination_token_symbol, @destination_token_decimals,
           @refund_address, @execution_policy, @funding_json, @created_at, @updated_at, @expires_at
         )`,
       )
@@ -78,6 +80,8 @@ export class Store {
         status: order.status,
         source_chain: order.sourceChain,
         source_token: order.sourceToken,
+        destination_chain: order.destinationChain ?? null,
+        destination_token: order.destinationToken ?? null,
         amount: order.amount,
         xmr_address: order.xmrAddress,
         destination_address: order.destinationAddress ?? null,
@@ -116,6 +120,8 @@ export class Store {
           status = @status,
           funding_json = @funding_json,
           source_tx_hash = @source_tx_hash,
+          destination_chain = @destination_chain,
+          destination_token = @destination_token,
           destination_address = @destination_address,
           destination_token_symbol = @destination_token_symbol,
           destination_token_decimals = @destination_token_decimals,
@@ -134,6 +140,8 @@ export class Store {
         status: next.status,
         funding_json: JSON.stringify(next.funding),
         source_tx_hash: next.sourceTxHash ?? null,
+        destination_chain: next.destinationChain ?? null,
+        destination_token: next.destinationToken ?? null,
         destination_address: next.destinationAddress ?? null,
         destination_token_symbol: next.destinationTokenSymbol ?? null,
         destination_token_decimals: next.destinationTokenDecimals ?? null,
@@ -177,6 +185,8 @@ export class Store {
           status TEXT NOT NULL,
           source_chain TEXT NOT NULL,
           source_token TEXT NOT NULL,
+          destination_chain TEXT,
+          destination_token TEXT,
           amount TEXT NOT NULL,
           xmr_address TEXT NOT NULL,
           destination_address TEXT,
@@ -218,6 +228,12 @@ export class Store {
     if (!columns.some((column) => column.name === "destination_address")) {
       this.db.exec("ALTER TABLE orders ADD COLUMN destination_address TEXT");
     }
+    if (!columns.some((column) => column.name === "destination_chain")) {
+      this.db.exec("ALTER TABLE orders ADD COLUMN destination_chain TEXT");
+    }
+    if (!columns.some((column) => column.name === "destination_token")) {
+      this.db.exec("ALTER TABLE orders ADD COLUMN destination_token TEXT");
+    }
     if (!columns.some((column) => column.name === "destination_token_symbol")) {
       this.db.exec("ALTER TABLE orders ADD COLUMN destination_token_symbol TEXT");
     }
@@ -238,6 +254,8 @@ function rowToOrder(row: OrderRow): Order {
     status: row.status,
     sourceChain: row.source_chain as Order["sourceChain"],
     sourceToken: row.source_token,
+    destinationChain: (row.destination_chain ?? undefined) as Order["destinationChain"],
+    destinationToken: row.destination_token ?? undefined,
     amount: row.amount,
     xmrAddress: row.xmr_address,
     destinationAddress: row.destination_address ?? undefined,
