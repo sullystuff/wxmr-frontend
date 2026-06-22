@@ -820,6 +820,26 @@ export default function TransparencyPage() {
                                   >
                                     Verify on xmrchain.net →
                                   </a>
+                                  {(auditData.address || BRIDGE_DATA.xmrAddress) && (
+                                    <form
+                                      action="https://xmrchain.net/prove"
+                                      method="POST"
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-block mt-2 ml-3"
+                                    >
+                                      <input type="hidden" name="txhash" value={tx.txid} />
+                                      <input type="hidden" name="txprivkey" value={tx.key} />
+                                      <input type="hidden" name="raw_tx_data" value="" />
+                                      <input type="hidden" name="xmraddress" value={auditData.address || BRIDGE_DATA.xmrAddress} />
+                                      <button
+                                        type="submit"
+                                        className="inline-flex items-center gap-1 text-xs text-green-400 hover:underline"
+                                      >
+                                        Prove payment →
+                                      </button>
+                                    </form>
+                                  )}
                                 </div>
                               ))}
                             </div>
