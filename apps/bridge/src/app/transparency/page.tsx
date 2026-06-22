@@ -829,7 +829,7 @@ export default function TransparencyPage() {
                                       className="inline-block mt-2 ml-3"
                                     >
                                       <input type="hidden" name="txhash" value={tx.txid} />
-                                      <input type="hidden" name="txprivkey" value={tx.key} />
+                                      <input type="hidden" name="txprvkey" value={tx.key} />
                                       <input type="hidden" name="raw_tx_data" value="" />
                                       <input type="hidden" name="xmraddress" value={auditData.address || BRIDGE_DATA.xmrAddress} />
                                       <button
