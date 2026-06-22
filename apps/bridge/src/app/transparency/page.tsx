@@ -834,7 +834,7 @@ export default function TransparencyPage() {
                                       <input type="hidden" name="xmraddress" value={auditData.address || BRIDGE_DATA.xmrAddress} />
                                       <button
                                         type="submit"
-                                        className="inline-flex items-center gap-1 text-xs text-green-400 hover:underline"
+                                        className="inline-flex cursor-pointer items-center gap-1 text-xs text-green-400 hover:underline"
                                       >
                                         Prove payment →
                                       </button>
