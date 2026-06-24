@@ -485,7 +485,6 @@ async function quoteSolanaToXmr(input: QuoteRequest): Promise<Quote> {
     inputMint: input.sourceToken,
     outputMint: WXMR_MINT_ADDRESS,
     amount: input.amount,
-    taker: env.solanaHotWallet.publicKey.toBase58(),
   });
   const grossWxmr = BigInt(expectedJupiterQuote?.outAmount ?? input.amount);
   const minGrossWxmr = applyBps(grossWxmr, 10_000 - slippageBps);
