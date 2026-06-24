@@ -34,6 +34,7 @@ import {
   type Order,
   type Quote,
   type QuoteRequest,
+  type SolanaDirectFunding,
   type SourceChainId,
 } from "@wxmr/core";
 import { loadEnv } from "./env.js";
@@ -389,6 +390,184 @@ function registerRoutes(prefix: "" | "/api"): void {
     }
     const nextStatus = "bridging";
     return store.updateOrder(id, { sourceTxHash: body.txHash, status: nextStatus }, "deposit reported");
+  });
+
+  app.post(route("/orders/:id/solana/swap-transaction"), async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as { taker?: string };
+    const direct = getSolanaDirectContext(id);
+    if (!direct) {
+      return reply.code(404).send({ error: "direct Solana order not found" });
+    }
+    if (direct.order.status !== "awaiting_deposit") {
+      return reply.code(409).send({ error: `order is ${direct.order.status}` });
+    }
+    if (!body.taker) {
+      return reply.code(400).send({ error: "taker is required" });
+    }
+
+    let taker: PublicKey;
+    try {
+      taker = new PublicKey(body.taker);
+    } catch {
+      return reply.code(400).send({ error: "taker must be a Solana wallet address" });
+    }
+
+    const minOutAmount = BigInt(direct.quote.minWxmrOut);
+    if (isWxmrMint(direct.funding.inputMint)) {
+      if (BigInt(direct.funding.inputAmount) < minOutAmount) {
+        return reply.code(400).send({ error: "XMR-SOL amount is below locked quote minimum" });
+      }
+      return {
+        needsSwap: false,
+        outAmount: direct.funding.inputAmount,
+        minOutAmount: minOutAmount.toString(),
+      };
+    }
+
+    const executableQuote = await jupiter.quote({
+      inputMint: direct.funding.inputMint,
+      outputMint: WXMR_MINT_ADDRESS,
+      amount: direct.funding.inputAmount,
+      taker: taker.toBase58(),
+    });
+    const outAmount = BigInt(executableQuote.outAmount);
+    if (outAmount < minOutAmount) {
+      return reply.code(400).send({
+        error: `Jupiter output ${outAmount} is below locked minimum ${minOutAmount}`,
+      });
+    }
+    if (!executableQuote.transaction || !executableQuote.requestId) {
+      return reply.code(502).send({ error: "Jupiter did not return an executable transaction" });
+    }
+
+    return {
+      needsSwap: true,
+      transaction: executableQuote.transaction,
+      requestId: executableQuote.requestId,
+      outAmount: executableQuote.outAmount,
+      minOutAmount: minOutAmount.toString(),
+    };
+  });
+
+  app.post(route("/orders/:id/solana/execute-swap"), async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as {
+      signedTransaction?: string;
+      requestId?: string;
+      outAmount?: string;
+      skipped?: boolean;
+    };
+    const direct = getSolanaDirectContext(id);
+    if (!direct) {
+      return reply.code(404).send({ error: "direct Solana order not found" });
+    }
+    if (direct.order.status !== "awaiting_deposit") {
+      return reply.code(409).send({ error: `order is ${direct.order.status}` });
+    }
+
+    const outAmount = BigInt(body.outAmount ?? "0");
+    if (outAmount < BigInt(direct.quote.minWxmrOut)) {
+      return reply.code(400).send({ error: "swap output is below locked quote minimum" });
+    }
+
+    if (body.skipped || isWxmrMint(direct.funding.inputMint)) {
+      const updated = store.updateOrder(
+        id,
+        { destinationAmount: outAmount.toString(), swapSignature: "" },
+        "direct Solana order uses existing XMR-SOL without Jupiter swap",
+      );
+      return { order: updated, outAmount: outAmount.toString(), signature: "" };
+    }
+
+    if (!body.signedTransaction || !body.requestId) {
+      return reply.code(400).send({ error: "signedTransaction and requestId are required" });
+    }
+    const result = await jupiter.execute(body.signedTransaction, body.requestId);
+    if (result.status !== "Success" || !result.signature) {
+      return reply.code(400).send({ error: result.error || "Jupiter swap execution failed" });
+    }
+
+    const updated = store.updateOrder(
+      id,
+      { destinationAmount: outAmount.toString(), swapSignature: result.signature },
+      `user-signed Jupiter swap: ${result.signature}`,
+    );
+    return { order: updated, outAmount: outAmount.toString(), signature: result.signature };
+  });
+
+  app.post(route("/orders/:id/solana/withdrawal-transaction"), async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as { owner?: string };
+    const direct = getSolanaDirectContext(id);
+    if (!direct) {
+      return reply.code(404).send({ error: "direct Solana order not found" });
+    }
+    if (direct.order.status !== "awaiting_deposit") {
+      return reply.code(409).send({ error: `order is ${direct.order.status}` });
+    }
+    if (!body.owner) {
+      return reply.code(400).send({ error: "owner is required" });
+    }
+
+    let owner: PublicKey;
+    try {
+      owner = new PublicKey(body.owner);
+    } catch {
+      return reply.code(400).send({ error: "owner must be a Solana wallet address" });
+    }
+
+    const swapOutAmount = BigInt(direct.order.destinationAmount ?? "0");
+    if (swapOutAmount < BigInt(direct.quote.minWxmrOut)) {
+      return reply.code(400).send({ error: "execute the Jupiter swap before requesting withdrawal" });
+    }
+    const withdrawalAmount = applyBps(swapOutAmount, 10_000 - direct.quote.serviceFeeBps);
+    const built = await solana.buildUserWithdrawalTransaction(owner, withdrawalAmount, direct.order.xmrAddress);
+    return {
+      ...built,
+      amount: withdrawalAmount.toString(),
+    };
+  });
+
+  app.post(route("/orders/:id/solana/withdrawal"), async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as {
+      withdrawalSignature?: string;
+      withdrawalPda?: string;
+      amount?: string;
+    };
+    const direct = getSolanaDirectContext(id);
+    if (!direct) {
+      return reply.code(404).send({ error: "direct Solana order not found" });
+    }
+    if (direct.order.status !== "awaiting_deposit") {
+      return reply.code(409).send({ error: `order is ${direct.order.status}` });
+    }
+    if (!body.withdrawalSignature || !body.withdrawalPda) {
+      return reply.code(400).send({ error: "withdrawalSignature and withdrawalPda are required" });
+    }
+
+    const transaction = await connection.getTransaction(body.withdrawalSignature, {
+      commitment: "confirmed",
+      maxSupportedTransactionVersion: 0,
+    });
+    if (!transaction) {
+      return reply.code(409).send({ error: "withdrawal transaction is not confirmed yet" });
+    }
+    if (transaction.meta?.err) {
+      return reply.code(400).send({ error: "withdrawal transaction failed" });
+    }
+
+    return store.updateOrder(
+      id,
+      {
+        status: "completed",
+        withdrawalSignature: body.withdrawalSignature,
+        withdrawalPda: body.withdrawalPda,
+        destinationAmount: body.amount ?? direct.order.destinationAmount,
+      },
+      `user-signed withdrawal requested: ${body.withdrawalSignature}`,
+    );
   });
 
   app.post(route("/orders/:id/mayan/evm-payload"), async (request, reply) => {
@@ -1735,19 +1914,18 @@ async function buildFundingInstructions(orderId: string, quote: Quote): Promise<
   }
 
   if (quote.route === "solana") {
-    const mint = new PublicKey(quote.sourceToken);
-    const destinationTokenAccount = getAssociatedTokenAddressSync(mint, env.solanaHotWallet.publicKey);
     return {
-      type: "solana-transfer",
+      type: "solana-direct",
       orderId,
       chainId: "solana",
-      mint: mint.toBase58(),
-      tokenSymbol: quote.sourceTokenSymbol,
-      tokenDecimals: quote.sourceTokenDecimals,
-      amount: quote.inputAmount,
-      destinationTokenAccount: destinationTokenAccount.toBase58(),
-      destinationOwner: env.solanaHotWallet.publicKey.toBase58(),
-      memo: orderId,
+      inputMint: new PublicKey(quote.sourceToken).toBase58(),
+      inputTokenSymbol: quote.sourceTokenSymbol,
+      inputTokenDecimals: quote.sourceTokenDecimals,
+      inputAmount: quote.inputAmount,
+      wxmrMint: WXMR_MINT_ADDRESS,
+      expectedWxmrOut: quote.estimatedWxmrOut,
+      minWxmrOut: quote.minWxmrOut,
+      xmrAddress: quote.xmrAddress,
     };
   }
 
@@ -1812,6 +1990,26 @@ async function buildFundingInstructions(orderId: string, quote: Quote): Promise<
       : env.solanaHotWallet.publicKey.toBase58(),
     quote: quote.mayan.quote,
   });
+}
+
+function getSolanaDirectContext(id: string): {
+  order: Order;
+  quote: Quote;
+  funding: SolanaDirectFunding;
+} | null {
+  const order = store.getOrder(id);
+  if (!order || order.funding.type !== "solana-direct") {
+    return null;
+  }
+  const quote = store.getQuote(order.quoteId);
+  if (!quote || quote.direction !== "mayan-to-xmr" || quote.route !== "solana") {
+    return null;
+  }
+  return {
+    order,
+    quote,
+    funding: order.funding,
+  };
 }
 
 async function buildMayanPayload(funding: MayanSwiftFunding, swapperAddress: string): Promise<MayanEvmTxPayload> {

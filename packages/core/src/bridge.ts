@@ -47,6 +47,17 @@ export interface RequestWithdrawalOptions {
   commitment?: Commitment;
 }
 
+export interface BuildRequestWithdrawalTransactionOptions {
+  connection: Connection;
+  user: PublicKey;
+  amount: bigint;
+  xmrAddress: string;
+  exactOut?: boolean;
+  programId?: PublicKey | string;
+  nonce?: bigint;
+  commitment?: Commitment;
+}
+
 export interface RequestWithdrawalResult {
   signature: string;
   withdrawalPda: string;
@@ -138,6 +149,18 @@ export function createKeypairWallet(signer: Keypair): AnchorProviderWallet {
         }
         return tx;
       }),
+  };
+}
+
+export function createReadonlyWallet(publicKey: PublicKey): AnchorProviderWallet {
+  return {
+    publicKey,
+    signTransaction: async () => {
+      throw new Error("readonly wallet cannot sign transactions");
+    },
+    signAllTransactions: async () => {
+      throw new Error("readonly wallet cannot sign transactions");
+    },
   };
 }
 
@@ -273,14 +296,38 @@ export async function claimPendingMintWithKeypair(
 export async function requestWithdrawalWithKeypair(
   options: RequestWithdrawalOptions,
 ): Promise<RequestWithdrawalResult> {
+  const built = await buildRequestWithdrawalTransaction({
+    connection: options.connection,
+    user: options.signer.publicKey,
+    amount: options.amount,
+    xmrAddress: options.xmrAddress,
+    exactOut: options.exactOut,
+    programId: options.programId,
+    nonce: options.nonce,
+    commitment: options.commitment,
+  });
+  const signature = await sendAndConfirmTransaction(options.connection, built.transaction, [options.signer], {
+    commitment: options.commitment ?? "confirmed",
+  });
+
+  return {
+    signature,
+    withdrawalPda: built.withdrawalPda,
+    nonce: built.nonce,
+  };
+}
+
+export async function buildRequestWithdrawalTransaction(
+  options: BuildRequestWithdrawalTransactionOptions,
+): Promise<{ transaction: Transaction; withdrawalPda: string; nonce: bigint }> {
   const programId = getBridgeProgramId(options.programId);
-  const wallet = createKeypairWallet(options.signer);
+  const wallet = createReadonlyWallet(options.user);
   const program = createBridgeProgram(options.connection, wallet, options.commitment ?? "confirmed");
   const config = await program.account.bridgeConfig.fetch(getBridgeConfigPda(programId));
   const wxmrMint = config.wxmrMint as PublicKey;
-  const userTokenAccount = await getAssociatedTokenAddress(wxmrMint, options.signer.publicKey);
+  const userTokenAccount = await getAssociatedTokenAddress(wxmrMint, options.user);
   const nonce = options.nonce ?? BigInt(Date.now());
-  const withdrawalPda = getWithdrawalPda(options.signer.publicKey, nonce, programId);
+  const withdrawalPda = getWithdrawalPda(options.user, nonce, programId);
   const instruction = await program.methods
     .requestWithdrawal(
       new BN(nonce.toString()),
@@ -292,19 +339,16 @@ export async function requestWithdrawalWithKeypair(
       config: getBridgeConfigPda(programId),
       userTokenAccount,
       wxmrMint,
-      user: options.signer.publicKey,
+      user: options.user,
       tokenProgram: TOKEN_PROGRAM_ID,
     })
     .preInstructions(getPriorityFeeInstructions())
     .instruction();
 
   const transaction = new Transaction().add(instruction);
-  const signature = await sendAndConfirmTransaction(options.connection, transaction, [options.signer], {
-    commitment: options.commitment ?? "confirmed",
-  });
 
   return {
-    signature,
+    transaction,
     withdrawalPda: withdrawalPda.toBase58(),
     nonce,
   };

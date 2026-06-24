@@ -29,7 +29,7 @@ import {
 } from '@solana/spl-token';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
-import { PublicKey, Transaction, TransactionInstruction } from '@solana/web3.js';
+import { PublicKey, Transaction, TransactionInstruction, VersionedTransaction } from '@solana/web3.js';
 import { Buffer } from 'buffer';
 import {
   useAccount,
@@ -137,6 +137,29 @@ type DepositAddressLookup = {
   depositPda?: string;
   xmrDepositAddress?: string;
   status?: string;
+};
+
+type SolanaSwapTransactionPayload = {
+  needsSwap: boolean;
+  transaction?: string;
+  requestId?: string;
+  outAmount: string;
+  minOutAmount: string;
+};
+
+type SolanaSwapExecutionPayload = {
+  order: Order;
+  outAmount: string;
+  signature: string;
+};
+
+type SolanaWithdrawalTransactionPayload = {
+  transaction: string;
+  withdrawalPda: string;
+  nonce: string;
+  blockhash: string;
+  lastValidBlockHeight: number;
+  amount: string;
 };
 
 function MoneroLogo({ className = 'w-8 h-8' }: { className?: string }) {
@@ -649,6 +672,7 @@ export default function SwapPage() {
               <FundingPanel
                 order={order}
                 onDeposit={reportDeposit}
+                onOrderUpdate={setOrder}
                 onError={(message) => setError(message)}
               />
             )}
@@ -1329,10 +1353,12 @@ function RoutePanel({ legs, quote }: { legs: RouteLeg[]; quote: Quote | null }) 
 function FundingPanel({
   order,
   onDeposit,
+  onOrderUpdate,
   onError,
 }: {
   order: Order;
   onDeposit: (txHash: string) => Promise<void>;
+  onOrderUpdate: (order: Order) => void;
   onError: (message: string) => void;
 }) {
   if (order.status !== 'awaiting_deposit') {
@@ -1349,6 +1375,9 @@ function FundingPanel({
   }
   if (order.funding.type === 'solana-transfer') {
     return <SolanaTransferFunding funding={order.funding} onDeposit={onDeposit} onError={onError} />;
+  }
+  if (order.funding.type === 'solana-direct') {
+    return <SolanaDirectFunding order={order} funding={order.funding} onOrderUpdate={onOrderUpdate} onError={onError} />;
   }
   return (
     <div className="rounded-2xl border border-[#292b31] bg-[#101116] p-4 text-sm text-[#c8cbd1]">
@@ -1437,6 +1466,131 @@ function BtcDepositFunding({
           {isReporting ? 'Saving transaction...' : 'I sent BTC'}
         </button>
       </div>
+    </div>
+  );
+}
+
+function SolanaDirectFunding({
+  order,
+  funding,
+  onOrderUpdate,
+  onError,
+}: {
+  order: Order;
+  funding: Extract<FundingInstructions, { type: 'solana-direct' }>;
+  onOrderUpdate: (order: Order) => void;
+  onError: (message: string) => void;
+}) {
+  const { connection } = useConnection();
+  const { publicKey, signTransaction } = useWallet();
+  const [isFunding, setIsFunding] = useState(false);
+  const [phase, setPhase] = useState<'idle' | 'swap' | 'withdraw'>('idle');
+  const amount = formatBaseUnits(funding.inputAmount, funding.inputTokenDecimals ?? 6);
+  const expectedWxmr = formatXmr(funding.expectedWxmrOut);
+  const minWxmr = formatXmr(funding.minWxmrOut);
+
+  const submitDirectSwap = async () => {
+    setIsFunding(true);
+    setPhase('swap');
+    try {
+      if (!publicKey || !signTransaction) {
+        throw new Error('Connect a Solana wallet that can sign transactions');
+      }
+
+      const taker = publicKey.toBase58();
+      const swapPayload = await api<SolanaSwapTransactionPayload>(`/orders/${order.id}/solana/swap-transaction`, {
+        method: 'POST',
+        body: JSON.stringify({ taker }),
+      });
+
+      let swapResult: SolanaSwapExecutionPayload;
+      if (swapPayload.needsSwap) {
+        if (!swapPayload.transaction || !swapPayload.requestId) {
+          throw new Error('Jupiter did not return a transaction');
+        }
+        const swapTransaction = VersionedTransaction.deserialize(Buffer.from(swapPayload.transaction, 'base64'));
+        const signedSwap = await signTransaction(swapTransaction);
+        swapResult = await api<SolanaSwapExecutionPayload>(`/orders/${order.id}/solana/execute-swap`, {
+          method: 'POST',
+          body: JSON.stringify({
+            signedTransaction: Buffer.from(signedSwap.serialize()).toString('base64'),
+            requestId: swapPayload.requestId,
+            outAmount: swapPayload.outAmount,
+          }),
+        });
+      } else {
+        swapResult = await api<SolanaSwapExecutionPayload>(`/orders/${order.id}/solana/execute-swap`, {
+          method: 'POST',
+          body: JSON.stringify({
+            skipped: true,
+            outAmount: swapPayload.outAmount,
+          }),
+        });
+      }
+      onOrderUpdate(swapResult.order);
+
+      setPhase('withdraw');
+      const withdrawalPayload = await api<SolanaWithdrawalTransactionPayload>(`/orders/${order.id}/solana/withdrawal-transaction`, {
+        method: 'POST',
+        body: JSON.stringify({ owner: taker }),
+      });
+      const withdrawalTransaction = Transaction.from(Buffer.from(withdrawalPayload.transaction, 'base64'));
+      const signedWithdrawal = await signTransaction(withdrawalTransaction);
+      const withdrawalSignature = await connection.sendRawTransaction(signedWithdrawal.serialize());
+      await connection.confirmTransaction({
+        signature: withdrawalSignature,
+        blockhash: withdrawalPayload.blockhash,
+        lastValidBlockHeight: withdrawalPayload.lastValidBlockHeight,
+      }, 'confirmed');
+      const updated = await api<Order>(`/orders/${order.id}/solana/withdrawal`, {
+        method: 'POST',
+        body: JSON.stringify({
+          withdrawalSignature,
+          withdrawalPda: withdrawalPayload.withdrawalPda,
+          amount: withdrawalPayload.amount,
+        }),
+      });
+      onOrderUpdate(updated);
+    } catch (e) {
+      onError(errorMessage(e));
+    } finally {
+      setPhase('idle');
+      setIsFunding(false);
+    }
+  };
+
+  const buttonLabel = phase === 'swap'
+    ? 'Signing Jupiter swap...'
+    : phase === 'withdraw'
+      ? 'Signing withdrawal...'
+      : funding.inputMint.toLowerCase() === funding.wxmrMint.toLowerCase()
+        ? 'Request XMR withdrawal'
+        : 'Swap and request withdrawal';
+
+  return (
+    <div className="rounded-2xl border border-[#f26822]/40 bg-[#1a120c] p-4">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-white">Pay with Solana wallet</div>
+          <div className="truncate text-xs text-[#c59a7c]">
+            {publicKey ? shortAddress(publicKey.toBase58()) : 'Connect a Solana wallet'}
+          </div>
+        </div>
+        <WalletMultiButton />
+      </div>
+      <div className="mb-3 grid gap-2 rounded-xl border border-[#493424] bg-[#120d09] p-3 text-sm">
+        <Metric label="Amount" value={`${amount} ${funding.inputTokenSymbol ?? 'token'}`} />
+        <Metric label="Expected XMR-SOL" value={`${expectedWxmr} XMR-SOL`} />
+        <Metric label="Minimum XMR-SOL" value={`${minWxmr} XMR-SOL`} />
+        <Metric label="Route" value="Wallet-signed Jupiter swap, then wallet-signed XMR withdrawal" />
+      </div>
+      <button
+        onClick={submitDirectSwap}
+        disabled={isFunding || !publicKey || !signTransaction}
+        className="xmr-btn-primary flex min-h-12 w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold text-white disabled:translate-y-0"
+      >
+        {isFunding ? buttonLabel : buttonLabel}
+      </button>
     </div>
   );
 }
@@ -2107,8 +2261,8 @@ function buildRouteLegs({
     return [
       {
         title: `${sourceSymbol} on Solana`,
-        caption: 'Wallet-signed Solana transfer',
-        detail: 'You send the selected SPL token to the hot wallet with the order memo.',
+        caption: 'Wallet-signed Jupiter swap',
+        detail: 'Your wallet swaps the selected SPL token into XMR-SOL without sending tokens to the hot wallet.',
       },
       {
         title: 'jup.ag',
@@ -2118,7 +2272,7 @@ function buildRouteLegs({
       {
         title: 'Monero Bridge',
         caption: 'XMR-SOL to native XMR',
-        detail: 'The bridge withdrawal request pays the final Monero address.',
+        detail: 'Your wallet submits the withdrawal request for the final Monero address.',
       },
     ];
   }
@@ -2444,8 +2598,10 @@ function orderInputDecimals(order: Order): number {
     ? XMR_DECIMALS
     : order.funding.type === 'mayan-swift'
       ? order.funding.tokenDecimals ?? 6
-      : order.funding.type === 'solana-transfer'
-        ? order.funding.tokenDecimals ?? 6
+      : order.funding.type === 'solana-direct'
+        ? order.funding.inputTokenDecimals ?? 6
+    : order.funding.type === 'solana-transfer'
+      ? order.funding.tokenDecimals ?? 6
       : order.funding.chainId === 'bitcoin'
         ? 8
         : 6;

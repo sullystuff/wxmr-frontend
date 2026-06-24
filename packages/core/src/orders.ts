@@ -94,6 +94,7 @@ export function quoteHasPositiveOutput(quote: Quote): boolean {
 
 export type FundingInstructions =
   | MayanSwiftFunding
+  | SolanaDirectFunding
   | SolanaTransferFunding
   | DepositAddressFunding;
 
@@ -242,6 +243,20 @@ export interface SolanaTransferFunding {
   destinationTokenAccount: string;
   destinationOwner: string;
   memo: string;
+}
+
+export interface SolanaDirectFunding {
+  type: "solana-direct";
+  orderId: string;
+  chainId: "solana";
+  inputMint: string;
+  inputTokenSymbol?: string;
+  inputTokenDecimals?: number;
+  inputAmount: string;
+  wxmrMint: string;
+  expectedWxmrOut: string;
+  minWxmrOut: string;
+  xmrAddress: string;
 }
 
 export interface DepositAddressFunding {

@@ -26,6 +26,7 @@ import {
 } from "@wxmr/core";
 import {
   claimPendingMintWithKeypair,
+  buildRequestWithdrawalTransaction,
   createDepositAccountWithKeypair,
   fetchDepositAccount,
   findDepositAccountByXmrAddress,
@@ -271,6 +272,36 @@ export class SolanaExecutor {
       exactOut: false,
       programId: this.bridgeProgramId,
     });
+  }
+
+  async buildUserWithdrawalTransaction(user: PublicKey, amount: bigint, xmrAddress: string): Promise<{
+    transaction: string;
+    withdrawalPda: string;
+    nonce: string;
+    blockhash: string;
+    lastValidBlockHeight: number;
+  }> {
+    const built = await buildRequestWithdrawalTransaction({
+      connection: this.connection,
+      user,
+      amount,
+      xmrAddress,
+      exactOut: false,
+      programId: this.bridgeProgramId,
+    });
+    const latestBlockhash = await this.connection.getLatestBlockhash("confirmed");
+    built.transaction.feePayer = user;
+    built.transaction.recentBlockhash = latestBlockhash.blockhash;
+    return {
+      transaction: built.transaction.serialize({
+        requireAllSignatures: false,
+        verifySignatures: false,
+      }).toString("base64"),
+      withdrawalPda: built.withdrawalPda,
+      nonce: built.nonce.toString(),
+      blockhash: latestBlockhash.blockhash,
+      lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+    };
   }
 
   async refundUsdc(amount: bigint, refundAddress: string): Promise<string> {
