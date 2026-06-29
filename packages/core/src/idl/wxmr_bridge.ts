@@ -1118,7 +1118,8 @@ export type WxmrBridge = {
     {
       "name": "revertWithdrawal",
       "docs": [
-        "Authority reverts a withdrawal - re-mints tokens to user",
+        "Authority reverts a withdrawal - re-mints the net amount to the user.",
+        "The withdrawal fee collected at request time stays in the treasury.",
         "ONLY allowed in Pending state (before XMR send attempted)",
         "Once marked as Sending, CANNOT be reverted - must complete"
       ],
@@ -1166,34 +1167,6 @@ export type WxmrBridge = {
         {
           "name": "userTokenAccount",
           "writable": true
-        },
-        {
-          "name": "feeTreasury",
-          "docs": [
-            "Config-owned treasury that refunds the wXMR fee on revert."
-          ],
-          "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  102,
-                  101,
-                  101,
-                  95,
-                  116,
-                  114,
-                  101,
-                  97,
-                  115,
-                  117,
-                  114,
-                  121
-                ]
-              }
-            ]
-          }
         },
         {
           "name": "user",

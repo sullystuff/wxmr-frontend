@@ -2,9 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Connection, PublicKey } from '@solana/web3.js';
-import { BN } from '@coral-xyz/anchor';
-import { bs58 } from '@coral-xyz/anchor/dist/cjs/utils/bytes';
 
 // Monero Logo SVG component from cryptologos.cc
 function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
@@ -25,8 +22,6 @@ const BRIDGE_DATA = {
   bridgeProgram: 'EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8',
 };
 
-const SOLANA_RPC = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
-
 // Audit record interface
 interface AuditRecord {
   epoch: number;
@@ -37,10 +32,19 @@ interface AuditRecord {
   data: string;
 }
 
+interface AuditRecordResponse {
+  epoch: number;
+  timestamp: number;
+  circulatingSupply: string;
+  spendableBalance: string;
+  unconfirmedBalance: string;
+  data: string;
+}
+
 // Parsed audit data type
 interface AuditData {
   timestamp: number;        // Unix timestamp (used as unique ID)
-  triggeredBy: 'scheduled' | 'withdrawal_failure';
+  triggeredBy: 'scheduled' | 'withdrawal_failure' | 'input_threshold';
   address: string;
   totalAmount: number;
   totalFee: number;
@@ -120,88 +124,64 @@ function formatDate(timestamp: number): string {
   return new Date(timestamp * 1000).toLocaleString();
 }
 
-// AuditRecord discriminator (first 8 bytes of sha256("account:AuditRecord"))
-const AUDIT_RECORD_DISCRIMINATOR = [23, 133, 250, 12, 85, 60, 64, 139];
-
 // Fetch audit records from on-chain
 async function fetchAuditRecords(): Promise<AuditRecord[]> {
-  try {
-    const connection = new Connection(SOLANA_RPC, 'confirmed');
-    const programId = new PublicKey(BRIDGE_DATA.bridgeProgram);
-    
-    // Fetch all accounts with the AuditRecord discriminator (dynamic size)
-    const accounts = await connection.getProgramAccounts(programId, {
-      filters: [
-        {
-          memcmp: {
-            offset: 0,
-            bytes: bs58.encode(Buffer.from(AUDIT_RECORD_DISCRIMINATOR)),
-          },
-        },
-      ],
-    });
+  const response = await fetch('/api/audits', { cache: 'no-store' });
 
-    const records: AuditRecord[] = [];
-    
-    for (const account of accounts) {
-      try {
-        const data = account.account.data;
-        // Skip discriminator (8 bytes)
-        let offset = 8;
-        
-        const epoch = new BN(data.subarray(offset, offset + 8), 'le').toNumber();
-        offset += 8;
-        
-        const timestamp = new BN(data.subarray(offset, offset + 8), 'le').toNumber();
-        offset += 8;
-        
-        const circulatingSupply = BigInt(new BN(data.subarray(offset, offset + 8), 'le').toString());
-        offset += 8;
-        
-        const spendableBalance = BigInt(new BN(data.subarray(offset, offset + 8), 'le').toString());
-        offset += 8;
-        
-        const unconfirmedBalance = BigInt(new BN(data.subarray(offset, offset + 8), 'le').toString());
-        offset += 8;
-        
-        // String length (4 bytes) + string data
-        const strLen = new BN(data.subarray(offset, offset + 4), 'le').toNumber();
-        offset += 4;
-        
-        const dataStr = new TextDecoder().decode(data.subarray(offset, offset + strLen));
-        
-        records.push({
-          epoch,
-          timestamp,
-          circulatingSupply,
-          spendableBalance,
-          unconfirmedBalance,
-          data: dataStr,
-        });
-      } catch {
-        // Skip malformed records
+  if (!response.ok) {
+    let message = 'Failed to load audit records';
+    try {
+      const body = await response.json();
+      if (typeof body?.error === 'string') {
+        message = body.error;
       }
+    } catch {
+      // Keep the default message.
     }
-    
-    // Sort by epoch desc
-    return records.sort((a, b) => b.epoch - a.epoch);
-  } catch (error) {
-    console.error('Error fetching audit records:', error);
-    return [];
+    throw new Error(message);
   }
+
+  const records = await response.json() as AuditRecordResponse[];
+  return records.map((record) => ({
+    epoch: record.epoch,
+    timestamp: record.timestamp,
+    circulatingSupply: BigInt(record.circulatingSupply),
+    spendableBalance: BigInt(record.spendableBalance),
+    unconfirmedBalance: BigInt(record.unconfirmedBalance),
+    data: record.data,
+  }));
 }
 
 export default function TransparencyPage() {
   const [copied, setCopied] = useState<string | null>(null);
   const [audits, setAudits] = useState<AuditRecord[]>([]);
   const [loadingAudits, setLoadingAudits] = useState(true);
+  const [auditError, setAuditError] = useState<string | null>(null);
   const [expandedEpoch, setExpandedEpoch] = useState<number | null>(null);
 
   useEffect(() => {
-    fetchAuditRecords().then(records => {
-      setAudits(records);
-      setLoadingAudits(false);
-    });
+    let cancelled = false;
+
+    fetchAuditRecords()
+      .then((records) => {
+        if (cancelled) return;
+        setAudits(records);
+        setAuditError(null);
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        console.error('Error fetching audit records:', error);
+        setAuditError(error instanceof Error ? error.message : 'Failed to load audit records');
+      })
+      .finally(() => {
+        if (!cancelled) {
+          setLoadingAudits(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const copyToClipboard = (text: string, label: string) => {
@@ -540,6 +520,10 @@ export default function TransparencyPage() {
               <div className="animate-spin w-6 h-6 border-2 border-[#ff6600] border-t-transparent rounded-full mx-auto mb-2"></div>
               Loading audit history...
             </div>
+          ) : auditError ? (
+            <div className="text-center py-8 text-red-400">
+              {auditError}
+            </div>
           ) : audits.length === 0 ? (
             <div className="text-center py-8 text-[var(--muted)]">
               No audits recorded yet. First audit will run within 24 hours.
@@ -576,6 +560,11 @@ export default function TransparencyPage() {
                         {triggeredBy === 'scheduled' && (
                           <span className="text-xs text-green-400 ml-2 px-2 py-0.5 bg-green-400/10 rounded">
                             scheduled
+                          </span>
+                        )}
+                        {triggeredBy === 'input_threshold' && (
+                          <span className="text-xs text-yellow-400 ml-2 px-2 py-0.5 bg-yellow-400/10 rounded">
+                            input threshold
                           </span>
                         )}
                       </div>
