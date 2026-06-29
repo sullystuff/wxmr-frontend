@@ -37,6 +37,8 @@ function firstDefined(names, sources) {
 }
 
 function loadWxmrEnv() {
+  // NEXT_PUBLIC_* values are inlined at build time, so explicit build env wins.
+  const initialEnv = { ...process.env };
   const cwdEnvPath = path.join(process.cwd(), ".env");
   const cwdLocalEnvPath = path.join(process.cwd(), ".env.local");
   const envPaths = uniquePaths([
@@ -49,14 +51,30 @@ function loadWxmrEnv() {
     envPath,
     parsed: parseEnvFile(envPath),
   }));
-  const parsed = Object.assign({}, ...parsedByPath.map(({ parsed }) => parsed));
+  const parsedByResolvedPath = new Map(
+    parsedByPath.map(({ envPath, parsed }) => [path.resolve(envPath), parsed])
+  );
+  const rootEnv = parsedByResolvedPath.get(path.resolve(ROOT_ENV_PATH)) ?? {};
+  const rootLocalEnv = parsedByResolvedPath.get(path.resolve(ROOT_LOCAL_ENV_PATH)) ?? {};
+  const cwdEnv = parsedByResolvedPath.get(path.resolve(cwdEnvPath)) ?? {};
+  const cwdLocalEnv = parsedByResolvedPath.get(path.resolve(cwdLocalEnvPath)) ?? {};
+  const parsed = Object.assign({}, cwdEnv, cwdLocalEnv, rootEnv, rootLocalEnv);
 
   for (const [key, value] of Object.entries(parsed)) {
-    process.env[key] = value;
+    if (initialEnv[key] === undefined || initialEnv[key] === "") {
+      process.env[key] = value;
+    }
   }
 
   for (const names of ENV_ALIASES) {
-    const value = firstDefined(names, [parsed, process.env]);
+    const value = firstDefined(names, [
+      initialEnv,
+      rootLocalEnv,
+      rootEnv,
+      cwdLocalEnv,
+      cwdEnv,
+      process.env,
+    ]);
     if (value !== undefined) {
       for (const name of names) {
         process.env[name] = value;
