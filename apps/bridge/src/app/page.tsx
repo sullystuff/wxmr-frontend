@@ -6,12 +6,21 @@ import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
 import { useWxmrBridge, DepositAccountInfo, WithdrawalInfo, BridgeConfig } from '@/hooks/useWxmrBridge';
 import { QRCodeSVG } from 'qrcode.react';
 import { SwapModal } from '@wxmr/shared';
+import {
+  PICONERO_PER_XMR,
+  MIN_XMR_DEPOSIT_PICONERO,
+  MIN_XMR_WITHDRAWAL_PICONERO,
+  XMR_DEPOSIT_DUST_PICONERO,
+  formatXmrAmount,
+  validateMoneroAddress,
+} from '@wxmr/core';
 
-const PICONERO_PER_XMR = BigInt('1000000000000');
 const BASIS_POINTS = BigInt(10000);
-const MIN_WITHDRAW_XMR = '0.01';
-const MIN_WITHDRAW_PICONERO = BigInt('10000000000');
 const WITHDRAW_FEE_BPS = 10;
+
+const MIN_WITHDRAW_XMR = formatXmrAmount(MIN_XMR_WITHDRAWAL_PICONERO);
+const MIN_DEPOSIT_XMR = formatXmrAmount(MIN_XMR_DEPOSIT_PICONERO);
+const DEPOSIT_DUST_XMR = formatXmrAmount(XMR_DEPOSIT_DUST_PICONERO);
 
 // Monero Logo SVG component from cryptologos.cc
 function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
@@ -499,14 +508,19 @@ export default function Home() {
     : wxmrBalance;
   const isWithdrawAmountBelowMinimum = parsedWithdrawAmount !== null
     && parsedWithdrawAmount > BigInt(0)
-    && parsedWithdrawAmount < MIN_WITHDRAW_PICONERO;
+    && parsedWithdrawAmount < MIN_XMR_WITHDRAWAL_PICONERO;
   const isWithdrawAmountOverBalance = withdrawPreview !== null
     && withdrawPreview.burnAmount > wxmrBalance;
+  // Same validation the on-chain program runs (base58, checksum, network tag,
+  // ed25519 keys) so a bad address never reaches the Solana network.
+  const trimmedXmrAddress = xmrAddress.trim();
+  const xmrAddressValidation = trimmedXmrAddress ? validateMoneroAddress(trimmedXmrAddress) : null;
   const canRequestWithdrawal = !loading
-    && Boolean(withdrawAmount && xmrAddress)
+    && Boolean(withdrawAmount)
+    && xmrAddressValidation?.valid === true
     && parsedWithdrawAmount !== null
     && withdrawPreview !== null
-    && parsedWithdrawAmount >= MIN_WITHDRAW_PICONERO
+    && parsedWithdrawAmount >= MIN_XMR_WITHDRAWAL_PICONERO
     && !isWithdrawAmountOverBalance;
 
   // Modal states
@@ -617,18 +631,17 @@ export default function Home() {
 
   // Handle withdrawal request
   const handleWithdraw = async () => {
-    if (!withdrawAmount || !xmrAddress) {
+    const destination = xmrAddress.trim();
+    if (!withdrawAmount || !destination) {
       setError('Please enter amount and Monero destination address');
       return;
     }
 
-    if (!xmrAddress.startsWith('4') && !xmrAddress.startsWith('8')) {
-      setError('Invalid XMR address (should start with 4 or 8)');
-      return;
-    }
-
-    if (xmrAddress.length < 95) {
-      setError('XMR address too short');
+    // Run the exact validation the on-chain program performs, so an address it
+    // would reject never gets submitted to the Solana network.
+    const addressValidation = validateMoneroAddress(destination);
+    if (!addressValidation.valid) {
+      setError(`Invalid Monero address: ${addressValidation.reason}`);
       return;
     }
 
@@ -644,7 +657,7 @@ export default function Home() {
       return;
     }
 
-    if (amountPiconero < MIN_WITHDRAW_PICONERO) {
+    if (amountPiconero < MIN_XMR_WITHDRAWAL_PICONERO) {
       setError(`Minimum Solana to Monero transfer is ${MIN_WITHDRAW_XMR} XMR`);
       return;
     }
@@ -658,7 +671,7 @@ export default function Home() {
         throw new Error('Insufficient XMR balance');
       }
 
-      const result = await requestWithdrawal(preview.requestAmount, xmrAddress, withdrawExactOut);
+      const result = await requestWithdrawal(preview.requestAmount, destination, withdrawExactOut);
       if (result) {
         setSuccess(`Solana to Monero bridge request created! TX: ${result.signature.slice(0, 20)}...`);
         setWithdrawAmount('');
@@ -817,7 +830,9 @@ export default function Home() {
                 <>
                   <p className="text-[var(--muted)] mb-6">
                     Create a bridge address to receive native XMR from Monero.
-                    Minimum 0.01 XMR per transfer (and per input!). You can bridge into Solana any number of times.
+                    Minimum deposit {MIN_DEPOSIT_XMR} XMR — smaller amounts are not minted.
+                    Transfers under {DEPOSIT_DUST_XMR} XMR (per transfer and per input!) are ignored as dust.
+                    You can bridge into Solana any number of times.
                   </p>
                   <button
                     onClick={handleCreateDepositAccount}
@@ -899,7 +914,8 @@ export default function Home() {
 
                   <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 mb-4">
                     <p className="text-sm text-green-400">
-                      <strong>Minimum 0.01 XMR per transfer.</strong> Once confirmed (10 blocks), 
+                      <strong>Minimum deposit {MIN_DEPOSIT_XMR} XMR</strong> — smaller amounts are not minted,
+                      and transfers under {DEPOSIT_DUST_XMR} XMR are ignored as dust. Once confirmed (10 blocks),
                       XMR on Solana will be automatically minted to your wallet. You can bridge into Solana multiple times.
                     </p>
                   </div>
@@ -1060,6 +1076,16 @@ export default function Home() {
                           </svg>
                         </button>
                       </div>
+                      {xmrAddressValidation && !xmrAddressValidation.valid && (
+                        <p className="text-xs text-red-400 mt-2">
+                          Invalid Monero address: {xmrAddressValidation.reason}.
+                        </p>
+                      )}
+                      {xmrAddressValidation?.valid && (
+                        <p className="text-xs text-green-400 mt-2">
+                          Valid Monero {xmrAddressValidation.kind === 'standard' ? 'address' : `${xmrAddressValidation.kind} address`}.
+                        </p>
+                      )}
                     </div>
                     <button
                       onClick={handleWithdraw}
