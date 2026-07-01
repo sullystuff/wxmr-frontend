@@ -985,7 +985,7 @@ export default function Home() {
                           className="xmr-input flex-1 px-4 py-3 text-white"
                         />
                         <button
-                          onClick={() => setWithdrawAmount(formatXmr(maxWithdrawAmount))}
+                          onClick={() => setWithdrawAmount(formatXmrAmount(maxWithdrawAmount))}
                           className="px-5 py-3 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg text-sm font-semibold transition-all"
                         >
                           MAX
