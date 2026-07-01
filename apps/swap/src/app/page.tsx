@@ -7,9 +7,12 @@ import {
   ERC20_APPROVE_ABI,
   MAYAN_SWIFT_EVM_SOURCE_CHAINS,
   MAYAN_SWIFT_SOURCE_CHAINS,
+  MIN_XMR_DEPOSIT_PICONERO,
+  MIN_XMR_WITHDRAWAL_PICONERO,
   WXMR_MINT_ADDRESS,
   XMR_DECIMALS,
   filterMayanTokensForChain,
+  formatXmrAmount,
   isValidMoneroAddress,
   quoteHasPositiveOutput,
   type ExecutionPolicy,
@@ -55,6 +58,9 @@ const DEFAULT_EXECUTION_POLICY: ExecutionPolicy = 'execute-anyway';
 const DEFAULT_SLIPPAGE_BPS = 200;
 const AUTO_REFRESH_QUOTE_MS = 10_000;
 const QUOTE_PLACEHOLDER_XMR_ADDRESS = '45ZYpKmPaPmh3bnRP1XpMz8cASJQf1cfUgq32H8trCYA4RodzXhsmt2VYkQX9QQ65CetiGja65tH2JmKC3gEZtZjB7AzMpd';
+// Bridge minimums, mirrored from the on-chain program via @wxmr/core.
+const MIN_XMR_DEPOSIT_XMR = formatXmrAmount(MIN_XMR_DEPOSIT_PICONERO);
+const MIN_XMR_WITHDRAWAL_XMR = formatXmrAmount(MIN_XMR_WITHDRAWAL_PICONERO);
 const QUOTE_PLACEHOLDER_SOLANA_ADDRESS = '9wtvVxue6wfwVf27cG11tyfQXyHZnyz5gHR5okWh26sX';
 const QUOTE_PLACEHOLDER_EVM_ADDRESS = '0x000000000000000000000000000000000000dEaD';
 const QUOTE_PLACEHOLDER_SUI_ADDRESS = `0x${'1'.repeat(64)}`;
@@ -807,6 +813,11 @@ function TradeAmountPanel({
           <span className="text-[#8f949d]">v</span>
         </button>
       </div>
+      {chainId === 'monero' && (
+        <div className="mt-1.5 text-xs text-[#8f949d]">
+          Minimum {MIN_XMR_DEPOSIT_XMR} XMR — the Monero bridge only mints deposits of {MIN_XMR_DEPOSIT_XMR} XMR or more.
+        </div>
+      )}
     </div>
   );
 }
@@ -973,6 +984,9 @@ function RecipientPanel({
               className="w-full rounded-lg border border-[#2c2f37] bg-[#090a0e] px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
             />
           </label>
+          <div className="text-xs text-[#8f949d]">
+            The Monero bridge pays out a minimum of {MIN_XMR_WITHDRAWAL_XMR} XMR — swaps with a smaller worst-case output are rejected at quoting.
+          </div>
           {depositAddressMatch?.owner && (
             <div className="rounded-lg border border-[#f26822]/35 bg-[#1a120c] p-3">
               <div className="text-sm font-semibold text-white">This is an XMR-SOL deposit address</div>

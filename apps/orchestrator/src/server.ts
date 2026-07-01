@@ -10,12 +10,15 @@ import {
   CHAINS,
   ChainflipClient,
   JupiterClient,
+  MIN_XMR_DEPOSIT_PICONERO,
+  MIN_XMR_WITHDRAWAL_PICONERO,
   THORCHAIN,
   ThorchainClient,
   USDC_MINT_ADDRESS,
   WXMR_MINT_ADDRESS,
   XMR_DECIMALS,
   assertValidMoneroAddress,
+  formatXmrAmount,
   buildMayanSwiftFunding,
   chainflipDepositExpiresAt,
   chainflipMinSolanaUsdcOut,
@@ -201,6 +204,14 @@ function registerRoutes(prefix: "" | "/api"): void {
         slippageBps: body.slippageBps,
         executionPolicy,
       });
+      // The bridge program rejects withdrawals below MIN_XMR_WITHDRAWAL. Refuse the
+      // quote up front on its worst-case output, rather than swapping the user's
+      // funds and stranding the order at the withdrawal leg.
+      if (BigInt(quote.minXmrOut) < MIN_XMR_WITHDRAWAL_PICONERO) {
+        return reply.code(400).send({
+          error: `output too small: the Monero bridge pays out a minimum of ${formatXmrAmount(MIN_XMR_WITHDRAWAL_PICONERO)} XMR, but this quote's worst-case output is ${formatXmrAmount(BigInt(quote.minXmrOut))} XMR — increase the input amount`,
+        });
+      }
       store.insertQuote(quote);
       return quote;
     }
@@ -243,6 +254,13 @@ function registerRoutes(prefix: "" | "/api"): void {
       return reply.code(400).send({ error: "unsupported direction" });
     }
     assertValidMoneroAddress(xmrAddress ?? "");
+    // The deposited XMR must clear the bridge's on-chain mint minimum, or it
+    // sits at the deposit address unminted indefinitely.
+    if (BigInt(body.amount) < MIN_XMR_DEPOSIT_PICONERO) {
+      return reply.code(400).send({
+        error: `amount too small: the Monero bridge mints deposits of at least ${formatXmrAmount(MIN_XMR_DEPOSIT_PICONERO)} XMR`,
+      });
+    }
     const outputChain = destinationChain ?? sourceChain;
     const outputToken = body.destinationToken ?? body.sourceToken;
     if (!body.destinationAddress) {
