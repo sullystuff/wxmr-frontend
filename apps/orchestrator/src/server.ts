@@ -159,10 +159,13 @@ function registerRoutes(prefix: "" | "/api"): void {
     if (!body.sourceToken) {
       return reply.code(400).send({ error: "sourceToken is required" });
     }
+    // Normalize at the boundary: validation trims internally, so the stored and
+    // later on-chain-submitted string must be the trimmed one as well.
+    const xmrAddress = body.xmrAddress?.trim();
 
     if (direction === "mayan-to-xmr") {
-      if (body.xmrAddress) {
-        assertValidMoneroAddress(body.xmrAddress);
+      if (xmrAddress) {
+        assertValidMoneroAddress(xmrAddress);
       }
 
       const chain = CHAINS[sourceChain];
@@ -175,7 +178,7 @@ function registerRoutes(prefix: "" | "/api"): void {
         sourceToken: body.sourceToken,
         amount: body.amount,
         sourceAddress: body.sourceAddress,
-        xmrAddress: body.xmrAddress,
+        xmrAddress,
         refundAddress: body.refundAddress,
         slippageBps: body.slippageBps,
         executionPolicy,
@@ -184,7 +187,7 @@ function registerRoutes(prefix: "" | "/api"): void {
         sourceChain,
         sourceToken: body.sourceToken,
         amount: body.amount,
-        xmrAddress: body.xmrAddress,
+        xmrAddress,
         refundAddress: body.refundAddress,
         slippageBps: body.slippageBps,
         executionPolicy,
@@ -193,7 +196,7 @@ function registerRoutes(prefix: "" | "/api"): void {
         sourceChain,
         sourceToken: body.sourceToken,
         amount: body.amount,
-        xmrAddress: body.xmrAddress,
+        xmrAddress,
         refundAddress: body.refundAddress,
         slippageBps: body.slippageBps,
         executionPolicy,
@@ -239,7 +242,7 @@ function registerRoutes(prefix: "" | "/api"): void {
     if (direction !== "xmr-to-mayan") {
       return reply.code(400).send({ error: "unsupported direction" });
     }
-    assertValidMoneroAddress(body.xmrAddress ?? "");
+    assertValidMoneroAddress(xmrAddress ?? "");
     const outputChain = destinationChain ?? sourceChain;
     const outputToken = body.destinationToken ?? body.sourceToken;
     if (!body.destinationAddress) {
@@ -263,7 +266,7 @@ function registerRoutes(prefix: "" | "/api"): void {
       destinationChain: outputChain,
       destinationToken: outputToken,
       amount: body.amount,
-      xmrAddress: body.xmrAddress!,
+      xmrAddress: xmrAddress!,
       destinationAddress: body.destinationAddress,
       refundAddress: body.refundAddress,
       slippageBps: body.slippageBps,
@@ -275,7 +278,7 @@ function registerRoutes(prefix: "" | "/api"): void {
       destinationChain: outputChain,
       destinationToken: outputToken,
       amount: body.amount,
-      xmrAddress: body.xmrAddress!,
+      xmrAddress: xmrAddress!,
       destinationAddress: body.destinationAddress,
       refundAddress: body.refundAddress,
       slippageBps: body.slippageBps,
@@ -312,7 +315,10 @@ function registerRoutes(prefix: "" | "/api"): void {
     const orderId = crypto.randomUUID();
     const refundAddress = body.refundAddress ?? quote.refundAddress;
     const sourceAddress = body.sourceAddress ?? quote.sourceAddress;
-    const xmrAddress = body.xmrAddress ?? quote.xmrAddress;
+    // Trim before validating AND storing: the on-chain program validates the raw
+    // string, so a whitespace-padded address that passed (trimming) validation
+    // here would be rejected at the withdrawal/refund leg after funds moved.
+    const xmrAddress = (body.xmrAddress ?? quote.xmrAddress)?.trim();
     const executionPolicy = normalizeExecutionPolicy(body.executionPolicy ?? quote.executionPolicy);
     if (quote.direction !== "mayan-to-xmr") {
       if (!body.destinationAddress) {
@@ -335,7 +341,7 @@ function registerRoutes(prefix: "" | "/api"): void {
     if (quote.route === "chainflip" && !sourceAddress) {
       return reply.code(400).send({ error: "BTC refund address is required for Chainflip" });
     }
-    const funding = await buildFundingInstructions(orderId, { ...quote, sourceAddress, refundAddress, xmrAddress: xmrAddress ?? quote.xmrAddress });
+    const funding = await buildFundingInstructions(orderId, { ...quote, sourceAddress, refundAddress, xmrAddress });
     const orderExpiresAt = funding.type === "deposit-address" ? funding.expiresAt : quote.expiresAt;
     const order: Order = {
       id: orderId,
@@ -347,7 +353,7 @@ function registerRoutes(prefix: "" | "/api"): void {
       destinationChain: quote.destinationChain,
       destinationToken: quote.destinationToken,
       amount: quote.inputAmount,
-      xmrAddress: xmrAddress ?? quote.xmrAddress,
+      xmrAddress,
       destinationAddress: quote.destinationAddress,
       destinationTokenSymbol: quote.destinationTokenSymbol,
       destinationTokenDecimals: quote.destinationTokenDecimals,
