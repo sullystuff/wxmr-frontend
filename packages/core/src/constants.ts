@@ -13,4 +13,15 @@ export const WXMR_DECIMALS = 12;
 export const XMR_DECIMALS = WXMR_DECIMALS;
 
 export const BRIDGE_FEE_BPS = 10;
-export const MIN_WITHDRAW_PICONERO = 10_000_000_000n;
+
+export const PICONERO_PER_XMR = 1_000_000_000_000n;
+
+// Bridge minimums — mirror the on-chain constants in
+// wxmr-backend/programs/wxmr-bridge/src/lib.rs (MIN_XMR_DEPOSIT / MIN_XMR_WITHDRAWAL).
+export const MIN_XMR_DEPOSIT_PICONERO = 100_000_000_000n; // 0.1 XMR
+export const MIN_XMR_WITHDRAWAL_PICONERO = 100_000_000_000n; // 0.1 XMR
+export const MIN_WITHDRAW_PICONERO = MIN_XMR_WITHDRAWAL_PICONERO;
+
+// Relayer dust filter (wxmr-backend/src/monero.ts MIN_TRANSFER_AMOUNT): individual
+// incoming transfers below this are never tracked, so they can't count toward a mint.
+export const XMR_DEPOSIT_DUST_PICONERO = 10_000_000_000n; // 0.01 XMR
