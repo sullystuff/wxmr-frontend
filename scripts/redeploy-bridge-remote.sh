@@ -9,7 +9,15 @@ set -euo pipefail
 # when the uploaded tarball overwrites it. This script waits for that restart
 # and then health-checks the live site.
 
-REMOTE="${REMOTE:-deploy@REDACTED-DEPLOY-HOST}"
+cd "$(git rev-parse --show-toplevel)"
+
+# The deploy host is intentionally never committed (this repo is public).
+# Provide REMOTE directly, or set WXMR_DEPLOY_HOST in the environment or the
+# gitignored repo-root .env.
+if [[ -z "${WXMR_DEPLOY_HOST:-}" && -f .env ]]; then
+  WXMR_DEPLOY_HOST="$(sed -n 's/^WXMR_DEPLOY_HOST=//p' .env | tail -1)"
+fi
+REMOTE="${REMOTE:-deploy@${WXMR_DEPLOY_HOST:?set WXMR_DEPLOY_HOST (env or repo-root .env) or pass REMOTE}}"
 REMOTE_DIR="${REMOTE_DIR:-/home/deploy/wxmr-frontend}"
 SITE_URL="${SITE_URL:-https://wxmr.io}"
 SSH_OPTS=(-F /dev/null -o StrictHostKeyChecking=no)
@@ -20,8 +28,6 @@ ARTIFACTS=(
   packages/core/dist
   apps/bridge/.next
 )
-
-cd "$(git rev-parse --show-toplevel)"
 
 echo "Deploying local build artifacts to ${REMOTE}:${REMOTE_DIR}"
 echo "Local HEAD: $(git rev-parse --short HEAD)"
