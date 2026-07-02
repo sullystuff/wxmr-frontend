@@ -827,7 +827,7 @@ function TradeAmountPanel({
 }) {
   const chainName = CHAINS[chainId].name;
   return (
-    <div className="rounded-2xl border border-[#292b31] bg-[#0c0d11] p-3">
+    <div className="swap-amount-panel rounded-2xl border border-[#292b31] bg-[#0c0d11] p-3 transition-colors">
       <div className="mb-2 text-sm text-[#a9afba]">{label}</div>
       <div className="flex items-center gap-3">
         <input

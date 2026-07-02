@@ -69,7 +69,11 @@ body {
 :where(button, summary, a, [role='button']):focus-visible {
   outline: 2px solid var(--primary);
   outline-offset: 2px;
-  border-radius: 8px;
+}
+
+/* The amount input is borderless by design; its panel carries the focus state. */
+.swap-amount-panel:focus-within {
+  border-color: rgba(242, 104, 34, 0.6);
 }
 
 .xmr-btn-primary:disabled {
