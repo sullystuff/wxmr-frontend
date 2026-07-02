@@ -1264,6 +1264,7 @@ function TokenPicker({
   onSelect: (contract: string) => void;
 }) {
   useEscapeKey(true, onClose);
+  const dialogRef = useDialogFocus(true);
   const filteredTokens = useMemo(() => {
     const needle = search.trim().toLowerCase();
     if (!needle) return tokens;
@@ -1277,6 +1278,10 @@ function TokenPicker({
   return (
     <div className="swap-backdrop fixed inset-0 z-50 flex items-end bg-black/75 p-3 backdrop-blur-[2px] sm:items-center sm:justify-center" onClick={onClose}>
       <div
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Select asset"
         className="swap-panel-in max-h-[88vh] w-full max-w-lg overflow-hidden rounded-3xl border border-[#292b31] bg-[#111216] shadow-2xl shadow-black"
         onClick={(event) => event.stopPropagation()}
       >
@@ -1317,7 +1322,7 @@ function TokenPicker({
                 key={contract || token.symbol || token.name}
                 onClick={() => contract && onSelect(contract)}
                 className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors ${
-                  isSelected ? 'bg-[#22170f] ring-1 ring-[#f26822]' : 'hover:bg-[#191b21] active:bg-[#1d2027]'
+                  isSelected ? 'bg-[#22170f]' : 'hover:bg-[#191b21] active:bg-[#1d2027]'
                 }`}
               >
                 <TokenLogo token={token} />
@@ -1837,6 +1842,7 @@ function MayanEvmFunding({
   const [isFunding, setIsFunding] = useState(false);
   const [connectingConnectorUid, setConnectingConnectorUid] = useState<string | null>(null);
   useEscapeKey(showConnect, () => setShowConnect(false));
+  const connectDialogRef = useDialogFocus(showConnect);
 
   const fund = async () => {
     setIsFunding(true);
@@ -1915,7 +1921,14 @@ function MayanEvmFunding({
       </button>
       {showConnect && (
         <div className="swap-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-[2px]" onClick={() => setShowConnect(false)}>
-          <div className="swap-panel-in w-full max-w-sm rounded-3xl border border-[#292b31] bg-[#111216] p-4" onClick={(event) => event.stopPropagation()}>
+          <div
+            ref={connectDialogRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label="Connect wallet"
+            className="swap-panel-in w-full max-w-sm rounded-3xl border border-[#292b31] bg-[#111216] p-4"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-base font-semibold text-white">Connect wallet</h3>
               <button onClick={() => setShowConnect(false)} className="rounded-full border border-[#30333b] px-3 py-2 text-sm text-[#c8cbd1] hover:border-[#f26822]">
@@ -2201,6 +2214,39 @@ function OrderStatusPanel({ order }: { order: Order | null }) {
       )}
     </div>
   );
+}
+
+function useDialogFocus(active: boolean) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!active) return;
+    const node = ref.current;
+    const previous = document.activeElement as HTMLElement | null;
+    const selector = 'button:not([disabled]), [href], input:not([disabled]), select, textarea, [tabindex]:not([tabindex="-1"])';
+    if (node && !node.contains(document.activeElement)) {
+      node.querySelector<HTMLElement>(selector)?.focus();
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Tab' || !node) return;
+      const items = Array.from(node.querySelectorAll<HTMLElement>(selector));
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      previous?.focus?.();
+    };
+  }, [active]);
+  return ref;
 }
 
 function useEscapeKey(active: boolean, onEscape: () => void) {
@@ -2553,12 +2599,22 @@ function tokenAddress(token?: MayanToken): string | undefined {
   return token?.contract ?? token?.mint;
 }
 
+const CHAIN_DISPLAY_PRIORITY: readonly SourceChainId[] = ['monero', 'ethereum', 'solana', 'bitcoin', 'base', 'arbitrum', 'optimism', 'polygon', 'bsc', 'avalanche', 'sui', 'linea', 'hyperevm', 'hyperliquid', 'monad'];
+
+function sortChainsForDisplay(chains: readonly SourceChainId[]): readonly SourceChainId[] {
+  const rank = (chain: SourceChainId) => {
+    const index = CHAIN_DISPLAY_PRIORITY.indexOf(chain);
+    return index === -1 ? CHAIN_DISPLAY_PRIORITY.length : index;
+  };
+  return [...chains].sort((a, b) => rank(a) - rank(b));
+}
+
 function selectableSourceChains(): readonly SourceChainId[] {
-  return ['monero', 'bitcoin', ...MAYAN_SWIFT_EVM_SOURCE_CHAINS, 'solana'];
+  return sortChainsForDisplay(['monero', 'bitcoin', ...MAYAN_SWIFT_EVM_SOURCE_CHAINS, 'solana']);
 }
 
 function selectableDestinationChains(): readonly SourceChainId[] {
-  return ['monero', ...MAYAN_SWIFT_SOURCE_CHAINS, 'solana'];
+  return sortChainsForDisplay(['monero', ...MAYAN_SWIFT_SOURCE_CHAINS, 'solana']);
 }
 
 async function loadTokensForChain(chainId: SourceChainId): Promise<MayanToken[]> {
