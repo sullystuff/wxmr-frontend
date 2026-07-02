@@ -195,9 +195,11 @@ function MoneroLogo({ className = 'w-8 h-8' }: { className?: string }) {
 export default function SwapPage() {
   const [sourceChain, setSourceChain] = useState<SourceChainId>(DEFAULT_MAYAN_CHAIN);
   const [sourceTokens, setSourceTokens] = useState<MayanToken[]>([]);
+  const [sourceTokensLoading, setSourceTokensLoading] = useState(true);
   const [sourceToken, setSourceToken] = useState('');
   const [destinationChain, setDestinationChain] = useState<SourceChainId>(DEFAULT_DESTINATION_CHAIN);
   const [destinationTokens, setDestinationTokens] = useState<MayanToken[]>([XMR_TOKEN]);
+  const [destinationTokensLoading, setDestinationTokensLoading] = useState(false);
   const [destinationToken, setDestinationToken] = useState('XMR');
   const [amount, setAmount] = useState('');
   const [xmrAddress, setXmrAddress] = useState('');
@@ -291,10 +293,12 @@ export default function SwapPage() {
   useEffect(() => {
     let cancelled = false;
     setSourceTokens([]);
+    setSourceTokensLoading(true);
     setTokenSearch('');
     loadTokensForChain(sourceChain)
       .then((tokens) => {
         if (cancelled) return;
+        setSourceTokensLoading(false);
         setSourceTokens(tokens);
         const preferred = tokens[0];
         setSourceToken((current) =>
@@ -302,7 +306,9 @@ export default function SwapPage() {
         );
       })
       .catch((e) => {
-        if (!cancelled) setError(errorMessage(e));
+        if (cancelled) return;
+        setSourceTokensLoading(false);
+        setError(errorMessage(e));
       });
     return () => {
       cancelled = true;
@@ -312,10 +318,12 @@ export default function SwapPage() {
   useEffect(() => {
     let cancelled = false;
     setDestinationTokens([]);
+    setDestinationTokensLoading(true);
     setTokenSearch('');
     loadTokensForChain(destinationChain)
       .then((tokens) => {
         if (cancelled) return;
+        setDestinationTokensLoading(false);
         setDestinationTokens(tokens);
         const preferred = tokens[0];
         setDestinationToken((current) =>
@@ -323,7 +331,9 @@ export default function SwapPage() {
         );
       })
       .catch((e) => {
-        if (!cancelled) setError(errorMessage(e));
+        if (cancelled) return;
+        setDestinationTokensLoading(false);
+        setError(errorMessage(e));
       });
     return () => {
       cancelled = true;
@@ -604,13 +614,15 @@ export default function SwapPage() {
             <p className="hidden text-xs text-[#8b919d] sm:block">Cross-chain swaps with XMR routes built in</p>
           </div>
         </div>
-        <div className="hidden items-center gap-2 rounded-full border border-[#273226] bg-[#111711] px-3 py-2 text-xs font-medium text-[#9ee6a8] sm:flex">
-          <span className="relative flex h-2 w-2">
-            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#35d071] opacity-60 motion-reduce:hidden" style={{ animationDuration: '2.5s' }} />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-[#35d071]" />
-          </span>
-          Live route
-        </div>
+        {quote && !quoteExpired && (
+          <div className="hidden items-center gap-2 rounded-full border border-[#273226] bg-[#111711] px-3 py-2 text-xs font-medium text-[#9ee6a8] sm:flex">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#35d071] opacity-60 motion-reduce:hidden" style={{ animationDuration: '2.5s' }} />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-[#35d071]" />
+            </span>
+            Live quote
+          </div>
+        )}
       </header>
 
       <section className="mx-auto w-full max-w-[30rem] px-4 pb-10 md:px-5">
@@ -628,6 +640,7 @@ export default function SwapPage() {
               amount={amount}
               chainId={sourceChain}
               token={selectedToken}
+              tokenLoading={sourceTokensLoading}
               label="You send"
               onAmountChange={updateAmount}
               onOpenTokenPicker={() => setTokenPickerTarget('source')}
@@ -639,6 +652,7 @@ export default function SwapPage() {
               value={receivePreview}
               chainId={destinationChain}
               token={selectedDestinationToken}
+              tokenLoading={destinationTokensLoading}
               isLoading={isReceivePreviewLoading}
               onOpenTokenPicker={() => setTokenPickerTarget('destination')}
             />
@@ -814,6 +828,7 @@ function TradeAmountPanel({
   amount,
   chainId,
   token,
+  tokenLoading,
   label,
   onAmountChange,
   onOpenTokenPicker,
@@ -821,6 +836,7 @@ function TradeAmountPanel({
   amount: string;
   chainId: SourceChainId;
   token?: MayanToken;
+  tokenLoading: boolean;
   label: string;
   onAmountChange: (value: string) => void;
   onOpenTokenPicker: () => void;
@@ -843,7 +859,7 @@ function TradeAmountPanel({
           placeholder="0.00"
           className="min-w-0 flex-1 bg-transparent text-2xl font-semibold tabular-nums tracking-tight text-white outline-none placeholder:text-[#8b919d] md:text-3xl"
         />
-        <TokenSelectButton token={token} chainName={chainName} onClick={onOpenTokenPicker} />
+        <TokenSelectButton token={token} loading={tokenLoading} chainName={chainName} onClick={onOpenTokenPicker} />
       </div>
       {chainId === 'monero' && (
         <div className="mt-2 text-xs leading-relaxed text-pretty text-[#8b919d]">
@@ -856,10 +872,12 @@ function TradeAmountPanel({
 
 function TokenSelectButton({
   token,
+  loading,
   chainName,
   onClick,
 }: {
   token?: MayanToken;
+  loading: boolean;
   chainName: string;
   onClick: () => void;
 }) {
@@ -876,7 +894,7 @@ function TokenSelectButton({
             <span className="block truncate text-[11px] text-[#9aa0ac]">{chainName}</span>
           </span>
         </>
-      ) : (
+      ) : loading ? (
         <>
           <span className="h-8 w-8 shrink-0 animate-pulse rounded-full bg-[#24272f] motion-reduce:animate-none" />
           <span className="min-w-0 flex-1 space-y-1.5">
@@ -884,6 +902,8 @@ function TokenSelectButton({
             <span className="block h-2 w-16 animate-pulse rounded bg-[#1d2027] motion-reduce:animate-none" />
           </span>
         </>
+      ) : (
+        <span className="min-w-0 flex-1 truncate text-sm font-semibold">Select token</span>
       )}
       <Chevron className="text-[#8b919d]" />
     </button>
@@ -894,12 +914,14 @@ function MayanReceivePanel({
   value,
   chainId,
   token,
+  tokenLoading,
   isLoading,
   onOpenTokenPicker,
 }: {
   value: string;
   chainId: SourceChainId;
   token?: MayanToken;
+  tokenLoading: boolean;
   isLoading: boolean;
   onOpenTokenPicker: () => void;
 }) {
@@ -914,7 +936,7 @@ function MayanReceivePanel({
         >
           {value}
         </div>
-        <TokenSelectButton token={token} chainName={chainName} onClick={onOpenTokenPicker} />
+        <TokenSelectButton token={token} loading={tokenLoading} chainName={chainName} onClick={onOpenTokenPicker} />
       </div>
     </div>
   );
@@ -1013,14 +1035,15 @@ function RecipientPanel({
 }) {
   const addressOk = !xmrAddress || isValidMoneroAddress(xmrAddress);
   const needsBitcoinRefundAddress = quote?.route === 'chainflip';
-  const bitcoinRefundOk = !needsBitcoinRefundAddress || Boolean(sourceAddress.trim());
   const destinationLabel = destinationChain === 'solana' ? 'Solana receive address' : `${CHAINS[destinationChain].name} receive address`;
   const destinationPlaceholder = destinationChain === 'solana' ? 'Solana wallet address' : `Wallet on ${CHAINS[destinationChain].name}`;
-  const addressStatus = isCheckingDepositAddress && addressOk && xmrAddress
-    ? 'Checking'
-    : addressOk
-      ? 'Ready'
-      : 'Invalid';
+  const addressStatus = !xmrAddress
+    ? { label: 'Required', className: 'text-xs text-[#8b919d]' }
+    : !addressOk
+      ? { label: 'Invalid', className: 'text-xs text-[#ff8c8c]' }
+      : isCheckingDepositAddress
+        ? { label: 'Checking', className: 'text-xs text-[#8b919d]' }
+        : { label: 'Ready', className: 'text-xs text-[#9ee6a8]' };
 
   return (
     <div className="grid gap-2.5 rounded-2xl border border-[#292b31] bg-[#0f1015] p-3">
@@ -1029,8 +1052,8 @@ function RecipientPanel({
           <label>
             <div className="mb-1.5 flex items-center justify-between gap-3">
               <span className="text-sm text-[#a9afba]">XMR receive address</span>
-              <span className={addressOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff8c8c]'}>
-                {addressStatus}
+              <span className={addressStatus.className}>
+                {addressStatus.label}
               </span>
             </div>
             <input
@@ -1062,8 +1085,8 @@ function RecipientPanel({
             <label>
               <div className="mb-1.5 flex items-center justify-between gap-3">
                 <span className="text-sm text-[#a9afba]">BTC refund address</span>
-                <span className={bitcoinRefundOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff8c8c]'}>
-                  {bitcoinRefundOk ? 'Ready' : 'Required'}
+                <span className={sourceAddress.trim() ? 'text-xs text-[#9ee6a8]' : 'text-xs text-[#8b919d]'}>
+                  {sourceAddress.trim() ? 'Ready' : 'Required'}
                 </span>
               </div>
               <input
@@ -1089,8 +1112,8 @@ function RecipientPanel({
           <label>
             <div className="mb-1.5 flex items-center justify-between gap-3">
               <span className="text-sm text-[#a9afba]">XMR refund address</span>
-              <span className={addressOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff8c8c]'}>
-                {addressOk ? 'Ready' : 'Invalid'}
+              <span className={!xmrAddress ? 'text-xs text-[#8b919d]' : addressOk ? 'text-xs text-[#9ee6a8]' : 'text-xs text-[#ff8c8c]'}>
+                {!xmrAddress ? 'Required' : addressOk ? 'Ready' : 'Invalid'}
               </span>
             </div>
             <input
@@ -1116,8 +1139,8 @@ function RecipientPanel({
             <label>
               <div className="mb-1.5 flex items-center justify-between gap-3">
                 <span className="text-sm text-[#a9afba]">BTC refund address</span>
-                <span className={bitcoinRefundOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff8c8c]'}>
-                  {bitcoinRefundOk ? 'Ready' : 'Required'}
+                <span className={sourceAddress.trim() ? 'text-xs text-[#9ee6a8]' : 'text-xs text-[#8b919d]'}>
+                  {sourceAddress.trim() ? 'Ready' : 'Required'}
                 </span>
               </div>
               <input
@@ -2196,9 +2219,8 @@ function useCopyFeedback(): [boolean, (value?: string) => void] {
     return () => clearTimeout(timer);
   }, [copied]);
   const copy = (value?: string) => {
-    if (!value) return;
-    void navigator.clipboard?.writeText(value);
-    setCopied(true);
+    if (!value || !navigator.clipboard) return;
+    navigator.clipboard.writeText(value).then(() => setCopied(true)).catch(() => {});
   };
   return [copied, copy];
 }

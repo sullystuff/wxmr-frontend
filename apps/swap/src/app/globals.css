@@ -100,6 +100,12 @@ body {
   box-shadow: 0 6px 22px rgba(242, 104, 34, 0.3) !important;
 }
 
+.wallet-adapter-button[disabled] {
+  background: #2a2119 !important;
+  color: #a08974 !important;
+  box-shadow: none !important;
+}
+
 /* Amount fields: no native spinners, stable figure widths. */
 input[type='number'] {
   appearance: textfield;

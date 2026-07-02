@@ -132,9 +132,8 @@ function CopyValueButton({ label, value }: { label: string; value?: string }) {
   return (
     <button
       onClick={() => {
-        if (!value) return;
-        void navigator.clipboard?.writeText(value);
-        setCopied(true);
+        if (!value || !navigator.clipboard) return;
+        navigator.clipboard.writeText(value).then(() => setCopied(true)).catch(() => {});
       }}
       disabled={!value}
       className={`w-full rounded-xl border px-4 py-3 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
