@@ -192,6 +192,35 @@ export const MAYAN_SWIFT_EVM_SOURCE_CHAINS = MAYAN_SWIFT_SOURCE_CHAINS.filter(
   (id) => CHAINS[id].kind === "evm",
 ) as readonly SourceChainId[];
 
+/**
+ * Public fallback RPCs per EVM chain. Both the swap frontend (wagmi transports)
+ * and the orchestrator (deposit watching / server-side execution) start from
+ * these; each overrides via its own env vars (NEXT_PUBLIC_*_RPC_URL client-side,
+ * the ChainConfig.rpcEnv name server-side).
+ */
+export const DEFAULT_EVM_RPC_URL_BY_CHAIN: Partial<Record<SourceChainId, string>> = {
+  ethereum: "https://ethereum-rpc.publicnode.com",
+  bsc: "https://bsc-rpc.publicnode.com",
+  base: "https://base-rpc.publicnode.com",
+  arbitrum: "https://arbitrum-one-rpc.publicnode.com",
+  optimism: "https://optimism-rpc.publicnode.com",
+  polygon: "https://polygon-bor-rpc.publicnode.com",
+  avalanche: "https://avalanche-c-chain-rpc.publicnode.com",
+  linea: "https://linea-rpc.publicnode.com",
+  hyperevm: "https://rpc.hyperliquid.xyz/evm",
+  monad: "https://rpc.monad.xyz",
+};
+
+const EVM_NATIVE_TOKEN_ADDRESSES = new Set([
+  "0x0000000000000000000000000000000000000000",
+  "0xeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+]);
+
+/** Mayan (and most aggregators) represent an EVM chain's native coin with a sentinel address. */
+export function isEvmNativeToken(address: string | undefined): boolean {
+  return Boolean(address && EVM_NATIVE_TOKEN_ADDRESSES.has(address.toLowerCase()));
+}
+
 export function getChainConfig(chainId: SourceChainId): ChainConfig {
   return CHAINS[chainId];
 }

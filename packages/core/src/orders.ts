@@ -20,6 +20,16 @@ export type SourceChainId =
 export type SwapDirection = "mayan-to-xmr" | "xmr-to-mayan" | "asset-to-asset";
 export type ExecutionPolicy = "refund-on-slippage" | "execute-anyway";
 
+/**
+ * How the user funds an order.
+ * - "address": the order gets a per-order deposit address; the orchestrator
+ *   detects the deposit on-chain and executes the whole route itself. No
+ *   wallet connection needed — works for agents and exchange withdrawals.
+ * - "wallet": legacy flow where the user's connected wallet signs the
+ *   provider transactions (Mayan forwarder on EVM, Jupiter/bridge on Solana).
+ */
+export type FundingMode = "address" | "wallet";
+
 export type OrderStatus =
   | "created"
   | "awaiting_deposit"
@@ -277,6 +287,27 @@ export interface DepositAddressFunding {
   depositOwner?: string;
   depositPda?: string;
   createSignature?: string;
+  assetSymbol?: string;
+  assetDecimals?: number;
+  /** True when the deposit asset is the chain's native coin (ETH, SOL, ...) rather than a token. */
+  native?: boolean;
+  /** Watcher state: base units seen at the deposit address, pending confirmation. */
+  detectedAmount?: string;
+  /** Watcher state: EVM block height at which detectedAmount was first observed. */
+  detectedAtBlock?: string;
+  /** Deposit transaction hash reported by the client; informational for address orders. */
+  depositTxHash?: string;
+}
+
+export interface CreateOrderRequest {
+  quoteId: string;
+  sourceAddress?: string;
+  destinationAddress?: string;
+  refundAddress?: string;
+  xmrAddress?: string;
+  executionPolicy?: ExecutionPolicy;
+  /** Defaults to "address" for EVM and Solana sources when the orchestrator can host deposits. */
+  fundingMode?: FundingMode;
 }
 
 export interface Order {

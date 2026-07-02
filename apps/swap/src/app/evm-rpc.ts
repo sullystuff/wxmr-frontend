@@ -1,17 +1,6 @@
-import type { SourceChainId } from '@wxmr/core';
+import { DEFAULT_EVM_RPC_URL_BY_CHAIN, type SourceChainId } from '@wxmr/core';
 
-export const DEFAULT_EVM_RPC_URL_BY_CHAIN: Partial<Record<SourceChainId, string>> = {
-  ethereum: 'https://ethereum-rpc.publicnode.com',
-  bsc: 'https://bsc-rpc.publicnode.com',
-  base: 'https://base-rpc.publicnode.com',
-  arbitrum: 'https://arbitrum-one-rpc.publicnode.com',
-  optimism: 'https://optimism-rpc.publicnode.com',
-  polygon: 'https://polygon-bor-rpc.publicnode.com',
-  avalanche: 'https://avalanche-c-chain-rpc.publicnode.com',
-  linea: 'https://linea-rpc.publicnode.com',
-  hyperevm: 'https://rpc.hyperliquid.xyz/evm',
-  monad: 'https://rpc.monad.xyz',
-};
+export { DEFAULT_EVM_RPC_URL_BY_CHAIN };
 
 export const EVM_RPC_ENV_BY_CHAIN: Partial<Record<SourceChainId, string>> = {
   ethereum: 'NEXT_PUBLIC_ETHEREUM_RPC_URL',
