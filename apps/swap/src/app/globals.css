@@ -3,3 +3,165 @@
 
 /* Tailwind v4 skips node_modules, so scan the shared package source for utility classes. */
 @source "../../../../packages/shared/src";
+
+@theme {
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/*
+ * Swap-app overrides. The shared design system carries #ff6600, but the Monero
+ * wordmark (and every accent in this app) is #f26822 — one orange only.
+ */
+:root {
+  --xmr-orange: #f26822;
+  --xmr-orange-light: #ff8a4d;
+  --xmr-orange-dark: #d9541a;
+  --primary: #f26822;
+  --primary-hover: #ff8a4d;
+  --primary-glow: rgba(242, 104, 34, 0.15);
+
+  /* Text ramp — every step meets WCAG AA on the app's darkest surface (#090a0e). */
+  --ink: #f5f6f8;
+  --text-2: #a9afba;
+  --text-3: #8b919d;
+
+  /* Align shared surface tokens (wallet modal, scrollbar) to this app's surfaces. */
+  --background: #0b0c10;
+  --card: #111216;
+  --card-hover: #17191f;
+  --border: #292b31;
+  --border-hover: rgba(242, 104, 34, 0.2);
+}
+
+/* Shared pattern draws its grid with the legacy orange; redraw in brand orange. */
+.xmr-pattern {
+  background-image: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 0L30 60M0 30L60 30' stroke='%23f26822' stroke-opacity='0.03' stroke-width='1'/%3E%3C/svg%3E");
+}
+
+body {
+  background-image:
+    radial-gradient(ellipse 80% 40% at 50% -8%, rgba(242, 104, 34, 0.07), transparent 70%),
+    radial-gradient(ellipse at bottom right, rgba(242, 104, 34, 0.02) 0%, transparent 40%);
+}
+
+/* Solid primary button; the shared gradient version reads as a different brand. */
+.xmr-btn-primary {
+  background: var(--primary);
+  box-shadow: 0 4px 16px rgba(242, 104, 34, 0.22);
+  transition: background-color 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.xmr-btn-primary:hover:not(:disabled) {
+  background: var(--primary-hover);
+  box-shadow: 0 6px 22px rgba(242, 104, 34, 0.3);
+  transform: translateY(-1px);
+}
+
+.xmr-btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 10px rgba(242, 104, 34, 0.2);
+}
+
+/*
+ * One focus system for the whole app. Unlayered, so it wins over Tailwind's
+ * layered `outline-none` utilities. Inputs keep their border+glow treatment.
+ */
+:where(button, summary, a, [role='button']):focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+
+.xmr-btn-primary:disabled {
+  background: #2a2119;
+  color: #a08974;
+  box-shadow: none;
+  opacity: 1;
+  cursor: not-allowed;
+}
+
+::selection {
+  background: rgba(242, 104, 34, 0.3);
+}
+
+/* Wallet adapter button: same ink-on-orange treatment as the app's own CTAs. */
+.wallet-adapter-button {
+  background: var(--primary) !important;
+  color: #0b0c10 !important;
+  box-shadow: 0 4px 16px rgba(242, 104, 34, 0.22) !important;
+}
+
+.wallet-adapter-button:hover {
+  background: var(--primary-hover) !important;
+  box-shadow: 0 6px 22px rgba(242, 104, 34, 0.3) !important;
+}
+
+/* Amount fields: no native spinners, stable figure widths. */
+input[type='number'] {
+  appearance: textfield;
+  -moz-appearance: textfield;
+}
+
+input[type='number']::-webkit-outer-spin-button,
+input[type='number']::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+/* Disclosure content: settle in instead of popping. */
+@keyframes swap-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+details[open] > .swap-reveal {
+  animation: swap-reveal 0.18s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Modal entrances: fade the backdrop, settle the panel. */
+@keyframes swap-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes swap-panel-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.swap-backdrop {
+  animation: swap-fade 0.15s ease-out;
+}
+
+.swap-panel-in {
+  animation: swap-panel-in 0.2s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Blanket reduced-motion override; also neutralizes shared-CSS transforms. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .xmr-btn-primary,
+  .xmr-btn-primary:hover:not(:disabled) {
+    transform: none;
+  }
+}
