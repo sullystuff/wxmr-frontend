@@ -1191,7 +1191,7 @@ function SwapOptionsPanel({
                 }`}
               >
                 <span className="block text-sm font-semibold">{option.title}</span>
-                <span className="mt-0.5 block truncate text-xs text-[#8b919d]">{option.caption}</span>
+                <span className="mt-0.5 block text-xs leading-snug text-[#8b919d]">{option.caption}</span>
               </button>
             );
           })}
