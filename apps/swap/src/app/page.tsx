@@ -17,6 +17,7 @@ import {
   quoteHasPositiveOutput,
   type ExecutionPolicy,
   type FundingInstructions,
+  type FundingMode,
   type MayanEvmTxPayload,
   type MayanToken,
   type Order,
@@ -45,6 +46,7 @@ import {
   type Connector,
 } from 'wagmi';
 import { EVM_RPC_ENV_BY_CHAIN, EVM_RPC_URL_BY_CHAIN } from './evm-rpc';
+import { AddressDepositFunding, DepositMethodToggle } from './address-deposit';
 
 const ORCHESTRATOR_URL = (process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || '/api').replace(/\/$/, '');
 const EVM_NATIVE_TOKEN = '0x0000000000000000000000000000000000000000';
@@ -202,6 +204,7 @@ export default function SwapPage() {
   const [sourceAddress, setSourceAddress] = useState('');
   const [destinationAddress, setDestinationAddress] = useState('');
   const [refundAddress, setRefundAddress] = useState('');
+  const [fundingMode, setFundingMode] = useState<FundingMode>('address');
   const [executionPolicy, setExecutionPolicy] = useState<ExecutionPolicy>(DEFAULT_EXECUTION_POLICY);
   const [quote, setQuote] = useState<Quote | null>(null);
   const [quoteKey, setQuoteKey] = useState<string | null>(null);
@@ -561,6 +564,7 @@ export default function SwapPage() {
           refundAddress: refundAddress || undefined,
           xmrAddress: requiresXmrAddress ? xmrAddress.trim() : undefined,
           executionPolicy,
+          fundingMode,
         }),
       });
       setOrder(result.order);
@@ -663,6 +667,7 @@ export default function SwapPage() {
 
             <SwapOptionsPanel
               direction={direction}
+              sourceChain={sourceChain}
               destinationChain={destinationChain}
               refundAddress={refundAddress}
               value={executionPolicy}
@@ -671,6 +676,10 @@ export default function SwapPage() {
                 setExecutionPolicy(next);
               }}
             />
+
+            {(CHAINS[sourceChain].kind === 'evm' || sourceChain === 'solana') && !order && (
+              <DepositMethodToggle value={fundingMode} onChange={setFundingMode} />
+            )}
 
             </div>
 
@@ -1127,6 +1136,7 @@ function RecipientPanel({
 
 function SwapOptionsPanel({
   direction,
+  sourceChain,
   destinationChain,
   refundAddress,
   value,
@@ -1134,6 +1144,7 @@ function SwapOptionsPanel({
   onChange,
 }: {
   direction: SwapDirection;
+  sourceChain: SourceChainId;
   destinationChain: SourceChainId;
   refundAddress: string;
   value: ExecutionPolicy;
@@ -1153,8 +1164,12 @@ function SwapOptionsPanel({
     },
   ];
 
+  // Address-funded EVM/Solana deposits refund on the source chain; BTC routes
+  // refund Solana-side (the BTC refund is the separate source address field).
   const refundLabel = direction === FORWARD_DIRECTION || direction === ASSET_DIRECTION
-    ? 'Solana refund address'
+    ? CHAINS[sourceChain].kind === 'evm' || sourceChain === 'solana'
+      ? `${CHAINS[sourceChain].name} refund address`
+      : 'Solana refund address'
     : `${CHAINS[destinationChain].name} refund address`;
   const selected = options.find((option) => option.value === value) ?? options[0];
 
@@ -1433,7 +1448,10 @@ function FundingPanel({
     if (order.funding.chainId === 'bitcoin') {
       return <BtcDepositFunding order={order} funding={order.funding} onDeposit={onDeposit} onError={onError} />;
     }
-    return <XmrDepositFunding order={order} funding={order.funding} />;
+    if (order.funding.chainId === 'monero') {
+      return <XmrDepositFunding order={order} funding={order.funding} />;
+    }
+    return <AddressDepositFunding order={order} funding={order.funding} />;
   }
   if (order.funding.type === 'solana-transfer') {
     return <SolanaTransferFunding funding={order.funding} onDeposit={onDeposit} onError={onError} />;
