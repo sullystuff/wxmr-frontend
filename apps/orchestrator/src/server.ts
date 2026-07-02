@@ -26,9 +26,13 @@ import {
   quoteHasPositiveOutput,
   thorchainAmountToBaseUnits,
   thorchainSeconds,
+  isEvmNativeToken,
+  isNativeSolMint,
   type ChainflipQuote,
+  type CreateOrderRequest,
   type DepositAddressFunding,
   type ExecutionPolicy,
+  type FundingMode,
   type MayanEvmTxPayload,
   type MayanToken,
   MayanClient,
@@ -44,6 +48,7 @@ import { loadEnv } from "./env.js";
 import { Store } from "./db.js";
 import { SolanaExecutor } from "./chain/solana.js";
 import { deriveReverseDepositOwner } from "./reverse.js";
+import { deriveEvmDepositAccount, deriveSolanaDepositOwner } from "./deposit.js";
 
 const env = loadEnv();
 const store = new Store(env.dbPath);
@@ -307,14 +312,7 @@ function registerRoutes(prefix: "" | "/api"): void {
   });
 
   app.post(route("/orders"), async (request, reply) => {
-    const body = request.body as {
-      quoteId?: string;
-      sourceAddress?: string;
-      destinationAddress?: string;
-      refundAddress?: string;
-      xmrAddress?: string;
-      executionPolicy?: ExecutionPolicy;
-    };
+    const body = request.body as Partial<CreateOrderRequest>;
     if (!body.quoteId) {
       return reply.code(400).send({ error: "quoteId is required" });
     }
@@ -359,7 +357,8 @@ function registerRoutes(prefix: "" | "/api"): void {
     if (quote.route === "chainflip" && !sourceAddress) {
       return reply.code(400).send({ error: "BTC refund address is required for Chainflip" });
     }
-    const funding = await buildFundingInstructions(orderId, { ...quote, sourceAddress, refundAddress, xmrAddress });
+    const fundingMode = normalizeFundingMode(body.fundingMode);
+    const funding = await buildFundingInstructions(orderId, { ...quote, sourceAddress, refundAddress, xmrAddress }, fundingMode);
     const orderExpiresAt = funding.type === "deposit-address" ? funding.expiresAt : quote.expiresAt;
     const order: Order = {
       id: orderId,
@@ -410,6 +409,16 @@ function registerRoutes(prefix: "" | "/api"): void {
           destinationAmount: verified.amount.toString(),
         },
         `verified Solana funding transfer for ${verified.amount}`,
+      );
+    }
+    if (order.funding.type === "deposit-address" && order.funding.chainId !== "bitcoin") {
+      // Orchestrator-hosted deposit addresses are watched on-chain by the
+      // worker; a reported tx hash is informational only. Advancing the status
+      // here would make the worker treat the deposit tx as a provider tx.
+      return store.updateOrder(
+        id,
+        { funding: { ...order.funding, depositTxHash: body.txHash } },
+        `deposit tx reported: ${body.txHash}`,
       );
     }
     const nextStatus = "bridging";
@@ -1901,7 +1910,7 @@ function buildBtcEthUsdcMayanQuote(params: {
   };
 }
 
-async function buildFundingInstructions(orderId: string, quote: Quote): Promise<FundingInstructions> {
+async function buildFundingInstructions(orderId: string, quote: Quote, fundingMode: FundingMode): Promise<FundingInstructions> {
   if (quote.direction === "xmr-to-mayan") {
     const owner = deriveReverseDepositOwner(env.solanaHotWallet, orderId);
     const created = await solana.createMoneroDepositAccount(owner);
@@ -1918,6 +1927,25 @@ async function buildFundingInstructions(orderId: string, quote: Quote): Promise<
       createSignature: created.signature || undefined,
     };
     return depositFunding;
+  }
+
+  // Address-based deposits are the default for EVM and Solana sources: the
+  // order gets a per-order deposit address, the worker detects the deposit
+  // and executes the route server-side. The quote may expire while the
+  // deposit is in flight — execution re-quotes at the deposited amount, so
+  // the stored quote only pins the route shape (and locked minimums under
+  // refund-on-slippage).
+  if (fundingMode === "address" && quote.sourceChain === "solana") {
+    return buildSolanaAddressFunding(orderId, quote);
+  }
+  if (fundingMode === "address" && CHAINS[quote.sourceChain].kind === "evm" && quote.mayan) {
+    if (env.evmHotWalletPrivateKey && env.evmRpcUrlByChain[quote.sourceChain]) {
+      return buildEvmAddressFunding(orderId, quote);
+    }
+    app.log.warn(
+      { sourceChain: quote.sourceChain },
+      "EVM address deposits need EVM_HOTWALLET_PRIVATE_KEY and an RPC; falling back to wallet funding",
+    );
   }
 
   if (quote.direction === "asset-to-asset" && quote.sourceChain === "solana") {
@@ -2014,6 +2042,49 @@ async function buildFundingInstructions(orderId: string, quote: Quote): Promise<
       : env.solanaHotWallet.publicKey.toBase58(),
     quote: quote.mayan.quote,
   });
+}
+
+function buildSolanaAddressFunding(orderId: string, quote: Quote): DepositAddressFunding {
+  const owner = deriveSolanaDepositOwner(env.solanaHotWallet, orderId);
+  return {
+    type: "deposit-address",
+    orderId,
+    chainId: "solana",
+    asset: quote.sourceToken,
+    assetSymbol: quote.sourceTokenSymbol,
+    assetDecimals: quote.sourceTokenDecimals,
+    native: isNativeSolMint(quote.sourceToken),
+    address: owner.publicKey.toBase58(),
+    expiresAt: addressDepositExpiry(),
+    expectedAmount: quote.inputAmount,
+    provider: "wxmr",
+    depositOwner: owner.publicKey.toBase58(),
+  };
+}
+
+function buildEvmAddressFunding(orderId: string, quote: Quote): DepositAddressFunding {
+  const account = deriveEvmDepositAccount(env.evmHotWalletPrivateKey!, orderId);
+  return {
+    type: "deposit-address",
+    orderId,
+    chainId: quote.sourceChain,
+    asset: quote.sourceToken,
+    assetSymbol: quote.sourceTokenSymbol,
+    assetDecimals: quote.sourceTokenDecimals,
+    native: isEvmNativeToken(quote.sourceToken),
+    address: account.address,
+    expiresAt: addressDepositExpiry(),
+    expectedAmount: quote.inputAmount,
+    provider: "wxmr",
+  };
+}
+
+function addressDepositExpiry(): string {
+  return new Date(Date.now() + env.depositWindowMinutes * 60 * 1000).toISOString();
+}
+
+function normalizeFundingMode(value: unknown): FundingMode {
+  return value === "wallet" ? "wallet" : "address";
 }
 
 function getSolanaDirectContext(id: string): {

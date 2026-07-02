@@ -2,6 +2,12 @@ import { PublicKey } from "@solana/web3.js";
 
 export const WXMR_MINT_ADDRESS = "WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp";
 export const USDC_MINT_ADDRESS = "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v";
+export const WSOL_MINT_ADDRESS = "So11111111111111111111111111111111111111112";
+
+/** Jupiter/Mayan represent native SOL as the wSOL mint. */
+export function isNativeSolMint(mint: string | undefined): boolean {
+  return mint === WSOL_MINT_ADDRESS;
+}
 export const BRIDGE_PROGRAM_ID = "EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8";
 
 export const XMR_MINT = new PublicKey(WXMR_MINT_ADDRESS);
