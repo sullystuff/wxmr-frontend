@@ -1,3 +1,4 @@
+import bs58 from "bs58";
 import {
   Connection,
   Keypair,
@@ -360,12 +361,30 @@ export class SolanaExecutor {
     return lamports + wrapped;
   }
 
+  /** True when the signature landed on-chain without error at confirmed commitment or better. */
+  async getTransactionLanded(signature: string): Promise<boolean> {
+    const status = await this.connection.getSignatureStatus(signature, { searchTransactionHistory: true });
+    const value = status.value;
+    return Boolean(
+      value &&
+      !value.err &&
+      (value.confirmationStatus === "confirmed" || value.confirmationStatus === "finalized"),
+    );
+  }
+
   /**
    * Moves everything at a per-order deposit address into the hot wallet. The
    * hot wallet pays the fee so the whole deposit is swept; per-order token
-   * accounts are closed to reclaim their rent.
+   * accounts are closed to reclaim their rent. The signed transaction's
+   * signature is handed to `onSigned` BEFORE broadcast so callers can persist
+   * it for crash recovery.
    */
-  async sweepDepositToHotWallet(owner: Keypair, mintAddress: string, native: boolean): Promise<{
+  async sweepDepositToHotWallet(
+    owner: Keypair,
+    mintAddress: string,
+    native: boolean,
+    onSigned?: (signature: string, amount: bigint) => void | Promise<void>,
+  ): Promise<{
     signature: string;
     amount: bigint;
   }> {
@@ -411,9 +430,20 @@ export class SolanaExecutor {
       throw new Error("deposit sweep pending: nothing to sweep");
     }
     transaction.feePayer = this.hotWallet.publicKey;
-    const signature = await sendAndConfirmTransaction(this.connection, transaction, [this.hotWallet, owner], {
-      commitment: "confirmed",
-    });
+    const latestBlockhash = await this.connection.getLatestBlockhash("confirmed");
+    transaction.recentBlockhash = latestBlockhash.blockhash;
+    transaction.sign(this.hotWallet, owner);
+    const signature = bs58.encode(transaction.signature!);
+    await onSigned?.(signature, amount);
+    await this.connection.sendRawTransaction(transaction.serialize(), { preflightCommitment: "confirmed" });
+    await this.connection.confirmTransaction(
+      {
+        signature,
+        blockhash: latestBlockhash.blockhash,
+        lastValidBlockHeight: latestBlockhash.lastValidBlockHeight,
+      },
+      "confirmed",
+    );
     return { signature, amount };
   }
 

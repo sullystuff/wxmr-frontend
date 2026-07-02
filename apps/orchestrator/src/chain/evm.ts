@@ -5,6 +5,7 @@ import {
   createWalletClient,
   defineChain,
   http,
+  keccak256,
   type Address,
   type Chain,
   type Hex,
@@ -132,6 +133,11 @@ export class EvmExecutor {
     });
   }
 
+  async getTransactionReceiptStatus(chainId: SourceChainId, hash: Hex): Promise<"success" | "reverted" | null> {
+    const receipt = await this.publicClient(chainId).getTransactionReceipt({ hash }).catch(() => null);
+    return receipt ? receipt.status : null;
+  }
+
   async maxFeePerGas(chainId: SourceChainId): Promise<bigint> {
     const client = this.publicClient(chainId);
     try {
@@ -199,15 +205,18 @@ export class EvmExecutor {
 
   /**
    * Signs the (approve +) Mayan Swift forwarder transaction from `signer` on
-   * `chainId`. The forward is not awaited to a receipt — the worker tracks it
-   * through the Mayan explorer, which only indexes mined transactions, so a
-   * pending hash simply keeps the order in its polling state.
+   * `chainId`. The forward is signed locally and its hash handed to `onSigned`
+   * BEFORE broadcast, so callers can persist it for crash recovery; the
+   * forward is not awaited to a receipt — the worker confirms it via
+   * getTransactionReceiptStatus and tracks the swap through the Mayan
+   * explorer.
    */
   async executeMayanSwiftFrom(
     chainId: SourceChainId,
     signer: PrivateKeyAccount,
     quote: MayanSwiftQuote,
     destinationAddress: string,
+    onSigned?: (txHash: Hex) => void | Promise<void>,
   ): Promise<Hex> {
     const config = CHAINS[chainId];
     if (config.kind !== "evm" || !config.chainId) {
@@ -253,10 +262,15 @@ export class EvmExecutor {
       null,
       { apiKey: this.mayanApiKey },
     );
-    return walletClient.sendTransaction({
+    const request = await walletClient.prepareTransactionRequest({
       to: payload.to as Address,
       data: payload.data as Hex,
       value: BigInt((payload.value ?? "0x0") as string),
     });
+    const serializedTransaction = await walletClient.signTransaction(request);
+    const hash = keccak256(serializedTransaction);
+    await onSigned?.(hash);
+    await publicClient.sendRawTransaction({ serializedTransaction });
+    return hash;
   }
 }

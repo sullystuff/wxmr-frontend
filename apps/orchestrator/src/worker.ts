@@ -228,9 +228,19 @@ function rethrowAsPendingWatch(error: unknown): never {
 
 const EXECUTION_RETRY_LIMIT = 5;
 const EXECUTION_RETRY_COOLDOWN_MS = 30_000;
+// How long a signed-and-persisted broadcast may stay unconfirmed before the
+// watcher assumes it never landed and rebuilds it. Must exceed Solana's
+// blockhash validity (~90s) so an expired sweep can never land after a retry
+// begins.
+const BROADCAST_GRACE_MS = 3 * 60 * 1000;
 
 function isExpired(order: Order): boolean {
   return Date.parse(order.expiresAt) <= Date.now();
+}
+
+function broadcastGraceElapsed(funding: DepositAddressFunding): boolean {
+  if (!funding.lastExecutionAttemptAt) return true;
+  return Date.now() - Date.parse(funding.lastExecutionAttemptAt) > BROADCAST_GRACE_MS;
 }
 
 /** Sends of at least 90% of the quoted amount execute immediately; anything smaller waits for more chunks until expiry. */
@@ -259,7 +269,17 @@ async function attemptAddressExecution(
     await execute();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    const attempts = (funding.executionAttempts ?? 0) + 1;
+    // Re-read funding: execute() may have persisted a broadcast marker before
+    // the error (e.g. a confirmation timeout on a transaction that landed).
+    // Writing a stale copy here would erase it and lose the only pointer to
+    // in-flight funds.
+    const current = store.getOrder(order.id)?.funding;
+    const fresh = current?.type === "deposit-address" ? current : funding;
+    if (fresh.pendingSweepSignature || fresh.pendingForwardTxHash) {
+      store.addEvent(order.id, order.status, `execution errored after broadcast; recovery will confirm it: ${message}`);
+      return;
+    }
+    const attempts = (fresh.executionAttempts ?? 0) + 1;
     if (attempts >= EXECUTION_RETRY_LIMIT) {
       store.updateOrder(
         order.id,
@@ -272,7 +292,7 @@ async function attemptAddressExecution(
       order.id,
       {
         funding: {
-          ...funding,
+          ...fresh,
           executionAttempts: attempts,
           lastExecutionAttemptAt: new Date().toISOString(),
         },
@@ -285,6 +305,34 @@ async function attemptAddressExecution(
 async function processSolanaAddressDeposit(order: Order, funding: DepositAddressFunding): Promise<void> {
   const owner = deriveSolanaDepositOwner(env.solanaHotWallet, order.id);
   const native = Boolean(funding.native);
+
+  if (funding.pendingSweepSignature) {
+    if (await solana.getTransactionLanded(funding.pendingSweepSignature)) {
+      store.updateOrder(
+        order.id,
+        {
+          status: "minted",
+          sourceTxHash: funding.pendingSweepSignature,
+          destinationAmount: funding.pendingSweepAmount ?? funding.detectedAmount,
+          funding: { ...funding, pendingSweepSignature: undefined, pendingSweepAmount: undefined },
+        },
+        `deposit sweep confirmed: ${funding.pendingSweepSignature}`,
+      );
+      return;
+    }
+    if (!broadcastGraceElapsed(funding)) {
+      throw new Error("deposit sweep pending confirmation");
+    }
+    // Past the grace window the sweep's blockhash has expired, so it can
+    // never land — safe to rebuild it from the live balance.
+    store.updateOrder(
+      order.id,
+      { funding: { ...funding, pendingSweepSignature: undefined, pendingSweepAmount: undefined } },
+      `sweep ${funding.pendingSweepSignature} did not land; retrying`,
+    );
+    return;
+  }
+
   const balance = await solana.getDepositBalance(owner.publicKey, funding.asset, native);
   const expired = isExpired(order);
   if (balance <= 0n) {
@@ -310,13 +358,27 @@ async function processSolanaAddressDeposit(order: Order, funding: DepositAddress
   }
 
   await attemptAddressExecution(order, funding, async () => {
-    const sweep = await solana.sweepDepositToHotWallet(owner, funding.asset, native);
+    const sweep = await solana.sweepDepositToHotWallet(owner, funding.asset, native, (signature, amount) => {
+      store.updateOrder(
+        order.id,
+        {
+          funding: {
+            ...funding,
+            pendingSweepSignature: signature,
+            pendingSweepAmount: amount.toString(),
+            lastExecutionAttemptAt: new Date().toISOString(),
+          },
+        },
+        `sweep signed: ${signature}`,
+      );
+    });
     store.updateOrder(
       order.id,
       {
         status: "minted",
         sourceTxHash: sweep.signature,
         destinationAmount: sweep.amount.toString(),
+        funding: { ...funding, pendingSweepSignature: undefined, pendingSweepAmount: undefined },
       },
       `deposit of ${sweep.amount} swept to hot wallet: ${sweep.signature}`,
     );
@@ -332,6 +394,51 @@ async function processEvmAddressDeposit(order: Order, funding: DepositAddressFun
     throw new Error(`EVM deposit watching pending: no RPC configured for ${chainId}`);
   }
   const account = deriveEvmDepositAccount(env.evmHotWalletPrivateKey, order.id);
+
+  if (funding.pendingForwardTxHash) {
+    const receiptStatus = await evm.getTransactionReceiptStatus(chainId, funding.pendingForwardTxHash as `0x${string}`);
+    if (receiptStatus === "success") {
+      store.updateOrder(
+        order.id,
+        {
+          status: "bridging",
+          sourceTxHash: funding.pendingForwardTxHash,
+          funding: { ...funding, pendingForwardTxHash: undefined },
+        },
+        `Mayan Swift forward confirmed: ${funding.pendingForwardTxHash}`,
+      );
+      return;
+    }
+    if (receiptStatus === "reverted") {
+      store.updateOrder(
+        order.id,
+        { funding: { ...funding, pendingForwardTxHash: undefined } },
+        `Mayan Swift forward reverted on-chain; re-quoting: ${funding.pendingForwardTxHash}`,
+      );
+      return;
+    }
+    if (!broadcastGraceElapsed(funding)) {
+      throw new Error("Mayan Swift forward pending confirmation");
+    }
+    const liveBalance = funding.native
+      ? await evm.getNativeBalance(chainId, account.address)
+      : await evm.getErc20Balance(chainId, funding.asset as Address, account.address);
+    if (liveBalance > 0n) {
+      // Deposit untouched and no receipt after the grace window: the forward
+      // was dropped. A rebuilt forward reuses the same nonce, so at most one
+      // of them can ever land.
+      store.updateOrder(
+        order.id,
+        { funding: { ...funding, pendingForwardTxHash: undefined } },
+        `Mayan Swift forward ${funding.pendingForwardTxHash} not found after grace; retrying`,
+      );
+      return;
+    }
+    // Funds moved but the receipt is not visible yet — keep waiting rather
+    // than guess.
+    throw new Error("Mayan Swift forward pending: receipt not visible yet");
+  }
+
   const balance = funding.native
     ? await evm.getNativeBalance(chainId, account.address)
     : await evm.getErc20Balance(chainId, funding.asset as Address, account.address);
@@ -442,12 +549,23 @@ async function executeEvmAddressDeposit(
     await evm!.ensureNativeBalance(chainId, account.address, gasNeeded);
   }
 
-  const txHash = await evm!.executeMayanSwiftFrom(chainId, account, payoutQuote, destination);
-  store.updateOrder(
-    order.id,
-    { status: "bridging", sourceTxHash: txHash },
-    `Mayan Swift forwarded ${amount} from the deposit address: ${txHash}`,
-  );
+  const txHash = await evm!.executeMayanSwiftFrom(chainId, account, payoutQuote, destination, (hash) => {
+    store.updateOrder(
+      order.id,
+      {
+        funding: {
+          ...funding,
+          pendingForwardTxHash: hash,
+          lastExecutionAttemptAt: new Date().toISOString(),
+        },
+      },
+      `Mayan Swift forward signed: ${hash}`,
+    );
+  });
+  // The order stays awaiting_deposit until the watcher sees a successful
+  // receipt for the persisted hash — that is also what catches a forward
+  // that reverts on-chain (e.g. mined past the Mayan deadline).
+  store.addEvent(order.id, order.status, `Mayan Swift forwarded ${amount} from the deposit address: ${txHash}`);
 }
 
 async function refundAddressDeposit(order: Order, funding: DepositAddressFunding): Promise<void> {

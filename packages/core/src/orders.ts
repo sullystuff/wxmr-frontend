@@ -301,6 +301,12 @@ export interface DepositAddressFunding {
   executionAttempts?: number;
   /** Watcher state: timestamp of the last server-side execution attempt. */
   lastExecutionAttemptAt?: string;
+  /** Crash recovery: Solana sweep signature persisted before broadcast. */
+  pendingSweepSignature?: string;
+  /** Crash recovery: amount the pending sweep moves, persisted before broadcast. */
+  pendingSweepAmount?: string;
+  /** Crash recovery: EVM Mayan forward tx hash persisted before broadcast. */
+  pendingForwardTxHash?: string;
 }
 
 export interface CreateOrderRequest {
