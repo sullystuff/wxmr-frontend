@@ -180,7 +180,7 @@ async function scanExpiredAddressDeposits(): Promise<void> {
     if (!isWatchedAddressOrder(order)) continue;
     const funding = order.funding as DepositAddressFunding;
     const balance = await addressDepositBalance(order, funding).catch(() => 0n);
-    if (balance <= 0n) continue;
+    if (balance < depositDustFloor(order, funding)) continue;
     // A deposit landed after expiry — revive the order; the watcher's
     // expired-order branch executes whatever is there at a fresh quote.
     store.updateOrder(
@@ -247,6 +247,17 @@ function broadcastGraceElapsed(funding: DepositAddressFunding): boolean {
 function depositThreshold(order: Order, funding: DepositAddressFunding): bigint {
   const expected = BigInt(funding.expectedAmount ?? order.amount);
   return expected - expected / 10n;
+}
+
+/**
+ * Balances below 5% of the quoted amount are ignored: they neither count as
+ * a deposit nor revive an expired order. This keeps dust sends from burning
+ * hot-wallet gas on doomed executions and refunds.
+ */
+function depositDustFloor(order: Order, funding: DepositAddressFunding): bigint {
+  const expected = BigInt(funding.expectedAmount ?? order.amount);
+  const floor = expected / 20n;
+  return floor > 0n ? floor : 1n;
 }
 
 function inExecutionCooldown(funding: DepositAddressFunding): boolean {
@@ -335,9 +346,13 @@ async function processSolanaAddressDeposit(order: Order, funding: DepositAddress
 
   const balance = await solana.getDepositBalance(owner.publicKey, funding.asset, native);
   const expired = isExpired(order);
-  if (balance <= 0n) {
+  if (balance < depositDustFloor(order, funding)) {
     if (expired) {
-      store.updateOrder(order.id, { status: "expired" }, "order expired before deposit");
+      store.updateOrder(
+        order.id,
+        { status: "expired" },
+        balance > 0n ? `order expired with only dust deposited (${balance})` : "order expired before deposit",
+      );
     }
     return;
   }
@@ -443,9 +458,13 @@ async function processEvmAddressDeposit(order: Order, funding: DepositAddressFun
     ? await evm.getNativeBalance(chainId, account.address)
     : await evm.getErc20Balance(chainId, funding.asset as Address, account.address);
   const expired = isExpired(order);
-  if (balance <= 0n) {
+  if (balance < depositDustFloor(order, funding)) {
     if (expired) {
-      store.updateOrder(order.id, { status: "expired" }, "order expired before deposit");
+      store.updateOrder(
+        order.id,
+        { status: "expired" },
+        balance > 0n ? `order expired with only dust deposited (${balance})` : "order expired before deposit",
+      );
     }
     return;
   }
