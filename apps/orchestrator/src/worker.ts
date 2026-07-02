@@ -112,11 +112,11 @@ async function processOrder(order: Order): Promise<void> {
       return;
     }
     if (order.funding.type === "deposit-address" && order.funding.chainId === "solana") {
-      await processSolanaAddressDeposit(order, order.funding);
+      await processSolanaAddressDeposit(order, order.funding).catch(rethrowAsPendingWatch);
       return;
     }
     if (order.funding.type === "deposit-address" && CHAINS[order.funding.chainId].kind === "evm") {
-      await processEvmAddressDeposit(order, order.funding);
+      await processEvmAddressDeposit(order, order.funding).catch(rethrowAsPendingWatch);
       return;
     }
     if (
@@ -124,7 +124,7 @@ async function processOrder(order: Order): Promise<void> {
       order.funding.chainId === "bitcoin" &&
       order.funding.provider === "Chainflip"
     ) {
-      await watchChainflipDeposit(order, order.funding);
+      await watchChainflipDeposit(order, order.funding).catch(rethrowAsPendingWatch);
       return;
     }
     // Wallet-funded orders advance through the API when the user signs.
@@ -211,6 +211,19 @@ async function watchChainflipDeposit(order: Order, funding: DepositAddressFundin
     // requiring anyone to report a txid.
     store.updateOrder(order.id, { status: "bridging" }, `Chainflip deposit detected (${status.state})`);
   }
+}
+
+/**
+ * Deposit watchers only read chain state; a failure while watching is an
+ * RPC/transport problem, never a reason to terminally fail an order that is
+ * still waiting. tick() treats "pending" messages as retryable.
+ */
+function rethrowAsPendingWatch(error: unknown): never {
+  const message = error instanceof Error ? error.message : String(error);
+  if (message.includes("pending")) {
+    throw error instanceof Error ? error : new Error(message);
+  }
+  throw new Error(`deposit watch pending retry: ${message}`);
 }
 
 const EXECUTION_RETRY_LIMIT = 5;
