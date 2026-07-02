@@ -153,12 +153,12 @@ function moneroBase58Decode(enc: string): Uint8Array | null {
  * point. Strict mode (`zip215: false`) matches Monero's own key check
  * (`ge_frombytes_vartime`, i.e. monero-wallet-rpc `validate_address`): it
  * rejects non-canonical y encodings (>= p) and x=0-with-sign-bit encodings.
- * The on-chain program's `validate_edwards` (curve25519-dalek decompress) is
- * slightly more permissive and would accept those crafted encodings — but the
- * Monero wallet can never pay them out, so accepting them client-side would
- * let a user burn wXMR toward an unpayable address. Strict acceptance is a
- * subset of the on-chain check, so everything the UI approves still passes
- * the program.
+ * The on-chain program's source applies the same strict check
+ * (`is_strict_ed25519_point` in wxmr-backend); an older deployed build whose
+ * `validate_edwards` was permissive would accept those crafted encodings, but
+ * strict acceptance is a subset of it either way, so everything the UI
+ * approves passes the program — and nothing the Monero wallet can't pay out
+ * gets through.
  */
 function isValidEd25519Point(bytes: Uint8Array): boolean {
   try {
