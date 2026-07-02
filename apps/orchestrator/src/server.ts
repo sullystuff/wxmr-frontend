@@ -1,5 +1,6 @@
 import Fastify from "fastify";
 import cors from "@fastify/cors";
+import { isAddress } from "viem";
 import { getSwapFromEvmTxPayload } from "@mayanfinance/swap-sdk";
 import type { Quote as MayanSdkQuote } from "@mayanfinance/swap-sdk";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
@@ -359,6 +360,12 @@ function registerRoutes(prefix: "" | "/api"): void {
     }
     const fundingMode = normalizeFundingMode(body.fundingMode);
     const funding = await buildFundingInstructions(orderId, { ...quote, sourceAddress, refundAddress, xmrAddress }, fundingMode);
+    if (funding.type === "deposit-address" && refundAddress) {
+      const refundError = refundAddressErrorForChain(funding.chainId, refundAddress);
+      if (refundError) {
+        return reply.code(400).send({ error: refundError });
+      }
+    }
     const orderExpiresAt = funding.type === "deposit-address" ? funding.expiresAt : quote.expiresAt;
     const order: Order = {
       id: orderId,
@@ -631,6 +638,50 @@ function registerRoutes(prefix: "" | "/api"): void {
     }
     return order;
   });
+
+  // Lets a depositor supply or fix the refund address after the fact — the
+  // worker's refund path waits (status "refunding") instead of failing when
+  // the address is missing, so this is the recovery lever.
+  app.post(route("/orders/:id/refund-address"), async (request, reply) => {
+    const { id } = request.params as { id: string };
+    const body = request.body as { refundAddress?: string };
+    const refundAddress = body.refundAddress?.trim();
+    if (!refundAddress) {
+      return reply.code(400).send({ error: "refundAddress is required" });
+    }
+    const order = store.getOrder(id);
+    if (!order) {
+      return reply.code(404).send({ error: "order not found" });
+    }
+    if (order.funding.type !== "deposit-address") {
+      return reply.code(400).send({ error: "only address-funded orders carry a server-side refund" });
+    }
+    if (order.status === "completed" || order.status === "refunded") {
+      return reply.code(409).send({ error: `order is ${order.status}` });
+    }
+    const refundError = refundAddressErrorForChain(order.funding.chainId, refundAddress);
+    if (refundError) {
+      return reply.code(400).send({ error: refundError });
+    }
+    return store.updateOrder(id, { refundAddress }, `refund address updated to ${refundAddress}`);
+  });
+}
+
+function refundAddressErrorForChain(chainId: SourceChainId, refundAddress: string): string | null {
+  if (CHAINS[chainId]?.kind === "evm") {
+    return isAddress(refundAddress) ? null : `refundAddress must be a valid ${CHAINS[chainId].name} address`;
+  }
+  if (chainId === "solana") {
+    try {
+      new PublicKey(refundAddress);
+      return null;
+    } catch {
+      return "refundAddress must be a Solana address";
+    }
+  }
+  // BTC and Monero deposit-address orders keep the legacy Solana-side refund
+  // semantics; no source-chain validation applies.
+  return null;
 }
 
 async function quoteUsdcToXmr(input: QuoteRequest): Promise<Quote> {

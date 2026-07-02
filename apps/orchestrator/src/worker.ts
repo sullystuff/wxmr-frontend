@@ -502,15 +502,10 @@ async function executeEvmAddressDeposit(
     const gasReserve = await evm!.forwardGasCost(chainId, false);
     amount = balance - gasReserve;
     if (amount <= 0n) {
-      store.updateOrder(
-        order.id,
-        {
-          status: "failed",
-          error: `deposit of ${balance} wei cannot cover its own forwarding gas (${gasReserve} wei) on ${chainId}`,
-        },
-        "deposit below forwarding gas cost",
-      );
-      return;
+      // Fee estimates move; let the retry/refund machinery decide instead of
+      // terminally failing on one fee snapshot (a plain native transfer needs
+      // far less gas, so the refund usually still goes through).
+      throw new Error(`deposit of ${balance} wei cannot cover its own forwarding gas (${gasReserve} wei) on ${chainId}`);
     }
   }
 
@@ -570,7 +565,7 @@ async function executeEvmAddressDeposit(
 
 async function refundAddressDeposit(order: Order, funding: DepositAddressFunding): Promise<void> {
   if (!order.refundAddress) {
-    throw new Error("refund required but no refund address was provided");
+    throw new Error(`refund pending: no refund address on file — supply one via POST /orders/${order.id}/refund-address`);
   }
   if (funding.chainId === "solana") {
     const owner = deriveSolanaDepositOwner(env.solanaHotWallet, order.id);
@@ -588,13 +583,17 @@ async function refundAddressDeposit(order: Order, funding: DepositAddressFunding
     throw new Error("refund pending: EVM executor is not configured");
   }
   if (!isAddress(order.refundAddress)) {
-    throw new Error(`refund address ${order.refundAddress} is not a valid EVM address`);
+    throw new Error(`refund pending: ${order.refundAddress} is not a valid EVM address — update it via POST /orders/${order.id}/refund-address`);
   }
   const chainId = funding.chainId;
   const account = deriveEvmDepositAccount(env.evmHotWalletPrivateKey, order.id);
   try {
     if (funding.native) {
       const balance = await evm.getNativeBalance(chainId, account.address);
+      if (balance <= 0n) {
+        // A Mayan-refunded forward can take a while to land back here.
+        throw new Error("refund pending: deposit address is empty; waiting for funds to return");
+      }
       const gasCost = await evm.nativeTransferGasCost(chainId);
       const amount = balance - gasCost;
       if (amount <= 0n) {
@@ -610,8 +609,7 @@ async function refundAddressDeposit(order: Order, funding: DepositAddressFunding
     } else {
       const balance = await evm.getErc20Balance(chainId, funding.asset as Address, account.address);
       if (balance <= 0n) {
-        store.updateOrder(order.id, { status: "refunded" }, "deposit address is already empty");
-        return;
+        throw new Error("refund pending: deposit address is empty; waiting for funds to return");
       }
       await evm.ensureNativeBalance(chainId, account.address, await evm.erc20TransferGasCost(chainId));
       const hash = await evm.transferErc20(chainId, account, funding.asset as Address, order.refundAddress, balance);
@@ -619,6 +617,7 @@ async function refundAddressDeposit(order: Order, funding: DepositAddressFunding
     }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
+    if (message.includes("pending")) throw error;
     throw new Error(`refund pending retry: ${message}`);
   }
 }
@@ -678,6 +677,21 @@ async function processMayanBridge(order: Order): Promise<void> {
 
   const details = await mayan.fetchSwapByTx(order.sourceTxHash);
   if (mayanSwapFailed(details)) {
+    if (isAddressFunded) {
+      // The Swift source wallet is the per-order deposit key, so Mayan's
+      // on-chain refund returns the tokens to the deposit address — route
+      // them back to the user instead of dead-ending at 'failed'.
+      store.updateOrder(
+        order.id,
+        {
+          status: "refunding",
+          sourceTxHash: undefined,
+          error: `Mayan swap ${details.clientStatus ?? details.status}`,
+        },
+        `Mayan swap failed (${details.clientStatus ?? details.status}); expecting the refund at the deposit address (forward ${order.sourceTxHash})`,
+      );
+      return;
+    }
     store.updateOrder(order.id, { status: "failed", error: `Mayan swap ${details.clientStatus ?? details.status}` }, "Mayan swap failed");
     return;
   }
@@ -1380,6 +1394,27 @@ async function processReverseMayanSettlement(order: Order): Promise<void> {
 async function refund(order: Order): Promise<void> {
   if (!order.refundAddress) {
     throw new Error("refund required but no Solana refund address was provided");
+  }
+  if (order.funding.type === "deposit-address" && CHAINS[order.funding.chainId].kind === "evm") {
+    // The failure happened after Mayan delivered: the funds are USDC at the
+    // Solana hot wallet, but the order's refund address is on the EVM source
+    // chain. There is no automated cross-chain refund path yet.
+    store.updateOrder(
+      order.id,
+      {
+        status: "failed",
+        error: `manual refund required: ${order.destinationAmount ?? "the delivered"} USDC base units are at the Solana hot wallet, but the refund address ${order.refundAddress} is on ${order.funding.chainId}`,
+      },
+      "manual refund required (funds on Solana, refund address on the source chain)",
+    );
+    return;
+  }
+  if (order.funding.type === "deposit-address" && order.funding.chainId === "solana" && order.funding.native) {
+    // The sweep unwrapped the deposit into raw lamports at the hot wallet, so
+    // the refund must be a native transfer, not a wSOL SPL transfer.
+    const signature = await solana.refundNative(getSolanaInputAmount(order), order.refundAddress);
+    store.updateOrder(order.id, { status: "refunded" }, `native SOL refunded: ${signature}`);
+    return;
   }
   const signature = await solana.refundToken(getSolanaInputMint(order), getSolanaInputAmount(order), order.refundAddress);
   store.updateOrder(order.id, { status: "refunded" }, `funded token refunded on Solana: ${signature}`);

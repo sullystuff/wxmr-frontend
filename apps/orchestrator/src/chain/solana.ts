@@ -311,6 +311,20 @@ export class SolanaExecutor {
     return this.refundToken(USDC_MINT.toBase58(), amount, refundAddress);
   }
 
+  /** Refunds raw lamports from the hot wallet (native deposits arrive unwrapped after the sweep). */
+  async refundNative(amount: bigint, refundAddress: string): Promise<string> {
+    const transaction = new Transaction().add(
+      SystemProgram.transfer({
+        fromPubkey: this.hotWallet.publicKey,
+        toPubkey: new PublicKey(refundAddress),
+        lamports: Number(amount),
+      }),
+    );
+    return sendAndConfirmTransaction(this.connection, transaction, [this.hotWallet], {
+      commitment: "confirmed",
+    });
+  }
+
   async refundToken(mintAddress: string, amount: bigint, refundAddress: string): Promise<string> {
     const refundOwner = new PublicKey(refundAddress);
     const mint = new PublicKey(mintAddress);
