@@ -170,7 +170,7 @@ type SolanaWithdrawalTransactionPayload = {
   amount: string;
 };
 
-const FIELD_INPUT_BASE = 'w-full rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-2.5 text-white outline-none transition-colors placeholder:text-[#8b919d] focus:border-[#f26822] focus:shadow-[0_0_0_3px_rgba(242,104,34,0.12)]';
+const FIELD_INPUT_BASE = 'w-full rounded-xl border border-[#5a6170] bg-[#090a0e] px-3 py-2.5 text-white outline-none transition-colors placeholder:text-[#8b919d] focus:border-[#f26822] focus:shadow-[0_0_0_3px_rgba(242,104,34,0.12)]';
 const FIELD_INPUT = `${FIELD_INPUT_BASE} text-sm`;
 const ADDRESS_INPUT = `${FIELD_INPUT_BASE} font-mono text-[13px]`;
 
@@ -873,7 +873,7 @@ function TokenSelectButton({
           <TokenLogo token={token} />
           <span className="min-w-0 flex-1">
             <span className="block truncate text-sm font-semibold">{token.symbol ?? 'Token'}</span>
-            <span className="block truncate text-[11px] text-[#8b919d]">{chainName}</span>
+            <span className="block truncate text-[11px] text-[#9aa0ac]">{chainName}</span>
           </span>
         </>
       ) : (
@@ -1525,7 +1525,7 @@ function BtcDepositFunding({
             value={txHash}
             onChange={(event) => setTxHash(event.target.value.trim())}
             placeholder="Paste txid after sending"
-            className="w-full rounded-xl border border-[#493424] bg-[#120d09] px-3 py-3 font-mono text-sm text-white outline-none transition-colors placeholder:text-[#a8846d] focus:border-[#f26822]"
+            className="w-full rounded-xl border border-[#84603f] bg-[#120d09] px-3 py-3 font-mono text-sm text-white outline-none transition-colors placeholder:text-[#a8846d] focus:border-[#f26822]"
           />
         </label>
         <button
