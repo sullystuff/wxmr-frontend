@@ -297,6 +297,10 @@ export interface DepositAddressFunding {
   detectedAtBlock?: string;
   /** Deposit transaction hash reported by the client; informational for address orders. */
   depositTxHash?: string;
+  /** Watcher state: failed server-side execution attempts for this deposit. */
+  executionAttempts?: number;
+  /** Watcher state: timestamp of the last server-side execution attempt. */
+  lastExecutionAttemptAt?: string;
 }
 
 export interface CreateOrderRequest {

@@ -1,6 +1,7 @@
 import { setTimeout as sleep } from "node:timers/promises";
 import { Connection, PublicKey } from "@solana/web3.js";
-import { privateKeyToAccount } from "viem/accounts";
+import { isAddress, type Address } from "viem";
+import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import {
   CHAINS,
   ChainflipClient,
@@ -28,9 +29,10 @@ import {
 } from "@wxmr/core";
 import { loadEnv } from "./env.js";
 import { Store } from "./db.js";
-import { EvmExecutor } from "./chain/evm.js";
+import { EvmExecutor, evmDepositConfirmations } from "./chain/evm.js";
 import { SolanaExecutor } from "./chain/solana.js";
 import { deriveReverseDepositOwner } from "./reverse.js";
+import { deriveEvmDepositAccount, deriveSolanaDepositOwner } from "./deposit.js";
 
 const env = loadEnv();
 const store = new Store(env.dbPath);
@@ -62,7 +64,14 @@ while (!shuttingDown) {
 async function tick(): Promise<void> {
   const orders = store.listOrdersByStatus(["awaiting_deposit", "bridging", "minted", "withdrawing", "refunding"], 25);
   for (const order of orders) {
-    if (Date.parse(order.expiresAt) <= Date.now() && order.status === "awaiting_deposit") {
+    // Orchestrator-watched deposit addresses handle their own expiry: funds
+    // may already be sitting at the address, in which case the order should
+    // execute (or refund), not silently expire.
+    if (
+      Date.parse(order.expiresAt) <= Date.now() &&
+      order.status === "awaiting_deposit" &&
+      !isWatchedAddressOrder(order)
+    ) {
       store.updateOrder(order.id, { status: "expired" }, "order expired before deposit");
       continue;
     }
@@ -77,9 +86,37 @@ async function tick(): Promise<void> {
   }
 }
 
+function isWatchedAddressOrder(order: Order): boolean {
+  return (
+    order.funding.type === "deposit-address" &&
+    order.direction !== "xmr-to-mayan" &&
+    (order.funding.chainId === "solana" || CHAINS[order.funding.chainId].kind === "evm")
+  );
+}
+
 async function processOrder(order: Order): Promise<void> {
-  if (order.status === "awaiting_deposit" && order.direction === "xmr-to-mayan") {
-    await processMoneroDeposit(order);
+  if (order.status === "awaiting_deposit") {
+    if (order.direction === "xmr-to-mayan") {
+      await processMoneroDeposit(order);
+      return;
+    }
+    if (order.funding.type === "deposit-address" && order.funding.chainId === "solana") {
+      await processSolanaAddressDeposit(order, order.funding);
+      return;
+    }
+    if (order.funding.type === "deposit-address" && CHAINS[order.funding.chainId].kind === "evm") {
+      await processEvmAddressDeposit(order, order.funding);
+      return;
+    }
+    if (
+      order.funding.type === "deposit-address" &&
+      order.funding.chainId === "bitcoin" &&
+      order.funding.provider === "Chainflip"
+    ) {
+      await watchChainflipDeposit(order, order.funding);
+      return;
+    }
+    // Wallet-funded orders advance through the API when the user signs.
     return;
   }
 
@@ -115,9 +152,303 @@ async function processOrder(order: Order): Promise<void> {
   if (order.status === "refunding") {
     if (order.direction === "xmr-to-mayan") {
       await refundReverse(order);
+    } else if (isWatchedAddressOrder(order) && !order.sourceTxHash) {
+      // sourceTxHash marks the point where funds left the deposit address
+      // (Solana sweep / EVM Mayan forward); before that, refund from the
+      // per-order address itself.
+      await refundAddressDeposit(order, order.funding as DepositAddressFunding);
     } else {
       await refund(order);
     }
+  }
+}
+
+async function watchChainflipDeposit(order: Order, funding: DepositAddressFunding): Promise<void> {
+  if (!funding.depositChannelId) return;
+  const status = await chainflip.fetchStatus(funding.depositChannelId);
+  if (status.state !== "WAITING") {
+    // The channel saw a deposit — hand over to the bridging tracker without
+    // requiring anyone to report a txid.
+    store.updateOrder(order.id, { status: "bridging" }, `Chainflip deposit detected (${status.state})`);
+  }
+}
+
+const EXECUTION_RETRY_LIMIT = 5;
+const EXECUTION_RETRY_COOLDOWN_MS = 30_000;
+
+function isExpired(order: Order): boolean {
+  return Date.parse(order.expiresAt) <= Date.now();
+}
+
+/** Sends of at least 90% of the quoted amount execute immediately; anything smaller waits for more chunks until expiry. */
+function depositThreshold(order: Order, funding: DepositAddressFunding): bigint {
+  const expected = BigInt(funding.expectedAmount ?? order.amount);
+  return expected - expected / 10n;
+}
+
+function inExecutionCooldown(funding: DepositAddressFunding): boolean {
+  if (!funding.lastExecutionAttemptAt) return false;
+  return Date.now() - Date.parse(funding.lastExecutionAttemptAt) < EXECUTION_RETRY_COOLDOWN_MS;
+}
+
+/**
+ * Wraps a server-side execution attempt with bounded retries: transient
+ * provider/RPC failures retry on a cooldown, and after the limit the order
+ * moves to refunding so the deposit goes back instead of sitting in limbo.
+ */
+async function attemptAddressExecution(
+  order: Order,
+  funding: DepositAddressFunding,
+  execute: () => Promise<void>,
+): Promise<void> {
+  if (inExecutionCooldown(funding)) return;
+  try {
+    await execute();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const attempts = (funding.executionAttempts ?? 0) + 1;
+    if (attempts >= EXECUTION_RETRY_LIMIT) {
+      store.updateOrder(
+        order.id,
+        { status: "refunding", error: message },
+        `execution failed ${attempts} times, refunding deposit: ${message}`,
+      );
+      return;
+    }
+    store.updateOrder(
+      order.id,
+      {
+        funding: {
+          ...funding,
+          executionAttempts: attempts,
+          lastExecutionAttemptAt: new Date().toISOString(),
+        },
+      },
+      `execution attempt ${attempts}/${EXECUTION_RETRY_LIMIT} failed: ${message}`,
+    );
+  }
+}
+
+async function processSolanaAddressDeposit(order: Order, funding: DepositAddressFunding): Promise<void> {
+  const owner = deriveSolanaDepositOwner(env.solanaHotWallet, order.id);
+  const native = Boolean(funding.native);
+  const balance = await solana.getDepositBalance(owner.publicKey, funding.asset, native);
+  const expired = isExpired(order);
+  if (balance <= 0n) {
+    if (expired) {
+      store.updateOrder(order.id, { status: "expired" }, "order expired before deposit");
+    }
+    return;
+  }
+
+  const detected = BigInt(funding.detectedAmount ?? "0");
+  if (balance !== detected) {
+    // Two consecutive identical readings before acting, so multi-part sends
+    // and test transfers are not executed prematurely.
+    store.updateOrder(
+      order.id,
+      { funding: { ...funding, detectedAmount: balance.toString() } },
+      `deposit detected: ${balance} base units of ${funding.assetSymbol ?? funding.asset}`,
+    );
+    return;
+  }
+  if (balance < depositThreshold(order, funding) && !expired) {
+    return;
+  }
+
+  await attemptAddressExecution(order, funding, async () => {
+    const sweep = await solana.sweepDepositToHotWallet(owner, funding.asset, native);
+    store.updateOrder(
+      order.id,
+      {
+        status: "minted",
+        sourceTxHash: sweep.signature,
+        destinationAmount: sweep.amount.toString(),
+      },
+      `deposit of ${sweep.amount} swept to hot wallet: ${sweep.signature}`,
+    );
+  });
+}
+
+async function processEvmAddressDeposit(order: Order, funding: DepositAddressFunding): Promise<void> {
+  if (!evm || !env.evmHotWalletPrivateKey) {
+    throw new Error("EVM deposit watching pending: EVM_HOTWALLET_PRIVATE_KEY is not configured");
+  }
+  const chainId = funding.chainId;
+  if (!evm.hasChain(chainId)) {
+    throw new Error(`EVM deposit watching pending: no RPC configured for ${chainId}`);
+  }
+  const account = deriveEvmDepositAccount(env.evmHotWalletPrivateKey, order.id);
+  const balance = funding.native
+    ? await evm.getNativeBalance(chainId, account.address)
+    : await evm.getErc20Balance(chainId, funding.asset as Address, account.address);
+  const expired = isExpired(order);
+  if (balance <= 0n) {
+    if (expired) {
+      store.updateOrder(order.id, { status: "expired" }, "order expired before deposit");
+    }
+    return;
+  }
+
+  const detected = BigInt(funding.detectedAmount ?? "0");
+  if (balance !== detected) {
+    const block = await evm.getBlockNumber(chainId);
+    store.updateOrder(
+      order.id,
+      {
+        funding: {
+          ...funding,
+          detectedAmount: balance.toString(),
+          detectedAtBlock: block.toString(),
+        },
+      },
+      `deposit detected: ${balance} base units of ${funding.assetSymbol ?? funding.asset} at block ${block}`,
+    );
+    return;
+  }
+  const detectedAtBlock = BigInt(funding.detectedAtBlock ?? "0");
+  const confirmations = evmDepositConfirmations(chainId);
+  const block = await evm.getBlockNumber(chainId);
+  if (block < detectedAtBlock + confirmations) {
+    return;
+  }
+  if (balance < depositThreshold(order, funding) && !expired) {
+    return;
+  }
+
+  await attemptAddressExecution(order, funding, () => executeEvmAddressDeposit(order, funding, account, balance));
+}
+
+async function executeEvmAddressDeposit(
+  order: Order,
+  funding: DepositAddressFunding,
+  account: PrivateKeyAccount,
+  balance: bigint,
+): Promise<void> {
+  const quote = mustGetQuote(order.quoteId);
+  const chainId = funding.chainId;
+  // Mirrors the wallet-mode Mayan destination: everything that needs a
+  // Solana-side swap lands as USDC at the hot wallet; direct asset-to-asset
+  // payouts go straight to the user's destination.
+  const solanaLeg = quote.direction !== "asset-to-asset" || requiresSolanaHotWalletPayout(quote);
+  const destination = solanaLeg
+    ? env.solanaHotWallet.publicKey.toBase58()
+    : order.destinationAddress ?? env.solanaHotWallet.publicKey.toBase58();
+  const toChain = solanaLeg ? ("solana" as SourceChainId) : getDestinationChain(order, quote);
+  const toToken = solanaLeg ? USDC_MINT_ADDRESS : getDestinationToken(order, quote);
+
+  let amount = balance;
+  if (funding.native) {
+    const gasReserve = await evm!.forwardGasCost(chainId, false);
+    amount = balance - gasReserve;
+    if (amount <= 0n) {
+      store.updateOrder(
+        order.id,
+        {
+          status: "failed",
+          error: `deposit of ${balance} wei cannot cover its own forwarding gas (${gasReserve} wei) on ${chainId}`,
+        },
+        "deposit below forwarding gas cost",
+      );
+      return;
+    }
+  }
+
+  // The order's quote may be long expired; the deposit executes at a fresh
+  // market quote for whatever amount actually arrived.
+  const payoutQuote = await mayan.fetchSwiftQuoteForRoute({
+    fromChain: chainId,
+    fromToken: order.sourceToken,
+    toChain,
+    toToken,
+    amount,
+    destinationAddress: destination,
+    slippageBps: quote.mayan?.quote.slippageBps ?? DEFAULT_SLIPPAGE_BPS,
+  });
+
+  if (shouldRefundOnSlippage(order)) {
+    const lockedMinimum = BigInt(
+      solanaLeg ? quote.mayan?.minSolanaUsdcOut ?? "0" : quote.minDestinationOut ?? "0",
+    );
+    const scaledMinimum = (lockedMinimum * amount) / BigInt(quote.inputAmount);
+    if (BigInt(payoutQuote.minReceivedBaseUnits) < scaledMinimum) {
+      store.updateOrder(
+        order.id,
+        {
+          status: "refunding",
+          error: `Mayan minimum ${payoutQuote.minReceivedBaseUnits} is below the scaled locked minimum ${scaledMinimum}`,
+        },
+        "address deposit re-quote below locked minimum",
+      );
+      return;
+    }
+  }
+
+  if (!funding.native) {
+    const gasNeeded = await evm!.forwardGasCost(chainId, true);
+    await evm!.ensureNativeBalance(chainId, account.address, gasNeeded);
+  }
+
+  const txHash = await evm!.executeMayanSwiftFrom(chainId, account, payoutQuote, destination);
+  store.updateOrder(
+    order.id,
+    { status: "bridging", sourceTxHash: txHash },
+    `Mayan Swift forwarded ${amount} from the deposit address: ${txHash}`,
+  );
+}
+
+async function refundAddressDeposit(order: Order, funding: DepositAddressFunding): Promise<void> {
+  if (!order.refundAddress) {
+    throw new Error("refund required but no refund address was provided");
+  }
+  if (funding.chainId === "solana") {
+    const owner = deriveSolanaDepositOwner(env.solanaHotWallet, order.id);
+    try {
+      const refunded = await solana.refundDeposit(owner, funding.asset, Boolean(funding.native), order.refundAddress);
+      store.updateOrder(order.id, { status: "refunded" }, `deposit refunded on Solana: ${refunded.signature}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`refund pending retry: ${message}`);
+    }
+    return;
+  }
+
+  if (!evm || !env.evmHotWalletPrivateKey) {
+    throw new Error("refund pending: EVM executor is not configured");
+  }
+  if (!isAddress(order.refundAddress)) {
+    throw new Error(`refund address ${order.refundAddress} is not a valid EVM address`);
+  }
+  const chainId = funding.chainId;
+  const account = deriveEvmDepositAccount(env.evmHotWalletPrivateKey, order.id);
+  try {
+    if (funding.native) {
+      const balance = await evm.getNativeBalance(chainId, account.address);
+      const gasCost = await evm.nativeTransferGasCost(chainId);
+      const amount = balance - gasCost;
+      if (amount <= 0n) {
+        store.updateOrder(
+          order.id,
+          { status: "failed", error: `deposit of ${balance} wei cannot cover refund gas on ${chainId}` },
+          "deposit below refund gas cost",
+        );
+        return;
+      }
+      const hash = await evm.transferNative(chainId, account, order.refundAddress, amount);
+      store.updateOrder(order.id, { status: "refunded" }, `deposit refunded on ${chainId}: ${hash}`);
+    } else {
+      const balance = await evm.getErc20Balance(chainId, funding.asset as Address, account.address);
+      if (balance <= 0n) {
+        store.updateOrder(order.id, { status: "refunded" }, "deposit address is already empty");
+        return;
+      }
+      await evm.ensureNativeBalance(chainId, account.address, await evm.erc20TransferGasCost(chainId));
+      const hash = await evm.transferErc20(chainId, account, funding.asset as Address, order.refundAddress, balance);
+      store.updateOrder(order.id, { status: "refunded" }, `deposit refunded on ${chainId}: ${hash}`);
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`refund pending retry: ${message}`);
   }
 }
 
@@ -165,7 +496,9 @@ async function processMoneroDeposit(order: Order): Promise<void> {
 }
 
 async function processMayanBridge(order: Order): Promise<void> {
-  if (order.funding.type !== "mayan-swift") {
+  const funding = order.funding;
+  const isAddressFunded = funding.type === "deposit-address" && CHAINS[funding.chainId].kind === "evm";
+  if (funding.type !== "mayan-swift" && !isAddressFunded) {
     throw new Error("bridging order is missing Mayan Swift funding");
   }
   if (!order.sourceTxHash) {
@@ -182,7 +515,10 @@ async function processMayanBridge(order: Order): Promise<void> {
   }
 
   const quote = mustGetQuote(order.quoteId);
-  const destinationAmount = mayanDeliveredBaseUnits(details, order.funding.mayanQuote.toToken.decimals ?? 6);
+  const toTokenDecimals = funding.type === "mayan-swift"
+    ? funding.mayanQuote.toToken.decimals ?? 6
+    : quote.mayan?.quote.toToken.decimals ?? 6;
+  const destinationAmount = mayanDeliveredBaseUnits(details, toTokenDecimals);
   const destinationTx = mayanDestinationTx(details) ?? order.sourceTxHash;
   if (quote.direction === "asset-to-asset" && !requiresSolanaHotWalletPayout(quote)) {
     store.updateOrder(
@@ -903,9 +1239,17 @@ function getSolanaInputAmount(order: Order): bigint {
   if (order.funding.type === "solana-transfer") {
     return BigInt(order.destinationAmount ?? order.funding.amount);
   }
-  if (order.funding.type === "deposit-address" && order.funding.chainId === "bitcoin") {
+  if (order.funding.type === "deposit-address" && order.funding.chainId === "solana") {
+    // destinationAmount records what the sweep actually moved to the hot wallet.
     if (!order.destinationAmount) {
-      throw new Error("BTC order has no delivered Solana USDC amount");
+      throw new Error("Solana address order has no swept deposit amount");
+    }
+    return BigInt(order.destinationAmount);
+  }
+  if (order.funding.type === "deposit-address" && order.funding.chainId !== "monero") {
+    // BTC and EVM address deposits both arrive as USDC on Solana.
+    if (!order.destinationAmount) {
+      throw new Error("order has no delivered Solana USDC amount");
     }
     return BigInt(order.destinationAmount);
   }
@@ -919,7 +1263,10 @@ function getSolanaInputMint(order: Order): string {
   if (order.funding.type === "solana-transfer") {
     return order.funding.mint;
   }
-  if (order.funding.type === "deposit-address" && order.funding.chainId === "bitcoin") {
+  if (order.funding.type === "deposit-address" && order.funding.chainId === "solana") {
+    return order.sourceToken;
+  }
+  if (order.funding.type === "deposit-address" && order.funding.chainId !== "monero") {
     return USDC_MINT_ADDRESS;
   }
   return order.sourceToken;
