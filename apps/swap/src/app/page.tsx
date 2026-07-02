@@ -783,13 +783,13 @@ function DirectionSwapButton({
       ? 'Swap to receive XMR'
       : 'Swap selected assets';
   return (
-    <div className="relative z-10 -my-[23px] flex justify-center">
+    <div className="pointer-events-none relative z-10 -mt-[28px] -mb-[18px] flex justify-center">
       <button
         type="button"
         onClick={onClick}
         title={label}
         aria-label={label}
-        className="group relative flex h-9 w-9 items-center justify-center rounded-xl border border-[#343740] bg-[#15161b] text-[#f26822] ring-4 ring-[#111216] transition-colors after:absolute after:-inset-2 after:content-[''] hover:border-[#f26822] hover:bg-[#1b1714]"
+        className="group pointer-events-auto relative flex h-9 w-9 items-center justify-center rounded-xl border border-[#343740] bg-[#15161b] text-[#f26822] ring-4 ring-[#111216] transition-colors after:absolute after:-inset-2 after:content-[''] hover:border-[#f26822] hover:bg-[#1b1714]"
       >
         <svg
           viewBox="0 0 24 24"
