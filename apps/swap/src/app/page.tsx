@@ -168,6 +168,18 @@ type SolanaWithdrawalTransactionPayload = {
   amount: string;
 };
 
+const FIELD_INPUT_BASE = 'w-full rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-2.5 text-white outline-none transition-colors placeholder:text-[#8b919d] focus:border-[#f26822] focus:shadow-[0_0_0_3px_rgba(242,104,34,0.12)]';
+const FIELD_INPUT = `${FIELD_INPUT_BASE} text-sm`;
+const ADDRESS_INPUT = `${FIELD_INPUT_BASE} font-mono text-[13px]`;
+
+function Chevron({ className = '' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 16 16" aria-hidden className={`h-3.5 w-3.5 shrink-0 ${className}`}>
+      <path d="m4 6 4 4 4-4" fill="none" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function MoneroLogo({ className = 'w-8 h-8' }: { className?: string }) {
   return (
     <svg className={className} viewBox="0 0 3756.09 3756.49" xmlns="http://www.w3.org/2000/svg" aria-hidden>
@@ -580,30 +592,34 @@ export default function SwapPage() {
 
   return (
     <main className="min-h-screen xmr-pattern">
-      <header className="mx-auto flex w-full max-w-2xl items-center justify-between gap-4 px-4 py-3 md:px-6">
+      <header className="mx-auto flex w-full max-w-[30rem] items-center justify-between gap-4 px-4 py-4 md:px-5 md:py-5">
         <div className="flex min-w-0 items-center gap-3">
           <MoneroLogo className="h-7 w-7 shrink-0" />
           <div className="min-w-0">
-            <h1 className="truncate text-lg font-semibold text-white">Swap XMR</h1>
-            <p className="hidden text-xs text-[var(--muted)] sm:block">Cross-chain swaps with XMR routes built in</p>
+            <h1 className="truncate text-lg font-semibold tracking-tight text-white">Swap XMR</h1>
+            <p className="hidden text-xs text-[#8b919d] sm:block">Cross-chain swaps with XMR routes built in</p>
           </div>
         </div>
-        <div className="hidden items-center gap-2 rounded-full border border-[#273226] bg-[#111711] px-3 py-2 text-xs text-[#9ee6a8] sm:flex">
-          <span className="h-2 w-2 rounded-full bg-[#35d071]" />
+        <div className="hidden items-center gap-2 rounded-full border border-[#273226] bg-[#111711] px-3 py-2 text-xs font-medium text-[#9ee6a8] sm:flex">
+          <span className="relative flex h-2 w-2">
+            <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[#35d071] opacity-60 motion-reduce:hidden" style={{ animationDuration: '2.5s' }} />
+            <span className="relative inline-flex h-2 w-2 rounded-full bg-[#35d071]" />
+          </span>
           Live route
         </div>
       </header>
 
-      <section className="mx-auto w-full max-w-2xl px-4 pb-6 md:px-6">
+      <section className="mx-auto w-full max-w-[30rem] px-4 pb-10 md:px-5">
         <div className="overflow-hidden rounded-[20px] border border-[#26272d] bg-[#111216] shadow-2xl shadow-black/40">
-          <div className="space-y-2.5 p-2.5 md:p-3">
-            <div className="flex items-center justify-between gap-3 px-1">
-              <div className="text-sm font-medium text-white">Exchange</div>
-              <div className="rounded-full border border-[#30333b] bg-[#0b0c10] px-2.5 py-1 text-xs font-medium text-[#c8cbd1]">
+          <div className="p-3 md:p-4">
+            <div className="mb-3 flex items-center justify-between gap-3 px-1">
+              <div className="text-base font-semibold text-white">Exchange</div>
+              <div className="rounded-full bg-[#1c1e24] px-2.5 py-1 text-xs font-medium text-[#a9afba]">
                 {routeModeLabel(direction)}
               </div>
             </div>
 
+            <div className="space-y-2.5">
             <TradeAmountPanel
               amount={amount}
               chainId={sourceChain}
@@ -656,16 +672,28 @@ export default function SwapPage() {
               }}
             />
 
+            </div>
+
+            <div className="mt-4 space-y-2.5">
             {error && <ErrorBanner message={error} />}
 
             <button
               onClick={onPrimaryAction}
               disabled={primaryDisabled}
-              className="xmr-btn-primary flex min-h-11 w-full items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold text-white disabled:translate-y-0"
+              aria-live="polite"
+              className="xmr-btn-primary flex min-h-12 w-full items-center justify-center gap-2 rounded-2xl px-4 py-2.5 text-base font-semibold text-[#0b0c10]"
             >
+              {(isLoading || (isQuoteRefreshing && canPreviewQuote)) && (
+                <svg viewBox="0 0 16 16" aria-hidden className="h-4 w-4 animate-spin motion-reduce:hidden">
+                  <path d="M14 8a6 6 0 1 1-6-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                </svg>
+              )}
               {primaryLabel}
             </button>
+            </div>
 
+            {(quote || order) && (
+            <div className="mt-4 space-y-2.5">
             {quote && (
               <QuoteSummary
                 quote={quote}
@@ -685,15 +713,17 @@ export default function SwapPage() {
 
             {(quote || order) && (
               <details className="group">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-3 rounded-xl border border-[#292b31] bg-[#0c0d11] px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:border-[#f26822]">
+                <summary className="flex cursor-pointer select-none list-none items-center justify-between gap-3 rounded-2xl border border-[#292b31] bg-[#0c0d11] px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:border-[#f26822]/60">
                   <span>Route and order details</span>
-                  <span className="text-xs text-[#8f949d] group-open:rotate-180">v</span>
+                  <Chevron className="text-[#8b919d] transition-transform duration-200 ease-out group-open:rotate-180 motion-reduce:transition-none" />
                 </summary>
-                <div className="mt-3 space-y-3">
+                <div className="swap-reveal mt-2.5 space-y-2.5">
                   <RoutePanel legs={routeLegs} quote={quote} />
                   {order && <OrderStatusPanel order={order} />}
                 </div>
               </details>
+            )}
+            </div>
             )}
           </div>
         </div>
@@ -744,15 +774,19 @@ function DirectionSwapButton({
       ? 'Swap to receive XMR'
       : 'Swap selected assets';
   return (
-    <div className="flex justify-center">
+    <div className="relative z-10 -my-[23px] flex justify-center">
       <button
         type="button"
         onClick={onClick}
         title={label}
         aria-label={label}
-        className="group flex h-9 w-9 items-center justify-center rounded-full border border-[#343740] bg-[#15161b] text-[#f26822] shadow-lg shadow-black/25 transition-colors hover:border-[#f26822] hover:bg-[#1b1714] focus:outline-none focus:ring-2 focus:ring-[#f26822]/60"
+        className="group relative flex h-9 w-9 items-center justify-center rounded-xl border border-[#343740] bg-[#15161b] text-[#f26822] ring-4 ring-[#111216] transition-colors after:absolute after:-inset-2 after:content-[''] hover:border-[#f26822] hover:bg-[#1b1714]"
       >
-        <svg viewBox="0 0 24 24" className="h-4 w-4" aria-hidden>
+        <svg
+          viewBox="0 0 24 24"
+          className="h-4 w-4 transition-transform duration-200 ease-out group-hover:rotate-180 motion-reduce:transition-none motion-reduce:group-hover:rotate-0"
+          aria-hidden
+        >
           <path
             d="M7 4v13m0 0 4-4m-4 4-4-4M17 20V7m0 0-4 4m4-4 4 4"
             fill="none"
@@ -784,41 +818,66 @@ function TradeAmountPanel({
 }) {
   const chainName = CHAINS[chainId].name;
   return (
-    <div className="rounded-xl border border-[#292b31] bg-[#0c0d11] p-2.5">
-      <div className="mb-1.5 flex items-center justify-between gap-3">
-        <div className="text-sm text-[#9aa0aa]">{label}</div>
-        <div className="rounded-full border border-[#30333b] bg-[#17191f] px-3 py-1 text-xs text-[#9aa0aa]">
-          {chainName}
-        </div>
-      </div>
+    <div className="rounded-2xl border border-[#292b31] bg-[#0c0d11] p-3">
+      <div className="mb-2 text-sm text-[#a9afba]">{label}</div>
       <div className="flex items-center gap-3">
         <input
-          type="number"
-          min="0"
-          step="0.01"
+          type="text"
+          inputMode="decimal"
+          autoComplete="off"
+          spellCheck={false}
           value={amount}
-          onChange={(event) => onAmountChange(event.target.value)}
+          onChange={(event) => {
+            const next = event.target.value.replace(',', '.');
+            if (/^\d*\.?\d*$/.test(next)) onAmountChange(next);
+          }}
           placeholder="0.00"
-          className="min-w-0 flex-1 bg-transparent text-2xl font-semibold text-white outline-none placeholder:text-[#3e424b] md:text-3xl"
+          className="min-w-0 flex-1 bg-transparent text-2xl font-semibold tabular-nums tracking-tight text-white outline-none placeholder:text-[#8b919d] md:text-3xl"
         />
-        <button
-          onClick={onOpenTokenPicker}
-          className="flex min-w-[112px] items-center justify-between gap-2 rounded-xl border border-[#30333b] bg-[#17191f] px-3 py-2 text-left text-white transition-colors hover:border-[#f26822]"
-        >
-          <TokenLogo token={token} />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-semibold">{token?.symbol ?? 'Token'}</span>
-            <span className="block truncate text-[11px] text-[#8f949d]">{chainName}</span>
-          </span>
-          <span className="text-[#8f949d]">v</span>
-        </button>
+        <TokenSelectButton token={token} chainName={chainName} onClick={onOpenTokenPicker} />
       </div>
       {chainId === 'monero' && (
-        <div className="mt-1.5 text-xs text-[#8f949d]">
+        <div className="mt-2 text-xs leading-relaxed text-pretty text-[#8b919d]">
           Minimum {MIN_XMR_DEPOSIT_XMR} XMR — the Monero bridge only mints deposits of {MIN_XMR_DEPOSIT_XMR} XMR or more.
         </div>
       )}
     </div>
+  );
+}
+
+function TokenSelectButton({
+  token,
+  chainName,
+  onClick,
+}: {
+  token?: MayanToken;
+  chainName: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex min-w-[112px] items-center justify-between gap-2 rounded-xl bg-[#1c1e24] px-3 py-2 text-left text-white transition-colors hover:bg-[#262932] active:bg-[#2b2e38]"
+    >
+      {token ? (
+        <>
+          <TokenLogo token={token} />
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-sm font-semibold">{token.symbol ?? 'Token'}</span>
+            <span className="block truncate text-[11px] text-[#8b919d]">{chainName}</span>
+          </span>
+        </>
+      ) : (
+        <>
+          <span className="h-8 w-8 shrink-0 animate-pulse rounded-full bg-[#24272f] motion-reduce:animate-none" />
+          <span className="min-w-0 flex-1 space-y-1.5">
+            <span className="block h-3 w-12 animate-pulse rounded bg-[#24272f] motion-reduce:animate-none" />
+            <span className="block h-2 w-16 animate-pulse rounded bg-[#1d2027] motion-reduce:animate-none" />
+          </span>
+        </>
+      )}
+      <Chevron className="text-[#8b919d]" />
+    </button>
   );
 }
 
@@ -837,28 +896,16 @@ function MayanReceivePanel({
 }) {
   const chainName = CHAINS[chainId].name;
   return (
-    <div className="rounded-xl border border-[#292b31] bg-[#0c0d11] p-2.5">
-      <div className="mb-1.5 flex items-center justify-between gap-3">
-        <div className="text-sm text-[#9aa0aa]">You get</div>
-        <div className="rounded-full border border-[#30333b] bg-[#17191f] px-3 py-1 text-xs text-[#9aa0aa]">
-          {chainName}
-        </div>
-      </div>
+    <div className="rounded-2xl border border-[#292b31] bg-[#0c0d11] p-3">
+      <div className="mb-2 text-sm text-[#a9afba]">You get</div>
       <div className="flex items-center gap-3">
-        <div className={`min-w-0 flex-1 text-2xl font-semibold transition-colors md:text-3xl ${isLoading ? 'text-[#6f747d]' : 'text-white'}`}>
+        <div
+          title={value}
+          className={`min-w-0 flex-1 truncate text-2xl font-semibold tabular-nums tracking-tight transition-colors duration-200 md:text-3xl ${isLoading ? 'text-[#8b919d]' : 'text-white'}`}
+        >
           {value}
         </div>
-        <button
-          onClick={onOpenTokenPicker}
-          className="flex min-w-[112px] items-center justify-between gap-2 rounded-xl border border-[#30333b] bg-[#17191f] px-3 py-2 text-left text-white transition-colors hover:border-[#f26822]"
-        >
-          <TokenLogo token={token} />
-          <span className="min-w-0 flex-1">
-            <span className="block truncate text-sm font-semibold">{token?.symbol ?? 'Token'}</span>
-            <span className="block truncate text-[11px] text-[#8f949d]">{chainName}</span>
-          </span>
-          <span className="text-[#8f949d]">v</span>
-        </button>
+        <TokenSelectButton token={token} chainName={chainName} onClick={onOpenTokenPicker} />
       </div>
     </div>
   );
@@ -882,10 +929,10 @@ function NetworkPillSelector({
             key={chain}
             type="button"
             onClick={() => onChange(chain)}
-            className={`flex shrink-0 items-center gap-2 rounded-full border px-2.5 py-2 text-sm transition-colors ${
+            className={`flex shrink-0 items-center gap-2 rounded-full border px-3 py-2.5 text-sm transition-colors ${
               selected
                 ? 'border-[#f26822] bg-[#22170f] text-white shadow-sm shadow-[#f26822]/20'
-                : 'border-[#30333b] bg-[#15171c] text-[#c8cbd1] hover:border-[#f26822]'
+                : 'border-[#30333b] bg-[#15171c] text-[#c8cbd1] hover:border-[#f26822]/45'
             }`}
           >
             <ChainBadge chain={chain} />
@@ -967,13 +1014,13 @@ function RecipientPanel({
       : 'Invalid';
 
   return (
-    <div className="grid gap-2.5 rounded-xl border border-[#292b31] bg-[#0f1015] p-2.5">
+    <div className="grid gap-2.5 rounded-2xl border border-[#292b31] bg-[#0f1015] p-3">
       {direction === FORWARD_DIRECTION ? (
         <>
           <label>
             <div className="mb-1.5 flex items-center justify-between gap-3">
-              <span className="text-sm text-[#9aa0aa]">XMR receive address</span>
-              <span className={addressOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff7777]'}>
+              <span className="text-sm text-[#a9afba]">XMR receive address</span>
+              <span className={addressOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff8c8c]'}>
                 {addressStatus}
               </span>
             </div>
@@ -981,10 +1028,10 @@ function RecipientPanel({
               value={xmrAddress}
               onChange={(event) => onXmrAddressChange(event.target.value.trim())}
               placeholder="4..."
-              className="w-full rounded-lg border border-[#2c2f37] bg-[#090a0e] px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
+              className={ADDRESS_INPUT}
             />
           </label>
-          <div className="text-xs text-[#8f949d]">
+          <div className="text-xs leading-relaxed text-pretty text-[#8b919d]">
             The Monero bridge pays out a minimum of {MIN_XMR_WITHDRAWAL_XMR} XMR — swaps with a smaller worst-case output are rejected at quoting.
           </div>
           {depositAddressMatch?.owner && (
@@ -996,7 +1043,7 @@ function RecipientPanel({
               <button
                 type="button"
                 onClick={onUseDirectDepositRoute}
-                className="mt-3 w-full rounded-lg border border-[#493424] bg-[#23170e] px-3 py-2 text-sm font-semibold text-white transition-colors hover:border-[#f26822]"
+                className="mt-3 w-full rounded-xl border border-[#493424] bg-[#23170e] px-3 py-2.5 text-sm font-semibold text-white transition-colors hover:border-[#f26822]"
               >
                 Send XMR-SOL directly
               </button>
@@ -1005,8 +1052,8 @@ function RecipientPanel({
           {needsBitcoinRefundAddress && (
             <label>
               <div className="mb-1.5 flex items-center justify-between gap-3">
-                <span className="text-sm text-[#9aa0aa]">BTC refund address</span>
-                <span className={bitcoinRefundOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff7777]'}>
+                <span className="text-sm text-[#a9afba]">BTC refund address</span>
+                <span className={bitcoinRefundOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff8c8c]'}>
                   {bitcoinRefundOk ? 'Ready' : 'Required'}
                 </span>
               </div>
@@ -1014,7 +1061,7 @@ function RecipientPanel({
                 value={sourceAddress}
                 onChange={(event) => onSourceAddressChange(event.target.value.trim())}
                 placeholder="bc1..."
-                className="w-full rounded-lg border border-[#2c2f37] bg-[#090a0e] px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
+                className={ADDRESS_INPUT}
               />
             </label>
           )}
@@ -1022,18 +1069,18 @@ function RecipientPanel({
       ) : direction === REVERSE_DIRECTION ? (
         <>
           <label>
-            <div className="mb-1.5 text-sm text-[#9aa0aa]">{destinationLabel}</div>
+            <div className="mb-1.5 text-sm text-[#a9afba]">{destinationLabel}</div>
             <input
               value={destinationAddress}
               onChange={(event) => onDestinationAddressChange(event.target.value.trim())}
               placeholder={destinationPlaceholder}
-              className="w-full rounded-lg border border-[#2c2f37] bg-[#090a0e] px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
+              className={ADDRESS_INPUT}
             />
           </label>
           <label>
             <div className="mb-1.5 flex items-center justify-between gap-3">
-              <span className="text-sm text-[#9aa0aa]">XMR refund address</span>
-              <span className={addressOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff7777]'}>
+              <span className="text-sm text-[#a9afba]">XMR refund address</span>
+              <span className={addressOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff8c8c]'}>
                 {addressOk ? 'Ready' : 'Invalid'}
               </span>
             </div>
@@ -1041,26 +1088,26 @@ function RecipientPanel({
               value={xmrAddress}
               onChange={(event) => onXmrAddressChange(event.target.value.trim())}
               placeholder="4..."
-              className="w-full rounded-lg border border-[#2c2f37] bg-[#090a0e] px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
+              className={ADDRESS_INPUT}
             />
           </label>
         </>
       ) : (
         <>
           <label>
-            <div className="mb-1.5 text-sm text-[#9aa0aa]">{destinationLabel}</div>
+            <div className="mb-1.5 text-sm text-[#a9afba]">{destinationLabel}</div>
             <input
               value={destinationAddress}
               onChange={(event) => onDestinationAddressChange(event.target.value.trim())}
               placeholder={destinationPlaceholder}
-              className="w-full rounded-lg border border-[#2c2f37] bg-[#090a0e] px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
+              className={ADDRESS_INPUT}
             />
           </label>
           {needsBitcoinRefundAddress && (
             <label>
               <div className="mb-1.5 flex items-center justify-between gap-3">
-                <span className="text-sm text-[#9aa0aa]">BTC refund address</span>
-                <span className={bitcoinRefundOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff7777]'}>
+                <span className="text-sm text-[#a9afba]">BTC refund address</span>
+                <span className={bitcoinRefundOk ? 'text-xs text-[#35d071]' : 'text-xs text-[#ff8c8c]'}>
                   {bitcoinRefundOk ? 'Ready' : 'Required'}
                 </span>
               </div>
@@ -1068,7 +1115,7 @@ function RecipientPanel({
                 value={sourceAddress}
                 onChange={(event) => onSourceAddressChange(event.target.value.trim())}
                 placeholder="bc1..."
-                className="w-full rounded-lg border border-[#2c2f37] bg-[#090a0e] px-3 py-2.5 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
+                className={ADDRESS_INPUT}
               />
             </label>
           )}
@@ -1112,23 +1159,23 @@ function SwapOptionsPanel({
   const selected = options.find((option) => option.value === value) ?? options[0];
 
   return (
-    <details className="group rounded-xl border border-[#292b31] bg-[#0f1015]">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 text-sm text-white">
+    <details className="group rounded-2xl border border-[#292b31] bg-[#0f1015]">
+      <summary className="flex cursor-pointer select-none list-none items-center justify-between gap-3 rounded-2xl px-3 py-2.5 text-sm text-white transition-colors hover:bg-white/[0.02]">
         <span className="font-semibold">Options</span>
-        <span className="min-w-0 flex-1 truncate text-right text-xs text-[#8f949d]">{selected.title}</span>
-        <span className="text-xs text-[#8f949d] group-open:rotate-180">v</span>
+        <span className="min-w-0 flex-1 truncate text-right text-xs text-[#8b919d]">{selected.title}</span>
+        <Chevron className="text-[#8b919d] transition-transform duration-200 ease-out group-open:rotate-180 motion-reduce:transition-none" />
       </summary>
-      <div className="grid gap-2 border-t border-[#292b31] p-2 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+      <div className="swap-reveal grid gap-2 border-t border-[#292b31] p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
         <label className="sm:col-span-2">
-          <div className="mb-1 text-xs text-[#9aa0aa]">{refundLabel}</div>
+          <div className="mb-1 text-xs text-[#a9afba]">{refundLabel}</div>
           <input
             value={refundAddress}
             onChange={(event) => onRefundAddressChange(event.target.value.trim())}
             placeholder="Optional"
-            className="w-full rounded-lg border border-[#2c2f37] bg-[#090a0e] px-3 py-2 text-sm text-white outline-none transition-colors placeholder:text-[#444954] focus:border-[#f26822]"
+            className={ADDRESS_INPUT}
           />
         </label>
-        <div className="px-1 text-xs text-[#9aa0aa] sm:col-span-2">If price moves</div>
+        <div className="px-1 text-xs text-[#a9afba] sm:col-span-2">If price moves</div>
         <div className="grid gap-1.5 sm:col-span-2 sm:grid-cols-2">
           {options.map((option) => {
             const optionSelected = option.value === value;
@@ -1137,14 +1184,14 @@ function SwapOptionsPanel({
                 key={option.value}
                 type="button"
                 onClick={() => onChange(option.value)}
-                className={`rounded-lg border px-3 py-2.5 text-left transition-colors ${
+                className={`rounded-xl border px-3 py-2.5 text-left transition-colors ${
                   optionSelected
                     ? 'border-[#f26822] bg-[#22170f] text-white'
-                    : 'border-[#30333b] bg-[#090a0e] text-[#c8cbd1] hover:border-[#f26822]'
+                    : 'border-[#30333b] bg-[#090a0e] text-[#c8cbd1] hover:border-[#f26822]/45'
                 }`}
               >
                 <span className="block text-sm font-semibold">{option.title}</span>
-                <span className="mt-0.5 block truncate text-xs text-[#8f949d]">{option.caption}</span>
+                <span className="mt-0.5 block truncate text-xs text-[#8b919d]">{option.caption}</span>
               </button>
             );
           })}
@@ -1175,6 +1222,7 @@ function TokenPicker({
   onClose: () => void;
   onSelect: (contract: string) => void;
 }) {
+  useEscapeKey(true, onClose);
   const filteredTokens = useMemo(() => {
     const needle = search.trim().toLowerCase();
     if (!needle) return tokens;
@@ -1186,16 +1234,16 @@ function TokenPicker({
   }, [search, tokens]);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-end bg-black/75 p-3 sm:items-center sm:justify-center" onClick={onClose}>
+    <div className="swap-backdrop fixed inset-0 z-50 flex items-end bg-black/75 p-3 backdrop-blur-[2px] sm:items-center sm:justify-center" onClick={onClose}>
       <div
-        className="max-h-[88vh] w-full max-w-lg overflow-hidden rounded-3xl border border-[#292b31] bg-[#111216] shadow-2xl shadow-black"
+        className="swap-panel-in max-h-[88vh] w-full max-w-lg overflow-hidden rounded-3xl border border-[#292b31] bg-[#111216] shadow-2xl shadow-black"
         onClick={(event) => event.stopPropagation()}
       >
         <div className="border-b border-[#24252b] p-3">
           <div className="mb-3 flex items-center justify-between gap-3">
             <div>
               <div className="text-base font-semibold text-white">Select asset</div>
-              <div className="text-xs text-[#8f949d]">Choose network and token</div>
+              <div className="text-xs text-[#8b919d]">Choose network and token</div>
             </div>
             <button onClick={onClose} className="rounded-full border border-[#30333b] px-3 py-2 text-sm text-[#c8cbd1] hover:border-[#f26822]">
               Close
@@ -1203,7 +1251,7 @@ function TokenPicker({
           </div>
           <div className="mb-2 rounded-2xl border border-[#292b31] bg-[#0c0d11] p-2">
             <div className="mb-1.5 flex items-center justify-between gap-3 px-1">
-              <div className="text-xs font-medium uppercase tracking-[0.08em] text-[#6f747d]">Network</div>
+              <div className="text-xs font-medium uppercase tracking-[0.08em] text-[#8b919d]">Network</div>
               <div className="flex items-center gap-1.5 text-xs text-[#c8cbd1]">
                 <ChainBadge chain={chainId} />
                 {CHAINS[chainId].name}
@@ -1216,7 +1264,7 @@ function TokenPicker({
             onChange={(event) => onSearchChange(event.target.value)}
             placeholder="Search token"
             autoFocus
-            className="w-full rounded-xl border border-[#2c2f37] bg-[#090a0e] px-3 py-2.5 text-sm text-white outline-none placeholder:text-[#444954] focus:border-[#f26822]"
+            className={FIELD_INPUT}
           />
         </div>
         <div className="max-h-[58vh] overflow-y-auto p-2">
@@ -1227,21 +1275,21 @@ function TokenPicker({
               <button
                 key={contract || token.symbol || token.name}
                 onClick={() => contract && onSelect(contract)}
-                className={`flex w-full items-center gap-3 rounded-2xl px-3 py-3 text-left transition-colors ${
-                  isSelected ? 'bg-[#22170f] ring-1 ring-[#f26822]' : 'hover:bg-[#191b21]'
+                className={`flex w-full items-center gap-3 rounded-xl px-3 py-3 text-left transition-colors ${
+                  isSelected ? 'bg-[#22170f] ring-1 ring-[#f26822]' : 'hover:bg-[#191b21] active:bg-[#1d2027]'
                 }`}
               >
                 <TokenLogo token={token} />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-sm font-semibold text-white">{token.symbol ?? 'Token'}</span>
-                  <span className="block truncate text-xs text-[#8f949d]">{token.name ?? contract}</span>
+                  <span className="block truncate text-xs text-[#8b919d]">{token.name ?? contract}</span>
                 </span>
-                <span className="text-xs text-[#6f747d]">{token.standard ?? 'asset'}</span>
+                <span className="text-xs text-[#8b919d]">{token.standard ?? 'asset'}</span>
               </button>
             );
           })}
           {!filteredTokens.length && (
-            <div className="px-4 py-8 text-center text-sm text-[#8f949d]">No matching assets</div>
+            <div className="px-4 py-8 text-center text-sm text-[#8b919d]">No matching assets</div>
           )}
         </div>
       </div>
@@ -1292,13 +1340,13 @@ function QuoteSummary({
       : `${formatBps(mayan?.protocolBps ?? 0)} Mayan + ${formatBps(quote.bridgeFeeBps)} bridge`;
 
   return (
-    <div className="rounded-xl border border-[#292b31] bg-[#101116] p-2.5">
+    <div className="rounded-2xl border border-[#292b31] bg-[#101116] p-3">
       <div className="mb-2 flex items-center justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="text-sm font-semibold text-white">Quote</div>
-          <div className="line-clamp-2 text-xs leading-snug text-[#8f949d]">{quote.routeSummary ?? 'Mayan Swift v2 route'}</div>
+          <div className="line-clamp-2 text-xs leading-snug text-[#8b919d]">{quote.routeSummary ?? 'Mayan Swift v2 route'}</div>
         </div>
-        <div className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold ${quoteExpired ? 'bg-[#351919] text-[#ff8c8c]' : 'bg-[#142316] text-[#9ee6a8]'}`}>
+        <div className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold tabular-nums ${quoteExpired ? 'bg-[#351919] text-[#ff8c8c]' : 'bg-[#142316] text-[#9ee6a8]'}`}>
           {quoteExpired ? 'Expired' : `Expires in ${formatCountdown(quoteExpiresIn)}`}
         </div>
       </div>
@@ -1307,7 +1355,7 @@ function QuoteSummary({
         <QuoteSummaryItem label={minimumLabel} value={minimumValue} />
         <QuoteSummaryItem label="Fees" value={fees} />
       </div>
-      <div className="mt-1.5 text-[11px] text-[#6f747d]">
+      <div className="mt-2 text-[11px] tabular-nums text-[#8b919d]">
         Sending {formatBaseUnits(quote.inputAmount, sourceDecimals)} {sourceSymbol}
       </div>
     </div>
@@ -1317,19 +1365,19 @@ function QuoteSummary({
 function QuoteSummaryItem({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-lg border border-[#252831] bg-[#0b0c10] px-2.5 py-2">
-      <div className="truncate text-[10px] uppercase tracking-[0.08em] text-[#737982]">{label}</div>
-      <div className="mt-0.5 break-words text-xs font-semibold leading-snug text-white">{value}</div>
+      <div className="truncate text-[11px] uppercase tracking-[0.08em] text-[#8b919d]">{label}</div>
+      <div className="mt-0.5 break-words text-[13px] font-semibold leading-snug tabular-nums text-white">{value}</div>
     </div>
   );
 }
 
 function RoutePanel({ legs, quote }: { legs: RouteLeg[]; quote: Quote | null }) {
   return (
-    <div className="rounded-[24px] border border-[#26272d] bg-[#111216] p-4 shadow-xl shadow-black/30">
+    <div className="rounded-2xl border border-[#292b31] bg-[#0f1015] p-4">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold text-white">Route</h2>
-          <p className="text-xs text-[#8f949d]">Token path and execution venues</p>
+          <p className="text-xs text-[#8b919d]">Token path and execution venues</p>
         </div>
         <div className="rounded-full bg-[#17191f] px-3 py-1 text-xs text-[#c8cbd1]">
           {quote?.route === 'solana'
@@ -1353,9 +1401,9 @@ function RoutePanel({ legs, quote }: { legs: RouteLeg[]; quote: Quote | null }) 
             <div className="min-w-0 rounded-2xl border border-[#292b31] bg-[#0c0d11] p-3">
               <div className="min-w-0">
                 <div className="truncate text-sm font-semibold text-white">{leg.title}</div>
-                <div className="truncate text-xs text-[#8f949d]">{leg.caption}</div>
+                <div className="truncate text-xs text-[#8b919d]">{leg.caption}</div>
               </div>
-              <div className="mt-2 text-xs text-[#6f747d]">{leg.detail}</div>
+              <div className="mt-2 text-xs leading-relaxed text-[#8b919d]">{leg.detail}</div>
             </div>
           </div>
         ))}
@@ -1416,10 +1464,6 @@ function BtcDepositFunding({
   const addressReady = Boolean(funding.address);
   const provider = funding.provider ?? 'THORChain';
   const amount = formatBaseUnits(funding.expectedAmount ?? order.amount, 8, 8);
-  const copyAddress = () => {
-    if (funding.address) void navigator.clipboard?.writeText(funding.address);
-  };
-
   const report = async () => {
     const trimmed = txHash.trim();
     if (!trimmed) {
@@ -1456,26 +1500,20 @@ function BtcDepositFunding({
           </div>
         </div>
         {funding.memo && <Metric label="Memo" value={funding.memo} />}
-        <button
-          onClick={copyAddress}
-          disabled={!addressReady}
-          className="w-full rounded-2xl border border-[#493424] bg-[#23170e] px-4 py-3 text-sm font-semibold text-white transition-colors hover:border-[#f26822] disabled:text-[#7b6859]"
-        >
-          Copy BTC address
-        </button>
+        <CopyAddressButton label="Copy BTC address" value={funding.address} />
         <label>
           <div className="mb-2 text-sm text-[#c59a7c]">Bitcoin transaction id</div>
           <input
             value={txHash}
             onChange={(event) => setTxHash(event.target.value.trim())}
             placeholder="Paste txid after sending"
-            className="w-full rounded-xl border border-[#493424] bg-[#120d09] px-3 py-3 font-mono text-sm text-white outline-none transition-colors placeholder:text-[#6f5644] focus:border-[#f26822]"
+            className="w-full rounded-xl border border-[#493424] bg-[#120d09] px-3 py-3 font-mono text-sm text-white outline-none transition-colors placeholder:text-[#a8846d] focus:border-[#f26822]"
           />
         </label>
         <button
           onClick={report}
           disabled={isReporting || !addressReady}
-          className="xmr-btn-primary flex min-h-12 w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold text-white disabled:translate-y-0"
+          className="xmr-btn-primary flex min-h-12 w-full items-center justify-center rounded-xl px-4 py-3 text-sm font-semibold text-[#0b0c10]"
         >
           {isReporting ? 'Saving transaction...' : 'I sent BTC'}
         </button>
@@ -1586,7 +1624,7 @@ function SolanaDirectFunding({
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-white">Pay with Solana wallet</div>
-          <div className="truncate text-xs text-[#c59a7c]">
+          <div className={`truncate text-xs text-[#c59a7c] ${publicKey ? 'font-mono' : ''}`}>
             {publicKey ? shortAddress(publicKey.toBase58()) : 'Connect a Solana wallet'}
           </div>
         </div>
@@ -1601,9 +1639,9 @@ function SolanaDirectFunding({
       <button
         onClick={submitDirectSwap}
         disabled={isFunding || !publicKey || !signTransaction}
-        className="xmr-btn-primary flex min-h-12 w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold text-white disabled:translate-y-0"
+        className="xmr-btn-primary flex min-h-12 w-full items-center justify-center rounded-xl px-4 py-3 text-sm font-semibold text-[#0b0c10]"
       >
-        {isFunding ? buttonLabel : buttonLabel}
+        {buttonLabel}
       </button>
     </div>
   );
@@ -1679,7 +1717,7 @@ function SolanaTransferFunding({
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-white">Pay with Solana wallet</div>
-          <div className="truncate text-xs text-[#c59a7c]">
+          <div className={`truncate text-xs text-[#c59a7c] ${publicKey ? 'font-mono' : ''}`}>
             {publicKey ? shortAddress(publicKey.toBase58()) : 'Connect a Solana wallet'}
           </div>
         </div>
@@ -1692,7 +1730,7 @@ function SolanaTransferFunding({
       <button
         onClick={fund}
         disabled={isFunding || !publicKey}
-        className="xmr-btn-primary flex min-h-12 w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold text-white disabled:translate-y-0"
+        className="xmr-btn-primary flex min-h-12 w-full items-center justify-center rounded-xl px-4 py-3 text-sm font-semibold text-[#0b0c10]"
       >
         {isFunding ? 'Waiting for wallet...' : `Send ${funding.tokenSymbol ?? 'token'}`}
       </button>
@@ -1709,9 +1747,6 @@ function XmrDepositFunding({
 }) {
   const addressReady = Boolean(funding.address);
   const amount = formatXmr(funding.expectedAmount ?? order.amount);
-  const copyAddress = () => {
-    if (funding.address) void navigator.clipboard?.writeText(funding.address);
-  };
 
   return (
     <div className="rounded-2xl border border-[#f26822]/40 bg-[#1a120c] p-4">
@@ -1730,13 +1765,7 @@ function XmrDepositFunding({
             {addressReady ? funding.address : 'Preparing deposit address...'}
           </div>
         </div>
-        <button
-          onClick={copyAddress}
-          disabled={!addressReady}
-          className="w-full rounded-2xl border border-[#493424] bg-[#23170e] px-4 py-3 text-sm font-semibold text-white transition-colors hover:border-[#f26822] disabled:text-[#7b6859]"
-        >
-          Copy XMR address
-        </button>
+        <CopyAddressButton label="Copy XMR address" value={funding.address} />
       </div>
     </div>
   );
@@ -1763,6 +1792,7 @@ function MayanEvmFunding({
   const [showConnect, setShowConnect] = useState(false);
   const [isFunding, setIsFunding] = useState(false);
   const [connectingConnectorUid, setConnectingConnectorUid] = useState<string | null>(null);
+  useEscapeKey(showConnect, () => setShowConnect(false));
 
   const fund = async () => {
     setIsFunding(true);
@@ -1823,7 +1853,7 @@ function MayanEvmFunding({
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-white">Pay with wallet</div>
-          <div className="truncate text-xs text-[#c59a7c]">{address ? shortAddress(address) : 'Connect an EVM wallet'}</div>
+          <div className={`truncate text-xs text-[#c59a7c] ${address ? 'font-mono' : ''}`}>{address ? shortAddress(address) : 'Connect an EVM wallet'}</div>
         </div>
         <button
           onClick={() => (address ? disconnect() : setShowConnect(true))}
@@ -1835,13 +1865,13 @@ function MayanEvmFunding({
       <button
         onClick={fund}
         disabled={isFunding}
-        className="xmr-btn-primary flex min-h-12 w-full items-center justify-center rounded-2xl px-4 py-3 text-sm font-semibold text-white disabled:translate-y-0"
+        className="xmr-btn-primary flex min-h-12 w-full items-center justify-center rounded-xl px-4 py-3 text-sm font-semibold text-[#0b0c10]"
       >
         {isFunding ? 'Waiting for wallet...' : `Start ${funding.tokenSymbol ?? 'token'} swap`}
       </button>
       {showConnect && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4" onClick={() => setShowConnect(false)}>
-          <div className="w-full max-w-sm rounded-3xl border border-[#292b31] bg-[#111216] p-4" onClick={(event) => event.stopPropagation()}>
+        <div className="swap-backdrop fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4 backdrop-blur-[2px]" onClick={() => setShowConnect(false)}>
+          <div className="swap-panel-in w-full max-w-sm rounded-3xl border border-[#292b31] bg-[#111216] p-4" onClick={(event) => event.stopPropagation()}>
             <div className="mb-3 flex items-center justify-between">
               <h3 className="text-base font-semibold text-white">Connect wallet</h3>
               <button onClick={() => setShowConnect(false)} className="rounded-full border border-[#30333b] px-3 py-2 text-sm text-[#c8cbd1] hover:border-[#f26822]">
@@ -1868,14 +1898,14 @@ function MayanEvmFunding({
                         setConnectingConnectorUid(null);
                       }
                     }}
-                    className="grid w-full grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3 rounded-2xl border border-[#292b31] bg-[#0c0d11] px-3 py-3 text-left transition-colors hover:border-[#f26822] disabled:opacity-65"
+                    className="grid w-full grid-cols-[40px_minmax(0,1fr)_auto] items-center gap-3 rounded-xl border border-[#292b31] bg-[#0c0d11] px-3 py-3 text-left transition-colors enabled:hover:border-[#f26822] disabled:cursor-not-allowed disabled:opacity-60"
                   >
                     <WalletLogo id={id} icon={icon} name={name} />
                     <span className="min-w-0">
                       <span className="block truncate text-sm font-semibold text-white">{name}</span>
-                      <span className="block truncate text-xs text-[#8f949d]">{description}</span>
+                      <span className="block truncate text-xs text-[#8b919d]">{description}</span>
                     </span>
-                    <span className="rounded-full border border-[#292b31] px-2 py-1 text-xs text-[#9aa0aa]">
+                    <span className="rounded-full border border-[#292b31] px-2 py-1 text-xs text-[#a9afba]">
                       {isConnecting ? 'Connecting' : status}
                     </span>
                   </button>
@@ -2089,16 +2119,16 @@ function OrderStatusPanel({ order }: { order: Order | null }) {
       ];
 
   return (
-    <div className="rounded-[24px] border border-[#26272d] bg-[#111216] p-4 shadow-xl shadow-black/30">
+    <div className="rounded-2xl border border-[#292b31] bg-[#0f1015] p-4">
       <div className="mb-4 flex items-center justify-between gap-3">
         <div>
           <h2 className="text-base font-semibold text-white">Order</h2>
-          <p className="text-xs text-[#8f949d]">{order ? shortId(order.id) : 'No active order'}</p>
+          <p className={`text-xs text-[#8b919d] ${order ? 'font-mono' : ''}`}>{order ? shortId(order.id) : 'No active order'}</p>
         </div>
         {order && <StatusBadge status={order.status} />}
       </div>
       {!order ? (
-        <div className="rounded-2xl border border-dashed border-[#30333b] bg-[#0c0d11] px-4 py-8 text-center text-sm text-[#8f949d]">
+        <div className="rounded-2xl border border-dashed border-[#30333b] bg-[#0c0d11] px-4 py-8 text-center text-sm text-[#8b919d]">
           Your exchange progress appears here after an order is created.
         </div>
       ) : (
@@ -2110,8 +2140,8 @@ function OrderStatusPanel({ order }: { order: Order | null }) {
               const isDone = order.status === 'completed' || (currentIndex >= 0 && index < currentIndex);
               return (
                 <div key={step.label} className="flex items-center gap-3">
-                  <div className={`h-3 w-3 rounded-full ${isDone ? 'bg-[#f26822]' : isActive ? 'bg-[#35d071]' : 'bg-[#343842]'}`} />
-                  <span className={isDone || isActive ? 'text-sm text-white' : 'text-sm text-[#707680]'}>{step.label}</span>
+                  <div className={`h-2.5 w-2.5 rounded-full ${isDone ? 'bg-[#35d071]' : isActive ? 'animate-pulse bg-[#f26822] motion-reduce:animate-none' : 'bg-[#343842]'}`} />
+                  <span className={isDone || isActive ? 'text-sm text-white' : 'text-sm text-[#8b919d]'}>{step.label}</span>
                 </div>
               );
             })}
@@ -2121,11 +2151,54 @@ function OrderStatusPanel({ order }: { order: Order | null }) {
             {order.solanaMintSignature && <ExplorerLink chain="solana" hash={order.solanaMintSignature} label={order.direction === REVERSE_DIRECTION ? 'Bridge claim' : isBitcoinDeposit ? 'THORChain delivery' : 'Mayan delivery'} />}
             {order.swapSignature && <ExplorerLink chain="solana" hash={order.swapSignature} label="Jupiter swap" />}
             {order.withdrawalSignature && <ExplorerLink chain="solana" hash={order.withdrawalSignature} label={order.direction === REVERSE_DIRECTION ? (isSolanaDirect ? 'Solana payout' : 'Mayan payout') : 'Withdrawal request'} />}
-            {order.error && <div className="text-sm text-[#ff9b9b]">{order.error}</div>}
+            {order.error && <div className="text-sm text-[#ff8c8c]">{order.error}</div>}
           </div>
         </div>
       )}
     </div>
+  );
+}
+
+function useEscapeKey(active: boolean, onEscape: () => void) {
+  useEffect(() => {
+    if (!active) return;
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onEscape();
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [active, onEscape]);
+}
+
+function useCopyFeedback(): [boolean, (value?: string) => void] {
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const timer = setTimeout(() => setCopied(false), 1500);
+    return () => clearTimeout(timer);
+  }, [copied]);
+  const copy = (value?: string) => {
+    if (!value) return;
+    void navigator.clipboard?.writeText(value);
+    setCopied(true);
+  };
+  return [copied, copy];
+}
+
+function CopyAddressButton({ label, value }: { label: string; value?: string }) {
+  const [copied, copy] = useCopyFeedback();
+  return (
+    <button
+      onClick={() => copy(value)}
+      disabled={!value}
+      className={`w-full rounded-xl border px-4 py-3 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
+        copied
+          ? 'border-[#35d071]/50 bg-[#122316] text-[#9ee6a8]'
+          : 'border-[#493424] bg-[#23170e] text-white enabled:hover:border-[#f26822]'
+      }`}
+    >
+      {copied ? 'Copied' : label}
+    </button>
   );
 }
 
@@ -2149,7 +2222,7 @@ function TokenLogo({ token }: { token?: MayanToken }) {
 function Metric({ label, value }: { label: string; value: string }) {
   return (
     <div className="min-w-0 rounded-xl border border-[#292b31] bg-[#0b0c10] px-3 py-3">
-      <div className="truncate text-[11px] uppercase tracking-[0.08em] text-[#737982]">{label}</div>
+      <div className="truncate text-[11px] uppercase tracking-[0.08em] text-[#8b919d]">{label}</div>
       <div className="mt-1 break-words text-sm font-semibold leading-snug text-white">{value}</div>
     </div>
   );
@@ -2161,13 +2234,18 @@ function StatusBadge({ status }: { status: Order['status'] }) {
     : status === 'failed' || status === 'expired'
       ? 'bg-[#351919] text-[#ff8c8c]'
       : 'bg-[#22170f] text-[#f2a269]';
-  return <div className={`rounded-full px-3 py-1 text-xs font-semibold ${palette}`}>{status.replace(/_/g, ' ')}</div>;
+  return <div className={`rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.08em] ${palette}`}>{status.replace(/_/g, ' ')}</div>;
 }
 
 function ErrorBanner({ message }: { message: string }) {
   return (
-    <div className="rounded-2xl border border-[#6d2a2a] bg-[#2a1111] px-4 py-3 text-sm text-[#ffb8b8]">
-      {message}
+    <div role="alert" className="flex items-start gap-2.5 rounded-2xl border border-[#6d2a2a] bg-[#2a1111] px-3.5 py-3 text-sm text-[#ffb8b8]">
+      <svg viewBox="0 0 16 16" aria-hidden className="mt-0.5 h-4 w-4 shrink-0">
+        <path d="M8 1.5 15 14H1L8 1.5Z" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+        <path d="M8 6.5v3.25" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+        <circle cx="8" cy="12" r="0.85" fill="currentColor" />
+      </svg>
+      <span className="min-w-0 break-words leading-relaxed">{message}</span>
     </div>
   );
 }
@@ -2175,14 +2253,14 @@ function ErrorBanner({ message }: { message: string }) {
 function ExplorerLink({ chain, hash, label }: { chain: SourceChainId; hash: string; label: string }) {
   const explorer = CHAINS[chain].explorerTxUrl;
   if (!explorer) {
-    return <div className="truncate text-[#f2a269]" title={hash}>{label}: {shortId(hash)}</div>;
+    return <div className="truncate font-mono text-[13px] text-[#f2a269]" title={hash}>{label}: {shortId(hash)}</div>;
   }
   return (
     <a
       href={`${explorer}${hash}`}
       target="_blank"
       rel="noreferrer"
-      className="block truncate text-[#f2a269] transition-colors hover:text-[#f26822]"
+      className="block truncate font-mono text-[13px] text-[#f2a269] transition-colors hover:text-[#f26822]"
       title={hash}
     >
       {label}: {shortId(hash)}
@@ -2485,7 +2563,7 @@ function getPrimaryLabel({
 }): string {
   if (isLoading) return quote ? 'Creating order...' : 'Fetching route...';
   if (order) return 'Order created';
-  if (quote && isQuoteRefreshing) return 'Updating quote...';
+  if (quote && isQuoteRefreshing) return quoteMatchesInputs ? 'Create order' : 'Updating quote...';
   if (quote && !quoteMatchesInputs) return 'Refresh quote';
   if (quoteExpired) return 'Refresh quote';
   if (quote && createOrderBlocker) return createOrderBlocker;
@@ -2596,7 +2674,7 @@ function formatBps(value: number): string {
 
 function formatCountdown(value: number | null): string {
   if (value === null) return '--:--';
-  const minutes = Math.floor(value / 60).toString();
+  const minutes = Math.floor(value / 60).toString().padStart(2, '0');
   const seconds = (value % 60).toString().padStart(2, '0');
   return `${minutes}:${seconds}`;
 }
