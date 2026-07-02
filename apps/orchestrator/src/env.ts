@@ -4,7 +4,13 @@ import { Keypair, PublicKey } from "@solana/web3.js";
 import { getAssociatedTokenAddressSync } from "@solana/spl-token";
 import type { Address, Hex } from "viem";
 import { privateKeyToAccount } from "viem/accounts";
-import { BRIDGE_PROGRAM_ID, USDC_MINT } from "@wxmr/core";
+import {
+  BRIDGE_PROGRAM_ID,
+  CHAINS,
+  DEFAULT_EVM_RPC_URL_BY_CHAIN,
+  USDC_MINT,
+  type SourceChainId,
+} from "@wxmr/core";
 
 const require = createRequire(import.meta.url);
 const envLoader = require("../../../scripts/load-wxmr-env.cjs") as {
@@ -30,6 +36,9 @@ export interface Env {
   evmHotWalletPrivateKey?: Hex;
   evmHotWalletAddress?: Address;
   ethereumRpcUrl?: string;
+  evmRpcUrlByChain: Partial<Record<SourceChainId, string>>;
+  /** How long a per-order EVM/Solana deposit address accepts funds. */
+  depositWindowMinutes: number;
 }
 
 export function loadEnv(): Env {
@@ -53,7 +62,20 @@ export function loadEnv(): Env {
     evmHotWalletPrivateKey,
     evmHotWalletAddress,
     ethereumRpcUrl: process.env.ETHEREUM_RPC_URL,
+    evmRpcUrlByChain: loadEvmRpcUrls(),
+    depositWindowMinutes: Number(process.env.DEPOSIT_WINDOW_MINUTES ?? 60),
   };
+}
+
+function loadEvmRpcUrls(): Partial<Record<SourceChainId, string>> {
+  const urls: Partial<Record<SourceChainId, string>> = {};
+  for (const chain of Object.values(CHAINS)) {
+    if (chain.kind !== "evm") continue;
+    const override = chain.rpcEnv ? process.env[chain.rpcEnv] : undefined;
+    const url = override || DEFAULT_EVM_RPC_URL_BY_CHAIN[chain.id];
+    if (url) urls[chain.id] = url;
+  }
+  return urls;
 }
 
 function mustGet(name: string): string {
