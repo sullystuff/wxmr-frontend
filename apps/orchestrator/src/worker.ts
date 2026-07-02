@@ -38,8 +38,8 @@ const connection = new Connection(env.solanaRpcUrl, "confirmed");
 const mayan = new MayanClient({ apiKey: env.mayanApiKey });
 const chainflip = new ChainflipClient({ backendUrl: env.chainflipBackendUrl });
 const thorchain = new ThorchainClient({ thornodeUrl: env.thornodeUrl, clientId: env.thornodeClientId });
-const evm = env.evmHotWalletPrivateKey && env.ethereumRpcUrl
-  ? new EvmExecutor(privateKeyToAccount(env.evmHotWalletPrivateKey), env.ethereumRpcUrl, env.mayanApiKey)
+const evm = env.evmHotWalletPrivateKey
+  ? new EvmExecutor(privateKeyToAccount(env.evmHotWalletPrivateKey), env.evmRpcUrlByChain, env.mayanApiKey)
   : null;
 const solana = new SolanaExecutor(connection, env.solanaHotWallet, env.bridgeProgramId, env.jupiterApiKey, env.mayanApiKey);
 const DEFAULT_SLIPPAGE_BPS = 200;

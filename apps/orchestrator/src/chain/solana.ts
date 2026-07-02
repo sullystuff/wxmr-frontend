@@ -11,6 +11,7 @@ import {
 import {
   TOKEN_PROGRAM_ID,
   createAssociatedTokenAccountIdempotentInstruction,
+  createCloseAccountInstruction,
   createTransferInstruction,
   getAssociatedTokenAddressSync,
 } from "@solana/spl-token";
@@ -18,6 +19,7 @@ import { swapFromSolana, type Quote as MayanSdkQuote } from "@mayanfinance/swap-
 import {
   JupiterClient,
   USDC_MINT,
+  WSOL_MINT_ADDRESS,
   WXMR_MINT,
   WXMR_MINT_ADDRESS,
   type MayanSwiftQuote,
@@ -332,6 +334,141 @@ export class SolanaExecutor {
     return sendAndConfirmTransaction(this.connection, transaction, [this.hotWallet], {
       commitment: "confirmed",
     });
+  }
+
+  async getTokenBalance(mintAddress: string, owner: PublicKey): Promise<bigint> {
+    const ata = getAssociatedTokenAddressSync(new PublicKey(mintAddress), owner);
+    try {
+      const balance = await this.connection.getTokenAccountBalance(ata, "confirmed");
+      return BigInt(balance.value.amount);
+    } catch {
+      return 0n;
+    }
+  }
+
+  /**
+   * Funds sitting at a per-order deposit address. Native deposits count both
+   * raw lamports and any wSOL the sender wrapped; token deposits count the
+   * deposit owner's ATA balance.
+   */
+  async getDepositBalance(owner: PublicKey, mintAddress: string, native: boolean): Promise<bigint> {
+    if (!native) {
+      return this.getTokenBalance(mintAddress, owner);
+    }
+    const lamports = BigInt(await this.connection.getBalance(owner, "confirmed"));
+    const wrapped = await this.getTokenBalance(WSOL_MINT_ADDRESS, owner);
+    return lamports + wrapped;
+  }
+
+  /**
+   * Moves everything at a per-order deposit address into the hot wallet. The
+   * hot wallet pays the fee so the whole deposit is swept; per-order token
+   * accounts are closed to reclaim their rent.
+   */
+  async sweepDepositToHotWallet(owner: Keypair, mintAddress: string, native: boolean): Promise<{
+    signature: string;
+    amount: bigint;
+  }> {
+    const transaction = new Transaction();
+    let amount = 0n;
+    if (native) {
+      const lamports = BigInt(await this.connection.getBalance(owner.publicKey, "confirmed"));
+      const wsolAta = getAssociatedTokenAddressSync(new PublicKey(WSOL_MINT_ADDRESS), owner.publicKey);
+      const wrapped = await this.getTokenBalance(WSOL_MINT_ADDRESS, owner.publicKey);
+      if (wrapped > 0n) {
+        transaction.add(createCloseAccountInstruction(wsolAta, this.hotWallet.publicKey, owner.publicKey));
+      }
+      if (lamports > 0n) {
+        transaction.add(
+          SystemProgram.transfer({
+            fromPubkey: owner.publicKey,
+            toPubkey: this.hotWallet.publicKey,
+            lamports: Number(lamports),
+          }),
+        );
+      }
+      amount = lamports + wrapped;
+    } else {
+      const mint = new PublicKey(mintAddress);
+      const fromAta = getAssociatedTokenAddressSync(mint, owner.publicKey);
+      const toAta = getAssociatedTokenAddressSync(mint, this.hotWallet.publicKey);
+      amount = await this.getTokenBalance(mintAddress, owner.publicKey);
+      if (amount <= 0n) {
+        throw new Error("deposit sweep pending: token balance is empty");
+      }
+      transaction.add(
+        createAssociatedTokenAccountIdempotentInstruction(
+          this.hotWallet.publicKey,
+          toAta,
+          this.hotWallet.publicKey,
+          mint,
+        ),
+        createTransferInstruction(fromAta, toAta, owner.publicKey, amount, [], TOKEN_PROGRAM_ID),
+        createCloseAccountInstruction(fromAta, this.hotWallet.publicKey, owner.publicKey),
+      );
+    }
+    if (amount <= 0n) {
+      throw new Error("deposit sweep pending: nothing to sweep");
+    }
+    transaction.feePayer = this.hotWallet.publicKey;
+    const signature = await sendAndConfirmTransaction(this.connection, transaction, [this.hotWallet, owner], {
+      commitment: "confirmed",
+    });
+    return { signature, amount };
+  }
+
+  /** Returns everything at a per-order deposit address to `refundAddress`; the hot wallet pays fees and rent. */
+  async refundDeposit(owner: Keypair, mintAddress: string, native: boolean, refundAddress: string): Promise<{
+    signature: string;
+    amount: bigint;
+  }> {
+    const refundOwner = new PublicKey(refundAddress);
+    const transaction = new Transaction();
+    let amount = 0n;
+    if (native) {
+      const lamports = BigInt(await this.connection.getBalance(owner.publicKey, "confirmed"));
+      const wsolAta = getAssociatedTokenAddressSync(new PublicKey(WSOL_MINT_ADDRESS), owner.publicKey);
+      const wrapped = await this.getTokenBalance(WSOL_MINT_ADDRESS, owner.publicKey);
+      if (wrapped > 0n) {
+        // Unwraps into the deposit account first so the refund arrives as native SOL.
+        transaction.add(createCloseAccountInstruction(wsolAta, owner.publicKey, owner.publicKey));
+      }
+      amount = lamports + wrapped;
+      if (amount > 0n) {
+        transaction.add(
+          SystemProgram.transfer({
+            fromPubkey: owner.publicKey,
+            toPubkey: refundOwner,
+            lamports: Number(amount),
+          }),
+        );
+      }
+    } else {
+      const mint = new PublicKey(mintAddress);
+      const fromAta = getAssociatedTokenAddressSync(mint, owner.publicKey);
+      const toAta = getAssociatedTokenAddressSync(mint, refundOwner);
+      amount = await this.getTokenBalance(mintAddress, owner.publicKey);
+      if (amount > 0n) {
+        transaction.add(
+          createAssociatedTokenAccountIdempotentInstruction(
+            this.hotWallet.publicKey,
+            toAta,
+            refundOwner,
+            mint,
+          ),
+          createTransferInstruction(fromAta, toAta, owner.publicKey, amount, [], TOKEN_PROGRAM_ID),
+          createCloseAccountInstruction(fromAta, this.hotWallet.publicKey, owner.publicKey),
+        );
+      }
+    }
+    if (amount <= 0n) {
+      throw new Error("deposit refund pending: nothing to refund");
+    }
+    transaction.feePayer = this.hotWallet.publicKey;
+    const signature = await sendAndConfirmTransaction(this.connection, transaction, [this.hotWallet, owner], {
+      commitment: "confirmed",
+    });
+    return { signature, amount };
   }
 
   async verifySolanaTransfer(funding: SolanaTransferFunding, signature: string): Promise<{ amount: bigint }> {
