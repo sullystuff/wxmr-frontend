@@ -341,7 +341,16 @@ export default function SwapPage() {
   }, [destinationChain]);
 
   useEffect(() => {
-    if (!order || ['completed', 'failed', 'expired', 'refunded'].includes(order.status)) return;
+    if (!order) return;
+    // Expired address-funded EVM/Solana orders stay revivable server-side
+    // for 48h (a late deposit resumes them), so keep watching those while
+    // the page is open.
+    const revivableWhenExpired = order.funding.type === 'deposit-address' &&
+      order.sourceChain !== 'monero' &&
+      order.sourceChain !== 'bitcoin';
+    const terminal = ['completed', 'failed', 'refunded'].includes(order.status) ||
+      (order.status === 'expired' && !revivableWhenExpired);
+    if (terminal) return;
     const timer = setInterval(async () => {
       const next = await api<Order>(`/orders/${order.id}`);
       setOrder(next);
