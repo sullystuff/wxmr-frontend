@@ -243,6 +243,41 @@ function broadcastGraceElapsed(funding: DepositAddressFunding): boolean {
   return Date.now() - Date.parse(funding.lastExecutionAttemptAt) > BROADCAST_GRACE_MS;
 }
 
+/**
+ * Clears a broadcast marker after a failed/reverted/dropped transaction and
+ * charges it against the retry budget — otherwise a deterministically
+ * reverting forward would rebuild forever, burning gas on every cycle,
+ * without ever escalating to a refund.
+ */
+function clearMarkerAndCountAttempt(order: Order, funding: DepositAddressFunding, detail: string): void {
+  const cleared = {
+    ...funding,
+    pendingSweepSignature: undefined,
+    pendingSweepAmount: undefined,
+    pendingForwardTxHash: undefined,
+  };
+  const attempts = (funding.executionAttempts ?? 0) + 1;
+  if (attempts >= EXECUTION_RETRY_LIMIT) {
+    store.updateOrder(
+      order.id,
+      { status: "refunding", error: detail, funding: { ...cleared, executionAttempts: attempts } },
+      `${detail}; retry limit reached, refunding deposit`,
+    );
+    return;
+  }
+  store.updateOrder(
+    order.id,
+    {
+      funding: {
+        ...cleared,
+        executionAttempts: attempts,
+        lastExecutionAttemptAt: new Date().toISOString(),
+      },
+    },
+    `${detail} (attempt ${attempts}/${EXECUTION_RETRY_LIMIT})`,
+  );
+}
+
 /** Sends of at least 90% of the quoted amount execute immediately; anything smaller waits for more chunks until expiry. */
 function depositThreshold(order: Order, funding: DepositAddressFunding): bigint {
   const expected = BigInt(funding.expectedAmount ?? order.amount);
@@ -334,13 +369,15 @@ async function processSolanaAddressDeposit(order: Order, funding: DepositAddress
     if (!broadcastGraceElapsed(funding)) {
       throw new Error("deposit sweep pending confirmation");
     }
+    const liveBalance = await solana.getDepositBalance(owner.publicKey, funding.asset, native);
+    if (liveBalance <= 0n) {
+      // The deposit moved but the signature is not visible yet (lagging
+      // RPC): keep waiting rather than declare the sweep dead.
+      throw new Error("deposit sweep pending: address empty but signature not visible yet");
+    }
     // Past the grace window the sweep's blockhash has expired, so it can
     // never land — safe to rebuild it from the live balance.
-    store.updateOrder(
-      order.id,
-      { funding: { ...funding, pendingSweepSignature: undefined, pendingSweepAmount: undefined } },
-      `sweep ${funding.pendingSweepSignature} did not land; retrying`,
-    );
+    clearMarkerAndCountAttempt(order, funding, `sweep ${funding.pendingSweepSignature} did not land`);
     return;
   }
 
@@ -425,11 +462,7 @@ async function processEvmAddressDeposit(order: Order, funding: DepositAddressFun
       return;
     }
     if (receiptStatus === "reverted") {
-      store.updateOrder(
-        order.id,
-        { funding: { ...funding, pendingForwardTxHash: undefined } },
-        `Mayan Swift forward reverted on-chain; re-quoting: ${funding.pendingForwardTxHash}`,
-      );
+      clearMarkerAndCountAttempt(order, funding, `Mayan Swift forward ${funding.pendingForwardTxHash} reverted on-chain`);
       return;
     }
     if (!broadcastGraceElapsed(funding)) {
@@ -440,13 +473,11 @@ async function processEvmAddressDeposit(order: Order, funding: DepositAddressFun
       : await evm.getErc20Balance(chainId, funding.asset as Address, account.address);
     if (liveBalance > 0n) {
       // Deposit untouched and no receipt after the grace window: the forward
-      // was dropped. A rebuilt forward reuses the same nonce, so at most one
-      // of them can ever land.
-      store.updateOrder(
-        order.id,
-        { funding: { ...funding, pendingForwardTxHash: undefined } },
-        `Mayan Swift forward ${funding.pendingForwardTxHash} not found after grace; retrying`,
-      );
+      // was dropped. A rebuilt forward normally reuses the same nonce so at
+      // most one lands; if a mempool-stuck original slips through anyway,
+      // whichever loses reverts on the already-spent balance — gas is
+      // wasted, the deposit is not.
+      clearMarkerAndCountAttempt(order, funding, `Mayan Swift forward ${funding.pendingForwardTxHash} not found after grace`);
       return;
     }
     // Funds moved but the receipt is not visible yet — keep waiting rather
@@ -1412,6 +1443,9 @@ async function processReverseMayanSettlement(order: Order): Promise<void> {
 
 async function refund(order: Order): Promise<void> {
   if (!order.refundAddress) {
+    if (order.funding.type === "deposit-address") {
+      throw new Error(`refund pending: no refund address on file — supply one via POST /orders/${order.id}/refund-address`);
+    }
     throw new Error("refund required but no Solana refund address was provided");
   }
   if (order.funding.type === "deposit-address" && CHAINS[order.funding.chainId].kind === "evm") {
