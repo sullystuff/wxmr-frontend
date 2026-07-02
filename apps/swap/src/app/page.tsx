@@ -853,7 +853,10 @@ function TradeAmountPanel({
           spellCheck={false}
           value={amount}
           onChange={(event) => {
-            const next = event.target.value.replace(',', '.');
+            const raw = event.target.value.replace(/[\s_]/g, '');
+            const next = raw.includes('.') || (raw.match(/,/g) ?? []).length > 1
+              ? raw.replace(/,/g, '')
+              : raw.replace(',', '.');
             if (/^\d*\.?\d*$/.test(next)) onAmountChange(next);
           }}
           placeholder="0.00"
@@ -2603,7 +2606,7 @@ function getPrimaryLabel({
 }): string {
   if (isLoading) return quote ? 'Creating order...' : 'Fetching route...';
   if (order) return 'Order created';
-  if (quote && isQuoteRefreshing) return quoteMatchesInputs ? 'Create order' : 'Updating quote...';
+  if (quote && isQuoteRefreshing) return quoteMatchesInputs ? (createOrderBlocker ?? 'Create order') : 'Updating quote...';
   if (quote && !quoteMatchesInputs) return 'Refresh quote';
   if (quoteExpired) return 'Refresh quote';
   if (quote && createOrderBlocker) return createOrderBlocker;
