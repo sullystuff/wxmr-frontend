@@ -54,10 +54,21 @@ process.on("SIGTERM", () => {
   shuttingDown = true;
 });
 
+// Late deposits: how often to rescan recently expired address orders, and
+// how long after expiry a deposit still revives its order.
+const LATE_DEPOSIT_SCAN_TICKS = 200; // ~10 minutes at the 3s tick
+const LATE_DEPOSIT_WINDOW_MS = 48 * 60 * 60 * 1000;
+let tickCounter = 0;
+
 while (!shuttingDown) {
   await tick().catch((error) => {
     console.error("worker tick failed", error);
   });
+  if (tickCounter++ % LATE_DEPOSIT_SCAN_TICKS === 0) {
+    await scanExpiredAddressDeposits().catch((error) => {
+      console.error("late deposit scan failed", error);
+    });
+  }
   await sleep(3_000);
 }
 
@@ -161,6 +172,35 @@ async function processOrder(order: Order): Promise<void> {
       await refund(order);
     }
   }
+}
+
+async function scanExpiredAddressDeposits(): Promise<void> {
+  const since = new Date(Date.now() - LATE_DEPOSIT_WINDOW_MS).toISOString();
+  for (const order of store.listExpiredOrdersSince(since)) {
+    if (!isWatchedAddressOrder(order)) continue;
+    const funding = order.funding as DepositAddressFunding;
+    const balance = await addressDepositBalance(order, funding).catch(() => 0n);
+    if (balance <= 0n) continue;
+    // A deposit landed after expiry — revive the order; the watcher's
+    // expired-order branch executes whatever is there at a fresh quote.
+    store.updateOrder(
+      order.id,
+      { status: "awaiting_deposit" },
+      `late deposit detected (${balance} base units); resuming order`,
+    );
+  }
+}
+
+async function addressDepositBalance(order: Order, funding: DepositAddressFunding): Promise<bigint> {
+  if (funding.chainId === "solana") {
+    const owner = deriveSolanaDepositOwner(env.solanaHotWallet, order.id);
+    return solana.getDepositBalance(owner.publicKey, funding.asset, Boolean(funding.native));
+  }
+  if (!evm || !env.evmHotWalletPrivateKey || !evm.hasChain(funding.chainId)) return 0n;
+  const account = deriveEvmDepositAccount(env.evmHotWalletPrivateKey, order.id);
+  return funding.native
+    ? evm.getNativeBalance(funding.chainId, account.address)
+    : evm.getErc20Balance(funding.chainId, funding.asset as Address, account.address);
 }
 
 async function watchChainflipDeposit(order: Order, funding: DepositAddressFunding): Promise<void> {

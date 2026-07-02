@@ -110,6 +110,13 @@ export class Store {
     return rows.map(rowToOrder);
   }
 
+  listExpiredOrdersSince(sinceIso: string, limit = 100): Order[] {
+    const rows = this.db
+      .prepare("SELECT * FROM orders WHERE status = 'expired' AND expires_at >= ? ORDER BY expires_at DESC LIMIT ?")
+      .all(sinceIso, limit) as OrderRow[];
+    return rows.map(rowToOrder);
+  }
+
   updateOrder(id: string, patch: Partial<Order>, eventDetail?: string): Order {
     const current = this.getOrder(id);
     if (!current) throw new Error(`Order ${id} not found`);
