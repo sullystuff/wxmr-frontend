@@ -1,0 +1,9 @@
+{
+  "files": [
+    "apps/bridge/src/app/layout.tsx",
+    "apps/swap/src/app/layout.tsx"
+  ],
+  "insertBefore": "</body>",
+  "commentSyntax": "jsx",
+  "cspChecked": true
+}
