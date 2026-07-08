@@ -30,4 +30,4 @@ export const MIN_WITHDRAW_PICONERO = MIN_XMR_WITHDRAWAL_PICONERO;
 
 // Relayer dust filter (wxmr-backend/src/monero.ts MIN_TRANSFER_AMOUNT): individual
 // incoming transfers below this are never tracked, so they can't count toward a mint.
-export const XMR_DEPOSIT_DUST_PICONERO = 10_000_000_000n; // 0.01 XMR
+export const XMR_DEPOSIT_DUST_PICONERO = 100_000_000_000n; // 0.01 XMR
