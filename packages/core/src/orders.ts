@@ -119,7 +119,7 @@ export interface MayanQuoteMetadata {
 }
 
 export interface ThorchainQuoteMetadata {
-  mode: "direct-solana" | "direct-destination" | "eth-usdc-fallback";
+  mode: "direct-solana" | "direct-destination" | "eth-usdc-fallback" | "eth-usdc-destination";
   fromAsset: string;
   toAsset: string;
   expectedOut: string;
@@ -128,6 +128,8 @@ export interface ThorchainQuoteMetadata {
   inboundAddress: string;
   memo: string;
   expiry: number;
+  router?: string;
+  slippageBps?: number;
   estimatedTimeSeconds?: number;
   fees?: unknown;
   mayan?: MayanQuoteMetadata;

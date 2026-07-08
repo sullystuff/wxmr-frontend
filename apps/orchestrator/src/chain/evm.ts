@@ -4,6 +4,7 @@ import {
   createPublicClient,
   createWalletClient,
   defineChain,
+  encodeFunctionData,
   http,
   keccak256,
   type Address,
@@ -64,6 +65,22 @@ const ERC20_TRANSFER_ABI = [
       { name: "amount", type: "uint256" },
     ],
     outputs: [{ name: "", type: "bool" }],
+  },
+] as const;
+
+const THORCHAIN_ROUTER_ABI = [
+  {
+    type: "function",
+    name: "depositWithExpiry",
+    stateMutability: "payable",
+    inputs: [
+      { name: "vault", type: "address" },
+      { name: "asset", type: "address" },
+      { name: "amount", type: "uint256" },
+      { name: "memo", type: "string" },
+      { name: "expiration", type: "uint256" },
+    ],
+    outputs: [],
   },
 ] as const;
 
@@ -201,6 +218,56 @@ export class EvmExecutor {
   /** Hot-wallet Mayan forward on Ethereum (BTC eth-usdc fallback routes). */
   executeMayanSwift(quote: MayanSwiftQuote, destinationAddress: string): Promise<Hex> {
     return this.executeMayanSwiftFrom("ethereum", this.account, quote, destinationAddress);
+  }
+
+  async executeThorchainErc20Swap(params: {
+    chainId: SourceChainId;
+    token: Address;
+    router: Address;
+    vault: Address;
+    amount: bigint;
+    memo: string;
+    expiry: bigint;
+    onSigned?: (txHash: Hex) => void | Promise<void>;
+  }): Promise<Hex> {
+    if (params.amount <= 0n) throw new Error("THORChain swap amount must be positive");
+    const publicClient = this.publicClient(params.chainId);
+    const walletClient = this.walletClient(params.chainId, this.account);
+    const balance = await this.getErc20Balance(params.chainId, params.token, this.account.address);
+    if (balance < params.amount) {
+      throw new Error(`EVM hot wallet holds ${balance} of ${params.token} on ${params.chainId}, below required ${params.amount}`);
+    }
+    const allowance = await publicClient.readContract({
+      address: params.token,
+      abi: ERC20_ALLOWANCE_ABI,
+      functionName: "allowance",
+      args: [this.account.address, params.router],
+    });
+    if (allowance < params.amount) {
+      const approveHash = await walletClient.writeContract({
+        address: params.token,
+        abi: ERC20_APPROVE_ABI,
+        functionName: "approve",
+        args: [params.router, params.amount],
+      });
+      await publicClient.waitForTransactionReceipt({ hash: approveHash });
+    }
+
+    const data = encodeFunctionData({
+      abi: THORCHAIN_ROUTER_ABI,
+      functionName: "depositWithExpiry",
+      args: [params.vault, params.token, params.amount, params.memo, params.expiry],
+    });
+    const request = await walletClient.prepareTransactionRequest({
+      to: params.router,
+      data,
+      value: 0n,
+    });
+    const serializedTransaction = await walletClient.signTransaction(request);
+    const hash = keccak256(serializedTransaction);
+    await params.onSigned?.(hash);
+    await publicClient.sendRawTransaction({ serializedTransaction });
+    return hash;
   }
 
   /**

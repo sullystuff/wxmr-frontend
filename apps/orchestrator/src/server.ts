@@ -63,6 +63,7 @@ const DEFAULT_EXECUTION_POLICY: ExecutionPolicy = "execute-anyway";
 const DEFAULT_SLIPPAGE_BPS = 200;
 const MAX_SLIPPAGE_BPS = 2_000;
 const USDC_DECIMALS = 6;
+const BTC_DECIMALS = 8;
 
 type BtcSolanaUsdcRouteBase = {
   expectedSolanaUsdcOut: string;
@@ -279,11 +280,23 @@ function registerRoutes(prefix: "" | "/api"): void {
         return reply.code(400).send({ error: "destinationAddress must be a Solana wallet address" });
       }
     }
-    if (!CHAINS[outputChain].mayanChain) {
+    if (outputChain !== "bitcoin" && !CHAINS[outputChain].mayanChain) {
       return reply.code(400).send({ error: "destination chain is not supported by Mayan" });
     }
 
-    const quote = outputChain === "solana" ? await quoteXmrToSolana({
+    const quote = outputChain === "bitcoin" ? await quoteXmrToBtc({
+      direction,
+      sourceChain: outputChain,
+      sourceToken: outputToken,
+      destinationChain: outputChain,
+      destinationToken: outputToken,
+      amount: body.amount,
+      xmrAddress: xmrAddress!,
+      destinationAddress: body.destinationAddress,
+      refundAddress: body.refundAddress,
+      slippageBps: body.slippageBps,
+      executionPolicy,
+    }) : outputChain === "solana" ? await quoteXmrToSolana({
       direction,
       sourceChain: outputChain,
       sourceToken: outputToken,
@@ -1166,6 +1179,92 @@ async function quoteXmrToSolana(input: QuoteRequest): Promise<Quote> {
   };
 }
 
+async function quoteXmrToBtc(input: QuoteRequest): Promise<Quote> {
+  if (!input.destinationAddress) throw new Error("destinationAddress is required");
+  if (!env.evmHotWalletAddress) {
+    throw new Error("EVM_HOTWALLET_PRIVATE_KEY is required for BTC output routes");
+  }
+  const slippageBps = normalizeSlippageBps(input.slippageBps);
+  const inputAmount = BigInt(input.amount);
+  const afterService = applyBps(inputAmount, 10_000 - env.serviceFeeBps);
+  const expectedJupiterQuote = await jupiter.quoteWxmrToUsdc(afterService);
+  const expectedSolanaUsdcOut = expectedJupiterQuote.outAmount;
+  const minSolanaUsdcOut = applyBps(BigInt(expectedSolanaUsdcOut), 10_000 - slippageBps).toString();
+  const mayanQuote = await mayan.fetchSwiftQuoteForRoute({
+    fromChain: "solana",
+    fromToken: USDC_MINT_ADDRESS,
+    toChain: "ethereum",
+    toToken: CHAINS.ethereum.usdc!,
+    amount: expectedSolanaUsdcOut,
+    destinationAddress: env.evmHotWalletAddress,
+    slippageBps,
+  });
+  const thorchainQuote = await thorchain.fetchSwapQuote({
+    fromAsset: THORCHAIN.ethUsdcAsset,
+    toAsset: THORCHAIN.btcAsset,
+    amount: mayanQuote.expectedAmountOutBaseUnits,
+    destination: input.destinationAddress,
+  });
+  const estimatedBtcOut = thorchainAmountToBaseUnits(thorchainQuote.expected_amount_out, BTC_DECIMALS);
+  const minBtcOut = applyBps(BigInt(estimatedBtcOut), 10_000 - slippageBps).toString();
+
+  return {
+    id: crypto.randomUUID(),
+    direction: "xmr-to-mayan",
+    sourceChain: "monero",
+    sourceToken: "XMR",
+    sourceTokenSymbol: "XMR",
+    sourceTokenDecimals: XMR_DECIMALS,
+    destinationChain: "bitcoin",
+    destinationToken: THORCHAIN.btcAsset,
+    inputAmount: input.amount,
+    xmrAddress: input.xmrAddress ?? "",
+    destinationAddress: input.destinationAddress,
+    destinationTokenSymbol: "BTC",
+    destinationTokenDecimals: BTC_DECIMALS,
+    refundAddress: input.refundAddress,
+    estimatedWxmrOut: afterService.toString(),
+    estimatedXmrOut: input.amount,
+    minWxmrOut: afterService.toString(),
+    minXmrOut: input.amount,
+    estimatedDestinationOut: estimatedBtcOut,
+    minDestinationOut: minBtcOut,
+    bridgeFeeBps: 0,
+    serviceFeeBps: env.serviceFeeBps,
+    executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
+    jupiterPriceImpactPct: expectedJupiterQuote.priceImpactPct ?? "0",
+    expiresAt: new Date(thorchainQuote.expiry * 1000).toISOString(),
+    route: "thorchain",
+    routeSummary: "native XMR -> XMR-SOL via Monero Bridge -> USDC-SOL via jup.ag -> USDC-ETH via Mayan Swift v2 -> native BTC via THORChain",
+    mayan: {
+      quote: mayanQuote,
+      expectedSolanaUsdcOut,
+      minSolanaUsdcOut,
+      etaSeconds: mayanQuote.etaSeconds,
+      clientEta: mayanQuote.clientEta,
+      protocolBps: mayanQuote.protocolBps,
+      quoteId: mayanQuote.quoteId,
+    },
+    thorchain: {
+      mode: "eth-usdc-destination",
+      fromAsset: THORCHAIN.ethUsdcAsset,
+      toAsset: THORCHAIN.btcAsset,
+      expectedOut: thorchainQuote.expected_amount_out,
+      expectedSolanaUsdcOut: mayanQuote.expectedAmountOutBaseUnits,
+      minSolanaUsdcOut: mayanQuote.minReceivedBaseUnits,
+      inboundAddress: thorchainQuote.inbound_address!,
+      memo: thorchainQuote.memo!,
+      expiry: thorchainQuote.expiry,
+      router: thorchainQuote.router,
+      slippageBps,
+      estimatedTimeSeconds: (mayanQuote.etaSeconds ?? 0) + (thorchainSeconds(thorchainQuote) ?? 0),
+      fees: thorchainQuote.fees,
+      mayan: mayanMetadata(mayanQuote),
+      directDestination: true,
+    },
+  };
+}
+
 async function quoteAssetToAsset(input: QuoteRequest): Promise<Quote> {
   if (!input.destinationChain || !input.destinationToken || !input.destinationAddress) {
     throw new Error("destinationChain, destinationToken, and destinationAddress are required");
@@ -1175,6 +1274,9 @@ async function quoteAssetToAsset(input: QuoteRequest): Promise<Quote> {
   }
   if (input.sourceChain === "bitcoin") {
     return quoteBtcToAsset(input);
+  }
+  if (input.destinationChain === "bitcoin") {
+    return quoteAssetToBtc(input);
   }
   if (input.sourceChain === "solana") {
     return input.destinationChain === "solana"
@@ -1634,6 +1736,186 @@ async function quoteSolanaToMayanAsset(input: QuoteRequest): Promise<Quote> {
   };
 }
 
+async function quoteAssetToBtc(input: QuoteRequest): Promise<Quote> {
+  if (!input.destinationAddress) throw new Error("destinationAddress is required");
+  if (!env.evmHotWalletAddress) {
+    throw new Error("EVM_HOTWALLET_PRIVATE_KEY is required for BTC output routes");
+  }
+  if (input.sourceChain === "solana") {
+    return quoteSolanaAssetToBtc(input);
+  }
+  if (CHAINS[input.sourceChain].kind !== "evm") {
+    throw new Error("this source chain needs a wallet-specific BTC output path that is not enabled yet");
+  }
+  return quoteMayanAssetToBtc(input);
+}
+
+async function quoteSolanaAssetToBtc(input: QuoteRequest): Promise<Quote> {
+  const sourceToken = await findToken("solana", input.sourceToken);
+  const slippageBps = normalizeSlippageBps(input.slippageBps);
+  const sameUsdc = sameToken(input.sourceToken, USDC_MINT_ADDRESS);
+  const expectedSolanaUsdcOut = sameUsdc
+    ? input.amount
+    : (await jupiter.quote({
+      inputMint: input.sourceToken,
+      outputMint: USDC_MINT_ADDRESS,
+      amount: input.amount,
+      taker: env.solanaHotWallet.publicKey.toBase58(),
+    })).outAmount;
+  const minSolanaUsdcOut = applyBps(BigInt(expectedSolanaUsdcOut), 10_000 - slippageBps).toString();
+  const mayanQuote = await mayan.fetchSwiftQuoteForRoute({
+    fromChain: "solana",
+    fromToken: USDC_MINT_ADDRESS,
+    toChain: "ethereum",
+    toToken: CHAINS.ethereum.usdc!,
+    amount: expectedSolanaUsdcOut,
+    destinationAddress: env.evmHotWalletAddress!,
+    slippageBps,
+  });
+  const thorchainQuote = await thorchain.fetchSwapQuote({
+    fromAsset: THORCHAIN.ethUsdcAsset,
+    toAsset: THORCHAIN.btcAsset,
+    amount: mayanQuote.expectedAmountOutBaseUnits,
+    destination: input.destinationAddress!,
+  });
+  const estimatedBtcOut = thorchainAmountToBaseUnits(thorchainQuote.expected_amount_out, BTC_DECIMALS);
+  const minBtcOut = applyBps(BigInt(estimatedBtcOut), 10_000 - slippageBps).toString();
+
+  return {
+    id: crypto.randomUUID(),
+    direction: "asset-to-asset",
+    sourceChain: "solana",
+    sourceToken: sourceToken.contract ?? input.sourceToken,
+    sourceTokenSymbol: sourceToken.symbol,
+    sourceTokenDecimals: sourceToken.decimals,
+    destinationChain: "bitcoin",
+    destinationToken: THORCHAIN.btcAsset,
+    inputAmount: input.amount,
+    xmrAddress: "",
+    destinationAddress: input.destinationAddress,
+    destinationTokenSymbol: "BTC",
+    destinationTokenDecimals: BTC_DECIMALS,
+    refundAddress: input.refundAddress,
+    estimatedWxmrOut: "0",
+    estimatedXmrOut: "0",
+    minWxmrOut: "0",
+    minXmrOut: "0",
+    estimatedDestinationOut: estimatedBtcOut,
+    minDestinationOut: minBtcOut,
+    bridgeFeeBps: 0,
+    serviceFeeBps: 0,
+    executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
+    jupiterPriceImpactPct: "0",
+    expiresAt: new Date(thorchainQuote.expiry * 1000).toISOString(),
+    route: "thorchain",
+    routeSummary: sameUsdc
+      ? "USDC-SOL -> USDC-ETH via Mayan Swift v2 -> native BTC via THORChain"
+      : `${sourceToken.symbol ?? "Token"} on Solana -> USDC-SOL via jup.ag -> USDC-ETH via Mayan Swift v2 -> native BTC via THORChain`,
+    mayan: {
+      quote: mayanQuote,
+      expectedSolanaUsdcOut,
+      minSolanaUsdcOut,
+      etaSeconds: mayanQuote.etaSeconds,
+      clientEta: mayanQuote.clientEta,
+      protocolBps: mayanQuote.protocolBps,
+      quoteId: mayanQuote.quoteId,
+    },
+    thorchain: {
+      mode: "eth-usdc-destination",
+      fromAsset: THORCHAIN.ethUsdcAsset,
+      toAsset: THORCHAIN.btcAsset,
+      expectedOut: thorchainQuote.expected_amount_out,
+      expectedSolanaUsdcOut: mayanQuote.expectedAmountOutBaseUnits,
+      minSolanaUsdcOut: mayanQuote.minReceivedBaseUnits,
+      inboundAddress: thorchainQuote.inbound_address!,
+      memo: thorchainQuote.memo!,
+      expiry: thorchainQuote.expiry,
+      router: thorchainQuote.router,
+      slippageBps,
+      estimatedTimeSeconds: (mayanQuote.etaSeconds ?? 0) + (thorchainSeconds(thorchainQuote) ?? 0),
+      fees: thorchainQuote.fees,
+      mayan: mayanMetadata(mayanQuote),
+      directDestination: true,
+    },
+  };
+}
+
+async function quoteMayanAssetToBtc(input: QuoteRequest): Promise<Quote> {
+  const slippageBps = normalizeSlippageBps(input.slippageBps);
+  const mayanToSolanaQuote = await mayan.fetchSwiftQuote({
+    sourceChain: input.sourceChain,
+    sourceToken: input.sourceToken,
+    amount: input.amount,
+    destinationAddress: env.solanaHotWallet.publicKey.toBase58(),
+    slippageBps,
+  });
+  const mayanToEthQuote = await mayan.fetchSwiftQuoteForRoute({
+    fromChain: "solana",
+    fromToken: USDC_MINT_ADDRESS,
+    toChain: "ethereum",
+    toToken: CHAINS.ethereum.usdc!,
+    amount: mayanToSolanaQuote.expectedAmountOutBaseUnits,
+    destinationAddress: env.evmHotWalletAddress!,
+    slippageBps,
+  });
+  const thorchainQuote = await thorchain.fetchSwapQuote({
+    fromAsset: THORCHAIN.ethUsdcAsset,
+    toAsset: THORCHAIN.btcAsset,
+    amount: mayanToEthQuote.expectedAmountOutBaseUnits,
+    destination: input.destinationAddress!,
+  });
+  const estimatedBtcOut = thorchainAmountToBaseUnits(thorchainQuote.expected_amount_out, BTC_DECIMALS);
+  const minBtcOut = applyBps(BigInt(estimatedBtcOut), 10_000 - slippageBps).toString();
+
+  return {
+    id: crypto.randomUUID(),
+    direction: "asset-to-asset",
+    sourceChain: input.sourceChain,
+    sourceToken: mayanToSolanaQuote.fromToken.contract ?? input.sourceToken,
+    sourceTokenSymbol: mayanToSolanaQuote.fromToken.symbol,
+    sourceTokenDecimals: mayanToSolanaQuote.fromToken.decimals,
+    destinationChain: "bitcoin",
+    destinationToken: THORCHAIN.btcAsset,
+    inputAmount: input.amount,
+    xmrAddress: "",
+    destinationAddress: input.destinationAddress,
+    destinationTokenSymbol: "BTC",
+    destinationTokenDecimals: BTC_DECIMALS,
+    refundAddress: input.refundAddress,
+    estimatedWxmrOut: "0",
+    estimatedXmrOut: "0",
+    minWxmrOut: "0",
+    minXmrOut: "0",
+    estimatedDestinationOut: estimatedBtcOut,
+    minDestinationOut: minBtcOut,
+    bridgeFeeBps: 0,
+    serviceFeeBps: 0,
+    executionPolicy: input.executionPolicy ?? DEFAULT_EXECUTION_POLICY,
+    jupiterPriceImpactPct: String(mayanToSolanaQuote.priceImpact ?? 0),
+    expiresAt: new Date(thorchainQuote.expiry * 1000).toISOString(),
+    route: "thorchain",
+    routeSummary: `${mayanToSolanaQuote.fromToken.symbol ?? "Token"} on ${CHAINS[input.sourceChain].name} -> USDC-SOL via Mayan Swift v2 -> USDC-ETH via Mayan Swift v2 -> native BTC via THORChain`,
+    mayan: mayanMetadata(mayanToSolanaQuote),
+    thorchain: {
+      mode: "eth-usdc-destination",
+      fromAsset: THORCHAIN.ethUsdcAsset,
+      toAsset: THORCHAIN.btcAsset,
+      expectedOut: thorchainQuote.expected_amount_out,
+      expectedSolanaUsdcOut: mayanToEthQuote.expectedAmountOutBaseUnits,
+      minSolanaUsdcOut: mayanToEthQuote.minReceivedBaseUnits,
+      inboundAddress: thorchainQuote.inbound_address!,
+      memo: thorchainQuote.memo!,
+      expiry: thorchainQuote.expiry,
+      router: thorchainQuote.router,
+      slippageBps,
+      estimatedTimeSeconds: (mayanToSolanaQuote.etaSeconds ?? 0) + (mayanToEthQuote.etaSeconds ?? 0) + (thorchainSeconds(thorchainQuote) ?? 0),
+      fees: thorchainQuote.fees,
+      mayan: mayanMetadata(mayanToEthQuote),
+      directDestination: true,
+    },
+  };
+}
+
 async function quoteBtcToAsset(input: QuoteRequest): Promise<Quote> {
   const slippageBps = normalizeSlippageBps(input.slippageBps);
   const candidates: QuoteCandidate[] = [];
@@ -2032,7 +2314,7 @@ async function buildFundingInstructions(orderId: string, quote: Quote, fundingMo
     };
   }
 
-  if (quote.route === "thorchain") {
+  if (quote.route === "thorchain" && quote.sourceChain === "bitcoin") {
     if (!quote.thorchain) throw new Error("THORChain quote metadata is missing");
     return {
       type: "deposit-address",
@@ -2280,6 +2562,9 @@ function inferDirection(sourceChain: SourceChainId, destinationChain: SourceChai
 }
 
 function requiresSolanaHotWalletPayout(quote: Quote): boolean {
+  if (quote.direction === "asset-to-asset" && quote.route === "thorchain" && quote.destinationChain === "bitcoin") {
+    return true;
+  }
   if (
     quote.direction !== "asset-to-asset" ||
     quote.sourceChain === "solana" ||

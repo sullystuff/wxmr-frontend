@@ -66,6 +66,7 @@ const MIN_XMR_WITHDRAWAL_XMR = formatXmrAmount(MIN_XMR_WITHDRAWAL_PICONERO);
 const QUOTE_PLACEHOLDER_SOLANA_ADDRESS = '9wtvVxue6wfwVf27cG11tyfQXyHZnyz5gHR5okWh26sX';
 const QUOTE_PLACEHOLDER_EVM_ADDRESS = '0x000000000000000000000000000000000000dEaD';
 const QUOTE_PLACEHOLDER_SUI_ADDRESS = `0x${'1'.repeat(64)}`;
+const QUOTE_PLACEHOLDER_BTC_ADDRESS = 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh';
 const TOKEN_RELEVANCE_BY_CHAIN: Partial<Record<SourceChainId, readonly string[]>> = {
   bitcoin: ['BTC'],
   ethereum: ['ETH', 'USDC', 'USDT', 'WBTC', 'DAI', 'LINK', 'UNI', 'AAVE', 'ENA', 'PEPE', 'SHIB'],
@@ -2157,12 +2158,13 @@ function WalletLogo({ icon, id, name }: { icon?: string; id: WalletIconId; name:
 function OrderStatusPanel({ order }: { order: Order | null }) {
   const isSolanaDirect = order?.sourceChain === 'solana';
   const isBitcoinDeposit = order?.funding.type === 'deposit-address' && order.funding.chainId === 'bitcoin';
+  const isBitcoinPayout = order?.destinationChain === 'bitcoin';
   const steps = order?.direction === REVERSE_DIRECTION
     ? [
         { label: 'XMR deposit', statuses: ['awaiting_deposit'] as Order['status'][] },
         { label: 'Bridge mint', statuses: ['minted'] as Order['status'][] },
         { label: 'Swap', statuses: ['swapping'] as Order['status'][] },
-        { label: isSolanaDirect ? 'Solana payout' : 'Mayan payout', statuses: ['withdrawing', 'completed'] as Order['status'][] },
+        { label: isBitcoinPayout ? 'THORChain payout' : isSolanaDirect ? 'Solana payout' : 'Mayan payout', statuses: ['withdrawing', 'completed'] as Order['status'][] },
       ]
     : isSolanaDirect
       ? [
@@ -2213,10 +2215,10 @@ function OrderStatusPanel({ order }: { order: Order | null }) {
             })}
           </div>
           <div className="grid gap-2 rounded-2xl border border-[#292b31] bg-[#0c0d11] p-3 text-sm">
-            {order.sourceTxHash && <ExplorerLink chain={order.sourceChain} hash={order.sourceTxHash} label={order.direction === REVERSE_DIRECTION ? 'Destination transaction' : 'Source transaction'} />}
+            {order.sourceTxHash && <ExplorerLink chain={isBitcoinPayout ? 'ethereum' : order.sourceChain} hash={order.sourceTxHash} label={isBitcoinPayout ? 'ETH USDC delivery' : order.direction === REVERSE_DIRECTION ? 'Destination transaction' : 'Source transaction'} />}
             {order.solanaMintSignature && <ExplorerLink chain="solana" hash={order.solanaMintSignature} label={order.direction === REVERSE_DIRECTION ? 'Bridge claim' : isBitcoinDeposit ? 'THORChain delivery' : 'Mayan delivery'} />}
             {order.swapSignature && <ExplorerLink chain="solana" hash={order.swapSignature} label="Jupiter swap" />}
-            {order.withdrawalSignature && <ExplorerLink chain="solana" hash={order.withdrawalSignature} label={order.direction === REVERSE_DIRECTION ? (isSolanaDirect ? 'Solana payout' : 'Mayan payout') : 'Withdrawal request'} />}
+            {order.withdrawalSignature && <ExplorerLink chain={isBitcoinPayout && order.status === 'completed' ? 'bitcoin' : isBitcoinPayout ? 'ethereum' : 'solana'} hash={order.withdrawalSignature} label={isBitcoinPayout ? order.status === 'completed' ? 'BTC payout' : 'THORChain funding' : order.direction === REVERSE_DIRECTION ? (isSolanaDirect ? 'Solana payout' : 'Mayan payout') : 'Withdrawal request'} />}
             {order.error && <div className="text-sm text-[#ff8c8c]">{order.error}</div>}
           </div>
         </div>
@@ -2381,6 +2383,32 @@ function buildRouteLegs({
   if (direction === ASSET_DIRECTION) {
     const destinationChain = quote?.destinationChain ?? sourceChain;
     const destinationSymbol = quote?.destinationTokenSymbol ?? 'Token';
+    if (quote?.route === 'thorchain' && destinationChain === 'bitcoin') {
+      return [
+        {
+          title: `${sourceSymbol} on ${CHAINS[sourceChain].name}`,
+          caption: sourceChain === 'solana' ? 'Solana source' : 'Source wallet',
+          detail: quote.routeSummary ?? 'The selected source asset starts the route.',
+        },
+        {
+          title: 'USDC on Solana',
+          caption: sourceChain === 'solana' ? 'jup.ag route' : 'Mayan Swift v2 delivery',
+          detail: sourceChain === 'solana'
+            ? 'Jupiter normalizes the selected Solana token into USDC when needed.'
+            : 'Mayan delivers source-chain value into Solana USDC for the payout route.',
+        },
+        {
+          title: 'USDC on Ethereum',
+          caption: 'Mayan Swift v2',
+          detail: 'Solana USDC is forwarded to the Ethereum hot wallet for THORChain.',
+        },
+        {
+          title: 'BTC on Bitcoin',
+          caption: 'THORChain payout',
+          detail: 'THORChain swaps Ethereum USDC into native BTC for your receive address.',
+        },
+      ];
+    }
     return [
       {
         title: `${sourceSymbol} on ${CHAINS[sourceChain].name}`,
@@ -2398,6 +2426,35 @@ function buildRouteLegs({
   if (direction === REVERSE_DIRECTION) {
     const destinationSymbol = quote?.destinationTokenSymbol ?? selectedToken?.symbol ?? 'Token';
     const destinationChain = quote?.destinationChain ?? sourceChain;
+    if (quote?.route === 'thorchain' && destinationChain === 'bitcoin') {
+      return [
+        {
+          title: 'Native XMR',
+          caption: 'Monero wallet transfer',
+          detail: 'You send native Monero to the order-specific bridge deposit address.',
+        },
+        {
+          title: 'Monero Bridge',
+          caption: 'native XMR to XMR-SOL',
+          detail: 'The bridge mints wXMR to the order deposit owner after confirmations.',
+        },
+        {
+          title: 'jup.ag',
+          caption: 'XMR-SOL to USDC-SOL',
+          detail: 'Jupiter swaps the claimed wXMR into Solana USDC.',
+        },
+        {
+          title: 'Mayan Swift v2',
+          caption: 'USDC-SOL to USDC-ETH',
+          detail: 'Mayan forwards Solana USDC to the Ethereum hot wallet.',
+        },
+        {
+          title: 'THORChain',
+          caption: 'USDC-ETH to BTC',
+          detail: 'THORChain pays native BTC to your Bitcoin receive address.',
+        },
+      ];
+    }
     if (destinationChain === 'solana' || quote?.route === 'solana') {
       return [
         {
@@ -2623,7 +2680,7 @@ function selectableSourceChains(): readonly SourceChainId[] {
 }
 
 function selectableDestinationChains(): readonly SourceChainId[] {
-  return sortChainsForDisplay(['monero', ...MAYAN_SWIFT_SOURCE_CHAINS, 'solana']);
+  return sortChainsForDisplay(['monero', 'bitcoin', ...MAYAN_SWIFT_SOURCE_CHAINS, 'solana']);
 }
 
 async function loadTokensForChain(chainId: SourceChainId): Promise<MayanToken[]> {
@@ -2820,6 +2877,7 @@ function isPotentialSolanaAddress(value: string): boolean {
 function placeholderAddressForChain(chainId: SourceChainId): string {
   const chain = CHAINS[chainId];
   if (chainId === 'solana') return QUOTE_PLACEHOLDER_SOLANA_ADDRESS;
+  if (chainId === 'bitcoin') return QUOTE_PLACEHOLDER_BTC_ADDRESS;
   if (chainId === 'sui') return QUOTE_PLACEHOLDER_SUI_ADDRESS;
   if (chainId === 'monero') return QUOTE_PLACEHOLDER_XMR_ADDRESS;
   if (chain.kind === 'evm' || chain.kind === 'hypercore') return QUOTE_PLACEHOLDER_EVM_ADDRESS;

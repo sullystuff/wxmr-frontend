@@ -1,6 +1,6 @@
 import { setTimeout as sleep } from "node:timers/promises";
-import { Connection, PublicKey } from "@solana/web3.js";
-import { isAddress, type Address } from "viem";
+import { Connection, Keypair, PublicKey } from "@solana/web3.js";
+import { isAddress, type Address, type Hex } from "viem";
 import { privateKeyToAccount, type PrivateKeyAccount } from "viem/accounts";
 import {
   CHAINS,
@@ -45,6 +45,8 @@ const evm = env.evmHotWalletPrivateKey
   : null;
 const solana = new SolanaExecutor(connection, env.solanaHotWallet, env.bridgeProgramId, env.jupiterApiKey, env.mayanApiKey);
 const DEFAULT_SLIPPAGE_BPS = 200;
+const USDC_DECIMALS = 6;
+const BTC_DECIMALS = 8;
 
 let shuttingDown = false;
 process.on("SIGINT", () => {
@@ -1177,6 +1179,10 @@ async function executeSwapAndMayanPayout(order: Order): Promise<void> {
   const quote = mustGetQuote(order.quoteId);
   const outputChain = getDestinationChain(order, quote);
   const outputToken = getDestinationToken(order, quote);
+  if (quote.route === "thorchain" && outputChain === "bitcoin") {
+    await executeSolanaToBtcPayout(order, quote, deriveReverseDepositOwner(env.solanaHotWallet, order.id), true);
+    return;
+  }
   if (quote.route === "solana" || outputChain === "solana") {
     await executeSwapAndSolanaPayout(order, quote);
     return;
@@ -1298,12 +1304,108 @@ async function executeSwapAndSolanaPayout(order: Order, quote: Quote): Promise<v
   );
 }
 
+async function executeSolanaToBtcPayout(
+  order: Order,
+  quote: Quote,
+  signer: Keypair,
+  deductServiceFee: boolean,
+): Promise<void> {
+  if (!order.destinationAddress) {
+    throw new Error("BTC payout is missing destination address");
+  }
+  if (!quote.thorchain) {
+    throw new Error("BTC payout is missing THORChain quote metadata");
+  }
+  if (!env.evmHotWalletAddress || !evm) {
+    throw new Error("EVM_HOTWALLET_PRIVATE_KEY and ETHEREUM_RPC_URL are required for BTC output routes");
+  }
+
+  store.updateOrder(order.id, { status: "swapping" }, "starting Solana -> BTC payout");
+  const inputMint = deductServiceFee ? WXMR_MINT_ADDRESS : getSolanaInputMint(order);
+  const depositedAmount = deductServiceFee
+    ? BigInt(order.destinationAmount ?? order.amount)
+    : getSolanaInputAmount(order);
+  const serviceFee = deductServiceFee ? applyBps(depositedAmount, quote.serviceFeeBps) : 0n;
+  const swapInputAmount = depositedAmount - serviceFee;
+  if (swapInputAmount <= 0n) {
+    throw new Error("BTC payout amount is zero after fees");
+  }
+
+  let usdcAmount = swapInputAmount;
+  let swapSignature = order.swapSignature;
+  if (!sameToken(inputMint, USDC_MINT_ADDRESS)) {
+    try {
+      const swap = deductServiceFee
+        ? await solana.swapWxmrToUsdc(
+          swapInputAmount,
+          executionMinimum(order, BigInt(quote.mayan?.minSolanaUsdcOut ?? "0")),
+          signer,
+        )
+        : await solana.swapTokenToToken(
+          inputMint,
+          USDC_MINT_ADDRESS,
+          swapInputAmount,
+          executionMinimum(order, BigInt(quote.mayan?.minSolanaUsdcOut ?? "0")),
+        );
+      usdcAmount = swap.outAmount;
+      swapSignature = swap.signature;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      store.updateOrder(order.id, { status: deductServiceFee ? "refunding" : "failed", error: message }, `BTC payout Solana swap failed: ${message}`);
+      return;
+    }
+  }
+
+  if (serviceFee > 0n) {
+    await solana.transferWxmr(signer, env.solanaHotWallet.publicKey, serviceFee);
+  }
+
+  const mayanQuote = await mayan.fetchSwiftQuoteForRoute({
+    fromChain: "solana",
+    fromToken: USDC_MINT_ADDRESS,
+    toChain: "ethereum",
+    toToken: CHAINS.ethereum.usdc!,
+    amount: usdcAmount,
+    destinationAddress: env.evmHotWalletAddress,
+    slippageBps: quote.thorchain.slippageBps ?? quote.thorchain.mayan?.quote.slippageBps ?? DEFAULT_SLIPPAGE_BPS,
+  });
+  const lockedEthUsdcMinimum = BigInt(quote.thorchain.minSolanaUsdcOut);
+  if (shouldRefundOnSlippage(order) && BigInt(mayanQuote.minReceivedBaseUnits) < lockedEthUsdcMinimum) {
+    store.updateOrder(
+      order.id,
+      {
+        status: "failed",
+        swapSignature,
+        error: `Mayan ETH USDC funding minimum ${mayanQuote.minReceivedBaseUnits} is below locked minimum ${lockedEthUsdcMinimum}`,
+      },
+      "BTC payout Mayan funding quote below locked minimum",
+    );
+    return;
+  }
+
+  const payout = await solana.executeMayanSwiftFromSolana(mayanQuote, signer, env.evmHotWalletAddress);
+  store.updateOrder(
+    order.id,
+    {
+      status: "withdrawing",
+      swapSignature,
+      withdrawalSignature: payout.signature,
+    },
+    `Mayan ETH USDC funding submitted for BTC payout: ${payout.signature}`,
+  );
+}
+
 async function executeAssetPayout(order: Order): Promise<void> {
   const quote = mustGetQuote(order.quoteId);
   const outputChain = getDestinationChain(order, quote);
   const outputToken = getDestinationToken(order, quote);
   if (!order.destinationAddress) {
     throw new Error("asset order is missing destination address");
+  }
+
+  if (quote.route === "thorchain" && outputChain === "bitcoin") {
+    await executeSolanaToBtcPayout(order, quote, env.solanaHotWallet, false);
+    return;
   }
 
   if (outputChain === "solana") {
@@ -1416,6 +1518,11 @@ async function executeMayanAssetPayout(
 }
 
 async function processReverseMayanSettlement(order: Order): Promise<void> {
+  const quote = mustGetQuote(order.quoteId);
+  if (quote.route === "thorchain" && getDestinationChain(order, quote) === "bitcoin") {
+    await processThorchainBtcSettlement(order, quote);
+    return;
+  }
   if (!order.withdrawalSignature) {
     throw new Error("reverse order has no Mayan payout transaction");
   }
@@ -1438,6 +1545,122 @@ async function processReverseMayanSettlement(order: Order): Promise<void> {
       sourceTxHash: destinationTx ?? order.sourceTxHash,
     },
     `Mayan payout delivered ${delivered}${destinationTx ? `: ${destinationTx}` : ""}`,
+  );
+}
+
+async function processThorchainBtcSettlement(order: Order, quote: Quote): Promise<void> {
+  if (!order.destinationAddress) {
+    throw new Error("BTC payout is missing destination address");
+  }
+  if (!quote.thorchain) {
+    throw new Error("BTC payout is missing THORChain quote metadata");
+  }
+  if (!order.withdrawalSignature) {
+    throw new Error("BTC payout has no Mayan or THORChain transaction");
+  }
+  if (!evm || !env.evmHotWalletAddress) {
+    throw new Error("EVM_HOTWALLET_PRIVATE_KEY and ETHEREUM_RPC_URL are required for BTC output routes");
+  }
+
+  if (!order.sourceTxHash) {
+    const details = await mayan.fetchSwapByTx(order.withdrawalSignature);
+    if (mayanSwapFailed(details)) {
+      store.updateOrder(order.id, { status: "failed", error: `Mayan ETH USDC funding ${details.clientStatus ?? details.status}` }, "BTC payout Mayan funding failed");
+      return;
+    }
+    if (!mayanSwapSucceeded(details)) {
+      throw new Error(`BTC payout Mayan funding pending: ${details.clientStatus ?? details.status ?? "unknown"}`);
+    }
+
+    const ethUsdcAmount = mayanDeliveredBaseUnits(details, USDC_DECIMALS);
+    const mayanTx = mayanDestinationTx(details) ?? order.withdrawalSignature;
+    const thorchainQuote = await thorchain.fetchSwapQuote({
+      fromAsset: THORCHAIN.ethUsdcAsset,
+      toAsset: THORCHAIN.btcAsset,
+      amount: ethUsdcAmount,
+      destination: order.destinationAddress,
+    });
+    const estimatedBtcOut = thorchainAmountToBaseUnits(thorchainQuote.expected_amount_out, BTC_DECIMALS);
+    const minBtcOut = applyBps(BigInt(estimatedBtcOut), 10_000 - (quote.thorchain.slippageBps ?? DEFAULT_SLIPPAGE_BPS));
+    const lockedMinimum = BigInt(quote.minDestinationOut ?? "0");
+    if (shouldRefundOnSlippage(order) && minBtcOut < lockedMinimum) {
+      store.updateOrder(
+        order.id,
+        {
+          status: "failed",
+          sourceTxHash: mayanTx,
+          destinationAmount: ethUsdcAmount,
+          error: `THORChain BTC quote minimum ${minBtcOut} is below locked minimum ${lockedMinimum}`,
+        },
+        "BTC payout THORChain quote below locked minimum",
+      );
+      return;
+    }
+    if (!thorchainQuote.router) {
+      throw new Error("THORChain quote is missing router address");
+    }
+
+    const txHash = await evm.executeThorchainErc20Swap({
+      chainId: "ethereum",
+      token: CHAINS.ethereum.usdc! as Address,
+      router: thorchainQuote.router as Address,
+      vault: thorchainQuote.inbound_address! as Address,
+      amount: BigInt(ethUsdcAmount),
+      memo: thorchainQuote.memo!,
+      expiry: BigInt(thorchainQuote.expiry),
+      onSigned: (hash) => {
+        store.updateOrder(
+          order.id,
+          {
+            sourceTxHash: mayanTx,
+            destinationAmount: ethUsdcAmount,
+            withdrawalSignature: hash,
+          },
+          `THORChain BTC funding signed: ${hash}`,
+        );
+      },
+    });
+    store.addEvent(order.id, order.status, `THORChain BTC funding submitted: ${txHash}`);
+    throw new Error(`THORChain BTC swap pending: ${txHash}`);
+  }
+
+  const receiptStatus = await evm.getTransactionReceiptStatus("ethereum", order.withdrawalSignature as Hex).catch(() => null);
+  if (receiptStatus === "reverted") {
+    store.updateOrder(order.id, { status: "failed", error: `THORChain funding transaction reverted: ${order.withdrawalSignature}` }, "THORChain BTC funding reverted");
+    return;
+  }
+  const details = await thorchain.fetchTxStatus(order.withdrawalSignature).catch((error) => {
+    const message = error instanceof Error ? error.message : String(error);
+    throw new Error(`THORChain BTC swap pending: ${message}`);
+  });
+  const refund = thorchainPlannedRefund(details);
+  if (refund) {
+    store.updateOrder(order.id, { status: "failed", error: "THORChain planned a refund for the BTC payout" }, "THORChain planned a BTC payout refund");
+    return;
+  }
+  const outTx = thorchainOutTx(details, THORCHAIN.btcAsset, order.destinationAddress);
+  if (!outTx) throw new Error("THORChain BTC swap pending: waiting for Bitcoin outbound");
+  const destinationAmount = thorchainAmountToBaseUnits(thorchainTxAmount(outTx, THORCHAIN.btcAsset), BTC_DECIMALS);
+  const minimum = BigInt(quote.minDestinationOut ?? "0");
+  if (shouldRefundOnSlippage(order) && BigInt(destinationAmount) < minimum) {
+    store.updateOrder(
+      order.id,
+      {
+        status: "failed",
+        error: `THORChain delivered ${destinationAmount} BTC base units, below locked minimum ${minimum}`,
+      },
+      "THORChain BTC payout below locked minimum",
+    );
+    return;
+  }
+  store.updateOrder(
+    order.id,
+    {
+      status: "completed",
+      destinationAmount,
+      withdrawalSignature: outTx.id ?? order.withdrawalSignature,
+    },
+    `THORChain delivered ${destinationAmount} BTC base units`,
   );
 }
 
@@ -1548,6 +1771,9 @@ function shouldRefundOnSlippage(order: Order): boolean {
 }
 
 function requiresSolanaHotWalletPayout(quote: Quote): boolean {
+  if (quote.direction === "asset-to-asset" && quote.route === "thorchain" && quote.destinationChain === "bitcoin") {
+    return true;
+  }
   if (
     quote.direction !== "asset-to-asset" ||
     quote.sourceChain === "solana" ||
