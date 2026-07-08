@@ -33,6 +33,7 @@ import { EvmExecutor, evmDepositConfirmations } from "./chain/evm.js";
 import { SolanaExecutor } from "./chain/solana.js";
 import { deriveReverseDepositOwner } from "./reverse.js";
 import { deriveEvmDepositAccount, deriveSolanaDepositOwner } from "./deposit.js";
+import { requiresSolanaHotWalletPayout } from "./route-policy.js";
 
 const env = loadEnv();
 const store = new Store(env.dbPath);
@@ -1768,22 +1769,6 @@ function executionMinimum(order: Order, lockedMinimum: bigint): bigint {
 
 function shouldRefundOnSlippage(order: Order): boolean {
   return order.executionPolicy !== "execute-anyway";
-}
-
-function requiresSolanaHotWalletPayout(quote: Quote): boolean {
-  if (quote.direction === "asset-to-asset" && quote.route === "thorchain" && quote.destinationChain === "bitcoin") {
-    return true;
-  }
-  if (
-    quote.direction !== "asset-to-asset" ||
-    quote.sourceChain === "solana" ||
-    quote.destinationChain !== "solana"
-  ) {
-    return false;
-  }
-  const deliveredToken = quote.mayan?.quote.toToken.contract ?? quote.mayan?.quote.toToken.mint;
-  if (!deliveredToken) return isWxmrMint(quote.destinationToken);
-  return !sameToken(deliveredToken, quote.destinationToken);
 }
 
 function isWxmrMint(value: string | undefined): boolean {

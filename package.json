@@ -16,7 +16,8 @@
     "dev:orchestrator": "turbo run dev --filter=@wxmr/orchestrator",
     "build:bridge": "turbo run build --filter=@wxmr/bridge",
     "build:swap": "turbo run build --filter=@wxmr/swap",
-    "build:orchestrator": "turbo run build --filter=@wxmr/orchestrator"
+    "build:orchestrator": "turbo run build --filter=@wxmr/orchestrator",
+    "test:routes": "npm --workspace @wxmr/orchestrator run test && npm --workspace @wxmr/swap run test:routes"
   },
   "devDependencies": {
     "dotenv": "^17.2.3",

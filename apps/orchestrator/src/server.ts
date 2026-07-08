@@ -50,6 +50,12 @@ import { Store } from "./db.js";
 import { SolanaExecutor } from "./chain/solana.js";
 import { deriveReverseDepositOwner } from "./reverse.js";
 import { deriveEvmDepositAccount, deriveSolanaDepositOwner } from "./deposit.js";
+import {
+  requiresSolanaHotWalletPayout,
+  selectAssetToAssetRoute,
+  selectReverseOutputRoute,
+  usesThorchainBitcoinDepositAddress,
+} from "./route-policy.js";
 
 const env = loadEnv();
 const store = new Store(env.dbPath);
@@ -280,11 +286,16 @@ function registerRoutes(prefix: "" | "/api"): void {
         return reply.code(400).send({ error: "destinationAddress must be a Solana wallet address" });
       }
     }
-    if (outputChain !== "bitcoin" && !CHAINS[outputChain].mayanChain) {
-      return reply.code(400).send({ error: "destination chain is not supported by Mayan" });
+    let reverseOutputRoute: ReturnType<typeof selectReverseOutputRoute>;
+    try {
+      reverseOutputRoute = selectReverseOutputRoute(outputChain);
+    } catch (error) {
+      return reply.code(400).send({
+        error: error instanceof Error ? error.message : "destination chain is not supported by Mayan",
+      });
     }
 
-    const quote = outputChain === "bitcoin" ? await quoteXmrToBtc({
+    const quote = reverseOutputRoute === "xmr-to-btc" ? await quoteXmrToBtc({
       direction,
       sourceChain: outputChain,
       sourceToken: outputToken,
@@ -296,7 +307,7 @@ function registerRoutes(prefix: "" | "/api"): void {
       refundAddress: body.refundAddress,
       slippageBps: body.slippageBps,
       executionPolicy,
-    }) : outputChain === "solana" ? await quoteXmrToSolana({
+    }) : reverseOutputRoute === "xmr-to-solana" ? await quoteXmrToSolana({
       direction,
       sourceChain: outputChain,
       sourceToken: outputToken,
@@ -1272,27 +1283,20 @@ async function quoteAssetToAsset(input: QuoteRequest): Promise<Quote> {
   if (input.sourceChain === input.destinationChain && input.sourceToken.toLowerCase() === input.destinationToken.toLowerCase()) {
     throw new Error("source and destination assets must be different");
   }
-  if (input.sourceChain === "bitcoin") {
-    return quoteBtcToAsset(input);
+  switch (selectAssetToAssetRoute(input)) {
+    case "btc-to-asset":
+      return quoteBtcToAsset(input);
+    case "asset-to-btc":
+      return quoteAssetToBtc(input);
+    case "solana-to-solana":
+      return quoteSolanaToSolanaAsset(input);
+    case "solana-to-mayan":
+      return quoteSolanaToMayanAsset(input);
+    case "asset-to-wxmr-solana":
+      return quoteAssetToWxmrSolana(input);
+    case "mayan-to-asset":
+      return quoteMayanAssetToAsset(input);
   }
-  if (input.destinationChain === "bitcoin") {
-    return quoteAssetToBtc(input);
-  }
-  if (input.sourceChain === "solana") {
-    return input.destinationChain === "solana"
-      ? quoteSolanaToSolanaAsset(input)
-      : quoteSolanaToMayanAsset(input);
-  }
-  if (input.destinationChain === "solana" && isWxmrMint(input.destinationToken)) {
-    return quoteAssetToWxmrSolana(input);
-  }
-  if (CHAINS[input.sourceChain].kind !== "evm") {
-    throw new Error("this source chain needs a wallet-specific funding path that is not enabled yet");
-  }
-  if (!CHAINS[input.destinationChain].mayanChain) {
-    throw new Error("destination chain is not supported by Mayan");
-  }
-  return quoteMayanAssetToAsset(input);
 }
 
 async function quoteAssetToWxmrSolana(input: QuoteRequest): Promise<Quote> {
@@ -2314,7 +2318,7 @@ async function buildFundingInstructions(orderId: string, quote: Quote, fundingMo
     };
   }
 
-  if (quote.route === "thorchain" && quote.sourceChain === "bitcoin") {
+  if (usesThorchainBitcoinDepositAddress(quote)) {
     if (!quote.thorchain) throw new Error("THORChain quote metadata is missing");
     return {
       type: "deposit-address",
@@ -2559,22 +2563,6 @@ function inferDirection(sourceChain: SourceChainId, destinationChain: SourceChai
   if (sourceChain === "monero") return "xmr-to-mayan";
   if (!destinationChain || destinationChain === "monero") return "mayan-to-xmr";
   return "asset-to-asset";
-}
-
-function requiresSolanaHotWalletPayout(quote: Quote): boolean {
-  if (quote.direction === "asset-to-asset" && quote.route === "thorchain" && quote.destinationChain === "bitcoin") {
-    return true;
-  }
-  if (
-    quote.direction !== "asset-to-asset" ||
-    quote.sourceChain === "solana" ||
-    quote.destinationChain !== "solana"
-  ) {
-    return false;
-  }
-  const deliveredToken = quote.mayan?.quote.toToken.contract ?? quote.mayan?.quote.toToken.mint;
-  if (!deliveredToken) return isWxmrMint(quote.destinationToken);
-  return !sameToken(deliveredToken, quote.destinationToken);
 }
 
 function isWxmrMint(value: string | undefined): boolean {

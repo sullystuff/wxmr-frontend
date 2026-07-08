@@ -5,8 +5,6 @@ import {
   CHAINS,
   ERC20_ALLOWANCE_ABI,
   ERC20_APPROVE_ABI,
-  MAYAN_SWIFT_EVM_SOURCE_CHAINS,
-  MAYAN_SWIFT_SOURCE_CHAINS,
   MIN_XMR_DEPOSIT_PICONERO,
   MIN_XMR_WITHDRAWAL_PICONERO,
   WXMR_MINT_ADDRESS,
@@ -47,6 +45,12 @@ import {
 } from 'wagmi';
 import { EVM_RPC_ENV_BY_CHAIN, EVM_RPC_URL_BY_CHAIN } from './evm-rpc';
 import { AddressDepositFunding, DepositMethodToggle } from './address-deposit';
+import {
+  QUOTE_PLACEHOLDER_XMR_ADDRESS,
+  placeholderAddressForChain,
+  selectableDestinationChains,
+  selectableSourceChains,
+} from '../lib/route-options';
 
 const ORCHESTRATOR_URL = (process.env.NEXT_PUBLIC_ORCHESTRATOR_URL || '/api').replace(/\/$/, '');
 const EVM_NATIVE_TOKEN = '0x0000000000000000000000000000000000000000';
@@ -59,14 +63,9 @@ const DEFAULT_DESTINATION_CHAIN: SourceChainId = 'monero';
 const DEFAULT_EXECUTION_POLICY: ExecutionPolicy = 'execute-anyway';
 const DEFAULT_SLIPPAGE_BPS = 200;
 const AUTO_REFRESH_QUOTE_MS = 10_000;
-const QUOTE_PLACEHOLDER_XMR_ADDRESS = '45ZYpKmPaPmh3bnRP1XpMz8cASJQf1cfUgq32H8trCYA4RodzXhsmt2VYkQX9QQ65CetiGja65tH2JmKC3gEZtZjB7AzMpd';
 // Bridge minimums, mirrored from the on-chain program via @wxmr/core.
 const MIN_XMR_DEPOSIT_XMR = formatXmrAmount(MIN_XMR_DEPOSIT_PICONERO);
 const MIN_XMR_WITHDRAWAL_XMR = formatXmrAmount(MIN_XMR_WITHDRAWAL_PICONERO);
-const QUOTE_PLACEHOLDER_SOLANA_ADDRESS = '9wtvVxue6wfwVf27cG11tyfQXyHZnyz5gHR5okWh26sX';
-const QUOTE_PLACEHOLDER_EVM_ADDRESS = '0x000000000000000000000000000000000000dEaD';
-const QUOTE_PLACEHOLDER_SUI_ADDRESS = `0x${'1'.repeat(64)}`;
-const QUOTE_PLACEHOLDER_BTC_ADDRESS = 'bc1qxy2kgdygjrsqtzq2n0yrf2493p83kkfjhx0wlh';
 const TOKEN_RELEVANCE_BY_CHAIN: Partial<Record<SourceChainId, readonly string[]>> = {
   bitcoin: ['BTC'],
   ethereum: ['ETH', 'USDC', 'USDT', 'WBTC', 'DAI', 'LINK', 'UNI', 'AAVE', 'ENA', 'PEPE', 'SHIB'],
@@ -2665,24 +2664,6 @@ function tokenAddress(token?: MayanToken): string | undefined {
   return token?.contract ?? token?.mint;
 }
 
-const CHAIN_DISPLAY_PRIORITY: readonly SourceChainId[] = ['monero', 'ethereum', 'solana', 'bitcoin', 'base', 'arbitrum', 'optimism', 'polygon', 'bsc', 'avalanche', 'sui', 'linea', 'hyperevm', 'hyperliquid', 'monad'];
-
-function sortChainsForDisplay(chains: readonly SourceChainId[]): readonly SourceChainId[] {
-  const rank = (chain: SourceChainId) => {
-    const index = CHAIN_DISPLAY_PRIORITY.indexOf(chain);
-    return index === -1 ? CHAIN_DISPLAY_PRIORITY.length : index;
-  };
-  return [...chains].sort((a, b) => rank(a) - rank(b));
-}
-
-function selectableSourceChains(): readonly SourceChainId[] {
-  return sortChainsForDisplay(['monero', 'bitcoin', ...MAYAN_SWIFT_EVM_SOURCE_CHAINS, 'solana']);
-}
-
-function selectableDestinationChains(): readonly SourceChainId[] {
-  return sortChainsForDisplay(['monero', 'bitcoin', ...MAYAN_SWIFT_SOURCE_CHAINS, 'solana']);
-}
-
 async function loadTokensForChain(chainId: SourceChainId): Promise<MayanToken[]> {
   if (chainId === 'monero') return [XMR_TOKEN];
   const tokens = await api<MayanToken[]>(`/tokens/${chainId}`);
@@ -2872,16 +2853,6 @@ function isPotentialSolanaAddress(value: string): boolean {
   } catch {
     return false;
   }
-}
-
-function placeholderAddressForChain(chainId: SourceChainId): string {
-  const chain = CHAINS[chainId];
-  if (chainId === 'solana') return QUOTE_PLACEHOLDER_SOLANA_ADDRESS;
-  if (chainId === 'bitcoin') return QUOTE_PLACEHOLDER_BTC_ADDRESS;
-  if (chainId === 'sui') return QUOTE_PLACEHOLDER_SUI_ADDRESS;
-  if (chainId === 'monero') return QUOTE_PLACEHOLDER_XMR_ADDRESS;
-  if (chain.kind === 'evm' || chain.kind === 'hypercore') return QUOTE_PLACEHOLDER_EVM_ADDRESS;
-  return QUOTE_PLACEHOLDER_SOLANA_ADDRESS;
 }
 
 function shortAddress(value: string): string {
