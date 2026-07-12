@@ -139,7 +139,6 @@ function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
     pending: 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30',
     active: 'bg-green-500/20 text-green-400 border border-green-500/30',
-    closed: 'bg-gray-500/20 text-gray-400 border border-gray-500/30',
     sending: 'bg-blue-500/20 text-blue-400 border border-blue-500/30',
     completed: 'bg-green-500/20 text-green-400 border border-green-500/30',
     reverted: 'bg-red-500/20 text-red-400 border border-red-500/30',
@@ -148,7 +147,6 @@ function StatusBadge({ status }: { status: string }) {
   const labels: Record<string, string> = {
     pending: 'Pending',
     active: 'Active',
-    closed: 'Closed',
     sending: 'Sending',
     completed: 'Completed',
     reverted: 'Reverted',
@@ -627,7 +625,7 @@ export default function Home() {
           <div className="flex items-center gap-4">
             <MoneroLogo className="w-12 h-12" />
             <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-[#ff6600] to-[#ff8533] bg-clip-text text-transparent">
+              <h1 className="text-3xl font-bold text-[#ff6600]">
                 Monero Bridge
               </h1>
               <p className="text-[var(--muted)] mt-0.5">Monero token on Solana</p>
@@ -799,7 +797,7 @@ export default function Home() {
                     Waiting for XMR address assignment (usually takes a few seconds)...
                   </p>
                 </>
-              ) : depositAccount.status === 'active' ? (
+              ) : (
                 // Active deposit account - show address
                 <>
                   <div className="flex items-center gap-2 mb-4">
@@ -855,9 +853,6 @@ export default function Home() {
                   </div>
 
                 </>
-              ) : (
-                // Closed account - shouldn't happen (account is deleted)
-                <p className="text-[var(--muted)]">Bridge address closed. Create a new one to continue.</p>
               )}
             </div>
           </div>

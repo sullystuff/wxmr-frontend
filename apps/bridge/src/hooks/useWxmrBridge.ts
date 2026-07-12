@@ -48,7 +48,7 @@ export interface DepositAccountInfo {
   owner: string;
   xmrDepositAddress: string;
   totalDeposited: bigint;
-  status: 'pending' | 'active' | 'closed';
+  status: 'pending' | 'active';
   createdAt: number;
 }
 
@@ -142,7 +142,6 @@ export function useWxmrBridge() {
     let status: DepositAccountInfo['status'] = 'pending';
     if ('pending' in deposit.status) status = 'pending';
     else if ('active' in deposit.status) status = 'active';
-    else if ('closed' in deposit.status) status = 'closed';
 
     return {
       depositPda: depositPda.toBase58(),
@@ -287,7 +286,6 @@ export function useWxmrBridge() {
       let status: DepositAccountInfo['status'] = 'pending';
       if ('pending' in deposit.status) status = 'pending';
       else if ('active' in deposit.status) status = 'active';
-      else if ('closed' in deposit.status) status = 'closed';
 
       return {
         depositPda: depositPda.toBase58(),
