@@ -427,57 +427,12 @@ function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void
   );
 }
 
-// Confirmation Modal component
-function ConfirmModal({ 
-  title, 
-  message, 
-  confirmText, 
-  onConfirm, 
-  onCancel 
-}: { 
-  title: string; 
-  message: string; 
-  confirmText: string; 
-  onConfirm: () => void; 
-  onCancel: () => void;
-}) {
-  return (
-    <div 
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
-      onClick={onCancel}
-    >
-      <div 
-        className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 className="text-lg font-bold mb-3">{title}</h3>
-        <p className="text-[var(--muted)] mb-6">{message}</p>
-        <div className="flex gap-3">
-          <button
-            onClick={onCancel}
-            className="flex-1 py-2.5 bg-[var(--background)] hover:bg-[var(--card-hover)] border border-[var(--border)] rounded-lg text-sm font-medium transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={onConfirm}
-            className="flex-1 py-2.5 bg-red-500/20 hover:bg-red-500/30 border border-red-500/30 text-red-400 rounded-lg text-sm font-medium transition-colors"
-          >
-            {confirmText}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
 export default function Home() {
   const {
     isConnected,
     isWalletConnecting,
     publicKey,
     createDepositAccount,
-    closeDepositAccount,
     requestWithdrawal,
     fetchMyWithdrawals,
     fetchPageSnapshot,
@@ -526,7 +481,6 @@ export default function Home() {
   // Modal states
   const [qrAddress, setQrAddress] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(false);
-  const [showCloseConfirm, setShowCloseConfirm] = useState(false);
   const [showSwapModal, setShowSwapModal] = useState(false);
   const [copied, setCopied] = useState(false);
   const loadRequestRef = useRef(0);
@@ -585,26 +539,6 @@ export default function Home() {
       }
     } catch (err) {
       setError(getErrorMessage(err, 'Failed to create bridge address'));
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // Handle close deposit account
-  const handleCloseDepositAccount = async () => {
-    setShowCloseConfirm(false);
-    setLoading(true);
-    setError(null);
-    setSuccess(null);
-
-    try {
-      const signature = await closeDepositAccount();
-      if (signature) {
-        setSuccess(`Bridge address closed! TX: ${signature.slice(0, 20)}... You can now create a new one for a fresh address.`);
-        await loadData();
-      }
-    } catch (err) {
-      setError(getErrorMessage(err, 'Failed to close bridge address'));
     } finally {
       setLoading(false);
     }
@@ -920,18 +854,6 @@ export default function Home() {
                     </p>
                   </div>
 
-                  <div className="pt-4 border-t border-[var(--border)]">
-                    <p className="text-xs text-[var(--muted)] mb-2">
-                      Need a new address? Close this bridge address to get a fresh one.
-                    </p>
-                    <button
-                      onClick={() => setShowCloseConfirm(true)}
-                      disabled={loading}
-                      className="text-sm text-red-400 hover:text-red-300 transition-colors"
-                    >
-                      Close bridge address
-                    </button>
-                  </div>
                 </>
               ) : (
                 // Closed account - shouldn't happen (account is deleted)
@@ -1181,17 +1103,6 @@ export default function Home() {
           <QRScannerModal 
             onScan={(address) => setXmrAddress(address)} 
             onClose={() => setShowScanner(false)} 
-          />
-        )}
-
-        {/* Close Deposit Account Confirmation Modal */}
-        {showCloseConfirm && (
-          <ConfirmModal
-            title="Close Bridge Address?"
-            message="WARNING: Any XMR sent to this address that hasn't been minted yet will be LOST. Only close if you're sure no Monero to Solana transfers are pending. You can create a new bridge address afterward."
-            confirmText="Close Address"
-            onConfirm={handleCloseDepositAccount}
-            onCancel={() => setShowCloseConfirm(false)}
           />
         )}
 

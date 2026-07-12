@@ -276,34 +276,6 @@ export function useWxmrBridge() {
     }
   }, [program, wallet.publicKey, getDepositPDA, getBridgeConfigPDA]);
 
-  // Close deposit account (to get a new XMR address)
-  const closeDepositAccount = useCallback(async (): Promise<string | null> => {
-    if (!program || !wallet.publicKey) return null;
-
-    try {
-      const config = await fetchBridgeConfig();
-      if (!config) throw new Error('Bridge not initialized');
-
-      const depositPda = getDepositPDA(wallet.publicKey);
-
-      const signature = await program.methods
-        .closeDepositAccount()
-        .accountsPartial({
-          config: getBridgeConfigPDA(),
-          deposit: depositPda,
-          user: wallet.publicKey,
-          authority: new PublicKey(config.authority),
-        })
-        .preInstructions(getPriorityFeeInstructions())
-        .rpc();
-
-      return signature;
-    } catch (error) {
-      console.error('Error closing deposit account:', error);
-      throw error;
-    }
-  }, [program, wallet.publicKey, getDepositPDA, getBridgeConfigPDA, fetchBridgeConfig]);
-
   // Fetch user's deposit account (or null if none exists)
   const fetchMyDepositAccount = useCallback(async (): Promise<DepositAccountInfo | null> => {
     if (!program || !wallet.publicKey) return null;
@@ -485,7 +457,6 @@ export function useWxmrBridge() {
     isWalletConnecting: wallet.connecting,
     publicKey: wallet.publicKey,
     createDepositAccount,
-    closeDepositAccount,
     fetchMyDepositAccount,
     requestWithdrawal,
     fetchWithdrawal,
