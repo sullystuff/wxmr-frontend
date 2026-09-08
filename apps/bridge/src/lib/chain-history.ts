@@ -16,7 +16,7 @@ export type HistoryTransaction = {
 
 // Use named instruction accounts from the IDL, including CPI instructions.
 // No program-account enumeration or guesses about timestamp-based PDA seeds.
-export function extractRecordAddresses(transaction: HistoryTransaction, kind: 'audit' | 'withdrawal'): string[] {
+export function extractRecordAddresses(transaction: HistoryTransaction, kind: 'audit' | 'withdrawal', owner?: string): string[] {
   if (!transaction.meta || transaction.meta.err) return [];
   const addresses = new Set<string>();
   const instructions = [
@@ -27,6 +27,10 @@ export function extractRecordAddresses(transaction: HistoryTransaction, kind: 'a
     if (instruction.programId !== BRIDGE_PROGRAM.toBase58() || !instruction.data || !instruction.accounts) continue;
     const discriminator = Buffer.from(utils.bytes.bs58.decode(instruction.data)).subarray(0, 8);
     const definition = IDL.instructions.find((item) => Buffer.from(item.discriminator).equals(discriminator));
+    if (owner) {
+      const userIndex = definition?.accounts.findIndex((account) => account.name === 'user') ?? -1;
+      if (userIndex < 0 || instruction.accounts[userIndex] !== owner) continue;
+    }
     const index = definition?.accounts.findIndex((account) => account.name === kind) ?? -1;
     if (index >= 0 && instruction.accounts[index]) addresses.add(instruction.accounts[index]);
   }
@@ -54,7 +58,7 @@ export async function readHistoryPage(address: PublicKey, kind: 'audit' | 'withd
     }]);
     // Do not advance past transactions that the public endpoint cannot retrieve.
     if (!transaction) throw new RpcRelayError('Transaction history is temporarily unavailable. Please retry.', 502);
-    for (const key of extractRecordAddresses(transaction, kind)) addresses.add(key);
+    for (const key of extractRecordAddresses(transaction, kind, kind === 'withdrawal' ? address.toBase58() : undefined)) addresses.add(key);
   }
   return {
     addresses: [...addresses],

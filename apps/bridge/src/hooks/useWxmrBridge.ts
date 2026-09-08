@@ -196,10 +196,11 @@ export function useWxmrBridge() {
     }
   }, [program, connection, getBridgeConfigPDA, decodeBridgeConfig]);
 
-  const decodeWithdrawal = useCallback((withdrawalPda: PublicKey, data: Buffer): WithdrawalInfo => {
+  const decodeWithdrawal = useCallback((withdrawalPda: PublicKey, data: Buffer): WithdrawalInfo | null => {
     const w = readProgram.coder.accounts.decode('withdrawalRecord', data);
-    if (!wallet.publicKey?.equals(w.user) || !getWithdrawalPDA(w.user, BigInt(w.nonce.toString())).equals(withdrawalPda)) {
-      throw new Error('Withdrawal account does not belong to this wallet');
+    if (!wallet.publicKey?.equals(w.user)) return null;
+    if (!getWithdrawalPDA(w.user, BigInt(w.nonce.toString())).equals(withdrawalPda)) {
+      throw new Error('Invalid withdrawal account address');
     }
     const status: WithdrawalInfo['status'] = 'sending' in w.status ? 'sending'
       : 'completed' in w.status ? 'completed' : 'reverted' in w.status ? 'reverted' : 'pending';
@@ -250,7 +251,8 @@ export function useWxmrBridge() {
       for (let i = baseAccountCount; i < infos.length; i++) {
         const info = infos[i];
         if (!info || !info.owner.equals(PROGRAM_ID)) continue;
-        snapshot.withdrawals.push(decodeWithdrawal(accountKeys[i], info.data));
+        const withdrawal = decodeWithdrawal(accountKeys[i], info.data);
+        if (withdrawal) snapshot.withdrawals.push(withdrawal);
       }
 
       if (configInfo) {

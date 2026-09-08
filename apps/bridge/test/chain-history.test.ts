@@ -33,3 +33,15 @@ test('ignores parsed instructions and matching bytes from another program', () =
   };
   assert.deepEqual(extractRecordAddresses(tx, 'withdrawal'), []);
 });
+
+test('wallet history ignores another user withdrawal in the same transaction', () => {
+  const mine = instruction('request_withdrawal', 'mine');
+  const theirs = instruction('request_withdrawal', 'theirs');
+  const userIndex = IDL.instructions.find((item) => item.name === 'request_withdrawal')!.accounts.findIndex((item) => item.name === 'user');
+  mine.accounts[userIndex] = 'wallet-a';
+  theirs.accounts[userIndex] = 'wallet-b';
+  const tx: HistoryTransaction = {
+    transaction: { message: { instructions: [mine, theirs] } }, meta: { err: null },
+  };
+  assert.deepEqual(extractRecordAddresses(tx, 'withdrawal', 'wallet-a'), ['mine']);
+});
