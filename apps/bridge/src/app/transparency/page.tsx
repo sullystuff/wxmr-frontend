@@ -125,8 +125,8 @@ function formatDate(timestamp: number): string {
 }
 
 // Fetch audit records from on-chain
-async function fetchAuditRecords(): Promise<AuditRecord[]> {
-  const response = await fetch('/api/audits', { cache: 'no-store' });
+async function fetchAuditRecords(before?: string): Promise<{ records: AuditRecord[]; nextCursor: string | null; searchedThrough: number | null }> {
+  const response = await fetch(`/api/audits${before ? `?before=${encodeURIComponent(before)}` : ''}`);
 
   if (!response.ok) {
     let message = 'Failed to load audit records';
@@ -141,15 +141,15 @@ async function fetchAuditRecords(): Promise<AuditRecord[]> {
     throw new Error(message);
   }
 
-  const records = await response.json() as AuditRecordResponse[];
-  return records.map((record) => ({
+  const page = await response.json() as { records: AuditRecordResponse[]; nextCursor: string | null; searchedThrough: number | null };
+  return { ...page, records: page.records.map((record) => ({
     epoch: record.epoch,
     timestamp: record.timestamp,
     circulatingSupply: BigInt(record.circulatingSupply),
     spendableBalance: BigInt(record.spendableBalance),
     unconfirmedBalance: BigInt(record.unconfirmedBalance),
     data: record.data,
-  }));
+  })) };
 }
 
 export default function TransparencyPage() {
@@ -157,15 +157,19 @@ export default function TransparencyPage() {
   const [audits, setAudits] = useState<AuditRecord[]>([]);
   const [loadingAudits, setLoadingAudits] = useState(true);
   const [auditError, setAuditError] = useState<string | null>(null);
+  const [auditCursor, setAuditCursor] = useState<string | null>(null);
+  const [searchedThrough, setSearchedThrough] = useState<number | null>(null);
   const [expandedEpoch, setExpandedEpoch] = useState<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     fetchAuditRecords()
-      .then((records) => {
+      .then((page) => {
         if (cancelled) return;
-        setAudits(records);
+        setAudits(page.records);
+        setAuditCursor(page.nextCursor);
+        setSearchedThrough(page.searchedThrough);
         setAuditError(null);
       })
       .catch((error) => {
@@ -183,6 +187,21 @@ export default function TransparencyPage() {
       cancelled = true;
     };
   }, []);
+
+  const loadMoreAudits = async () => {
+    setLoadingAudits(true);
+    setAuditError(null);
+    try {
+      const page = await fetchAuditRecords(auditCursor || undefined);
+      setAudits((previous) => [...new Map([...previous, ...page.records].map((record) => [record.epoch, record])).values()].sort((a, b) => b.epoch - a.epoch));
+      setAuditCursor(page.nextCursor);
+      setSearchedThrough(page.searchedThrough);
+    } catch (error) {
+      setAuditError(error instanceof Error ? error.message : 'Failed to load audit records');
+    } finally {
+      setLoadingAudits(false);
+    }
+  };
 
   const copyToClipboard = (text: string, label: string) => {
     navigator.clipboard.writeText(text);
@@ -515,7 +534,16 @@ export default function TransparencyPage() {
             Each audit includes transaction keys so you can verify we control the native XMR backing Solana XMR.
           </p>
 
-          {loadingAudits ? (
+          <div className="mb-4 text-sm text-[var(--muted)]">
+            <p>Audit history loads in pages of bridge activity. Keep loading earlier activity to find older audits.</p>
+            {searchedThrough && <p>Searched back to {formatDate(searchedThrough)}.</p>}
+            {(auditCursor || auditError) && (
+              <button className="mt-2 underline disabled:opacity-50" disabled={loadingAudits} onClick={() => void loadMoreAudits()}>
+                {loadingAudits ? 'Loading…' : auditError ? 'Retry' : 'Load earlier activity'}
+              </button>
+            )}
+          </div>
+          {loadingAudits && audits.length === 0 ? (
             <div className="text-center py-8 text-[var(--muted)]">
               <div className="animate-spin w-6 h-6 border-2 border-[#ff6600] border-t-transparent rounded-full mx-auto mb-2"></div>
               Loading audit history...
@@ -526,7 +554,7 @@ export default function TransparencyPage() {
             </div>
           ) : audits.length === 0 ? (
             <div className="text-center py-8 text-[var(--muted)]">
-              No audits recorded yet. First audit will run within 24 hours.
+              No audits found in the activity loaded so far.
             </div>
           ) : (
             <div className="space-y-3">

@@ -8,6 +8,32 @@ Self-hosted setup for the two apps in this monorepo:
 Each app is an independent Next.js server. The default runner here is PM2; Docker is
 provided as an alternative further down.
 
+### Bridge RPC budget
+
+The `wxmr.io` bridge uses `https://api.mainnet.solana.com` through its own
+`/api/solana` route. It intentionally ignores the shared `SOLANA_RPC_URL` and
+`NEXT_PUBLIC_SOLANA_RPC_URL` settings; those still configure the swap app and
+orchestrator. No paid RPC URL is embedded in the bridge browser bundle.
+
+All bridge HTTP calls, including audit/withdrawal history and transaction
+confirmation, share one queue in the Next.js server process: request starts are
+at least 1,250 ms apart (at most 0.8 requests/second), with no automatic retries.
+Identical reads coalesce, account reads cache for 5 seconds, and successful sends
+invalidate the read cache. Public endpoint failures back off. Keep **one bridge
+server process** to preserve this aggregate limit; replicas need a shared limiter.
+
+The homepage loads its known accounts together and does not poll while idle.
+Withdrawal addresses are remembered per wallet/browser; use **Load wallet history**
+to find transfers from other browsers or earlier sessions. Audit and withdrawal
+history paginate through 10 finalized transactions on demand, then read the exact
+record accounts. A page can take about 15 seconds on a cold cache; an empty page
+does not mean there are no older records. No bridge route permits
+`getProgramAccounts`. The public RPC can still throttle or block traffic.
+
+Run `npm --workspace @wxmr/bridge run test:rpc` and `npm run build:bridge` before
+deploying with `scripts/redeploy-bridge-remote.sh`. The script ships only the
+bridge build and core package and verifies the service restart and build ID.
+
 ## 1. Build and run with PM2
 
 The PM2 config lives at the repo root (`ecosystem.config.js`). From the repo root:

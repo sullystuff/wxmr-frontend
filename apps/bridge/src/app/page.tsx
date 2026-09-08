@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui';
+import dynamic from 'next/dynamic';
 import { useWxmrBridge, DepositAccountInfo, WithdrawalInfo, BridgeConfig } from '@/hooks/useWxmrBridge';
 import { QRCodeSVG } from 'qrcode.react';
 import { SwapModal } from '@wxmr/shared';
@@ -17,6 +17,11 @@ import {
 
 const BASIS_POINTS = BigInt(10000);
 const WITHDRAW_FEE_BPS = 10;
+// Wallet selection comes from browser storage and must not change server HTML during hydration.
+const WalletMultiButton = dynamic(
+  () => import('@solana/wallet-adapter-react-ui').then((module) => module.WalletMultiButton),
+  { ssr: false },
+);
 
 const MIN_WITHDRAW_XMR = formatXmrAmount(MIN_XMR_WITHDRAWAL_PICONERO);
 const MIN_DEPOSIT_XMR = formatXmrAmount(MIN_XMR_DEPOSIT_PICONERO);
@@ -432,7 +437,7 @@ export default function Home() {
     publicKey,
     createDepositAccount,
     requestWithdrawal,
-    fetchMyWithdrawals,
+    discoverMyWithdrawals,
     fetchPageSnapshot,
     claimPendingMint,
   } = useWxmrBridge();
@@ -482,39 +487,67 @@ export default function Home() {
   const [showSwapModal, setShowSwapModal] = useState(false);
   const [copied, setCopied] = useState(false);
   const loadRequestRef = useRef(0);
+  const historyRequestRef = useRef(0);
+  const [dataError, setDataError] = useState<string | null>(null);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyCursor, setHistoryCursor] = useState<string | null | undefined>(undefined);
+  const [historyThrough, setHistoryThrough] = useState<number | null>(null);
 
   // Load data — bridge config always, wallet-specific data only when connected
   const loadData = useCallback(async () => {
     const requestId = ++loadRequestRef.current;
 
     try {
-      const [snapshot, myWithdrawals] = await Promise.all([
-        fetchPageSnapshot(),
-        isConnected ? fetchMyWithdrawals() : Promise.resolve([]),
-      ]);
+      const snapshot = await fetchPageSnapshot();
 
       if (requestId !== loadRequestRef.current) return;
 
+      setDataError(null);
       setBridgeConfig(snapshot.bridgeConfig);
       setCirculatingSupply(snapshot.circulatingSupply);
       setWxmrBalance(snapshot.wxmrBalance);
       setPendingBalance(snapshot.pendingBalance);
       setDepositAccount(snapshot.depositAccount);
-      setWithdrawals(myWithdrawals.sort((a, b) => b.createdAt - a.createdAt));
+      setWithdrawals(snapshot.withdrawals.sort((a, b) => b.createdAt - a.createdAt));
     } catch (err) {
+      if (requestId === loadRequestRef.current) setDataError(getErrorMessage(err, 'Unable to refresh bridge balances'));
       console.error('Error loading data:', err);
     }
-  }, [isConnected, fetchPageSnapshot, fetchMyWithdrawals]);
+  }, [fetchPageSnapshot]);
 
-  // Reset wallet-specific state when disconnected
+  // Invalidate old wallet requests on both disconnect and account switches.
   useEffect(() => {
-    if (!isConnected) {
-      setWxmrBalance(BigInt(0));
-      setPendingBalance(BigInt(0));
-      setDepositAccount(null);
-      setWithdrawals([]);
+    const loadRequests = loadRequestRef;
+    const historyRequests = historyRequestRef;
+    setWxmrBalance(BigInt(0));
+    setPendingBalance(BigInt(0));
+    setDepositAccount(null);
+    setWithdrawals([]);
+    setHistoryCursor(undefined);
+    setHistoryThrough(null);
+    setHistoryLoading(false);
+    return () => {
+      loadRequests.current++;
+      historyRequests.current++;
+    };
+  }, [publicKey]);
+
+  const loadOlderWithdrawals = async () => {
+    const requestId = ++historyRequestRef.current;
+    setHistoryLoading(true);
+    setError(null);
+    try {
+      const page = await discoverMyWithdrawals(historyCursor || undefined);
+      if (requestId !== historyRequestRef.current) return;
+      setHistoryCursor(page.nextCursor);
+      setHistoryThrough(page.searchedThrough);
+      await loadData();
+    } catch (err) {
+      if (requestId === historyRequestRef.current) setError(getErrorMessage(err, 'Unable to load earlier transfers'));
+    } finally {
+      if (requestId === historyRequestRef.current) setHistoryLoading(false);
     }
-  }, [isConnected]);
+  };
 
   useEffect(() => {
     if (isWalletConnecting) return;
@@ -633,6 +666,12 @@ export default function Home() {
           </div>
           <WalletMultiButton />
         </header>
+        {dataError && (
+          <p role="alert" className="mb-4 text-red-400">
+            Unable to refresh balances. {dataError}
+            <button className="ml-2 underline" onClick={() => void loadData()}>Retry</button>
+          </p>
+        )}
 
         {/* Stats Cards — always visible */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
@@ -1033,10 +1072,23 @@ export default function Home() {
                   </svg>
                   Pending Solana -&gt; Monero Transfers
                 </h2>
+                <p className="text-sm text-[var(--muted)] mb-3">
+                  Transfers requested here are remembered in this browser. Load wallet history to find earlier transfers or transfers from another device.
+                </p>
+                <div className="flex gap-4 mb-3 text-sm">
+                  <button className="underline" onClick={() => void loadData()}>Refresh status</button>
+                  {historyCursor !== null && (
+                    <button className="underline disabled:opacity-50" disabled={historyLoading} onClick={() => void loadOlderWithdrawals()}>
+                      {historyLoading ? 'Loading wallet history…' : historyCursor ? 'Load earlier activity' : 'Load wallet history'}
+                    </button>
+                  )}
+                </div>
+                {historyThrough && <p className="text-xs text-[var(--muted)] mb-3">Searched back to {formatTime(historyThrough)}.</p>}
+
                 {withdrawals.length === 0 ? (
                   <div className="text-center py-8">
                     <div className="text-4xl mb-3 opacity-30">📤</div>
-                    <p className="text-[var(--muted)]">No pending Solana to Monero transfers</p>
+                    <p className="text-[var(--muted)]">No pending transfers among the records loaded.</p>
                   </div>
                 ) : (
                   <div className="space-y-4">

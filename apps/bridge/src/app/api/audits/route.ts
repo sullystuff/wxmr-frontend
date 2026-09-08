@@ -1,106 +1,40 @@
 import { NextResponse } from 'next/server';
-import { Connection, PublicKey } from '@solana/web3.js';
+import { BorshAccountsCoder, type Idl } from '@coral-xyz/anchor';
+import IDL from '@wxmr/core/idl/wxmr_bridge.json';
+import { BRIDGE_PROGRAM, readHistoryPage } from '@/lib/chain-history';
+import { rpcResult, RpcRelayError } from '@/lib/rpc-relay';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const BRIDGE_PROGRAM_ID =
-  process.env.NEXT_PUBLIC_BRIDGE_PROGRAM_ID || 'EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8';
-const SOLANA_RPC =
-  process.env.SOLANA_RPC_URL ||
-  process.env.NEXT_PUBLIC_SOLANA_RPC_URL ||
-  'https://api.mainnet-beta.solana.com';
-
-// First 8 bytes of sha256("account:AuditRecord"), base58 encoded for memcmp.
-const AUDIT_RECORD_DISCRIMINATOR_B58 = '4wCwkHnKz1g';
-
-type AuditRecordResponse = {
-  epoch: number;
-  timestamp: number;
-  circulatingSupply: string;
-  spendableBalance: string;
-  unconfirmedBalance: string;
-  data: string;
-};
-
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const records = await fetchAuditRecords();
-
-    return NextResponse.json(records, {
-      headers: {
-        'Cache-Control': 'no-store',
-      },
+    const before = new URL(request.url).searchParams.get('before') || undefined;
+    const { addresses, ...page } = await readHistoryPage(BRIDGE_PROGRAM, 'audit', before);
+    const records = [];
+    if (addresses.length) {
+      const result = await rpcResult<{ value: ({ owner: string; data: [string, string] } | null)[] }>(
+        'getMultipleAccounts', [addresses, { encoding: 'base64', commitment: 'confirmed' }],
+      );
+      const coder = new BorshAccountsCoder(IDL as Idl);
+      for (const info of result.value) {
+        if (!info || info.owner !== BRIDGE_PROGRAM.toBase58()) continue;
+        const record = coder.decode('AuditRecord', Buffer.from(info.data[0], 'base64'));
+        records.push({
+          epoch: record.epoch.toNumber(), timestamp: record.timestamp.toNumber(),
+          circulatingSupply: record.circulating_supply.toString(),
+          spendableBalance: record.spendable_balance.toString(),
+          unconfirmedBalance: record.unconfirmed_balance.toString(), data: record.data,
+        });
+      }
+    }
+    return NextResponse.json({ records: records.sort((a, b) => b.epoch - a.epoch), ...page }, {
+      headers: { 'Cache-Control': 'public, max-age=30' },
     });
   } catch (error) {
-    console.error('Error fetching audit records:', error);
-
-    return NextResponse.json(
-      { error: 'Failed to load audit records' },
-      { status: 502 },
-    );
+    return NextResponse.json({ error: error instanceof RpcRelayError ? error.message : 'Failed to load audit records' }, {
+      status: error instanceof RpcRelayError ? error.status : 502,
+      headers: { 'Cache-Control': 'no-store' },
+    });
   }
-}
-
-async function fetchAuditRecords(): Promise<AuditRecordResponse[]> {
-  const connection = new Connection(SOLANA_RPC, 'confirmed');
-  const programId = new PublicKey(BRIDGE_PROGRAM_ID);
-
-  const accounts = await connection.getProgramAccounts(programId, {
-    filters: [
-      {
-        memcmp: {
-          offset: 0,
-          bytes: AUDIT_RECORD_DISCRIMINATOR_B58,
-        },
-      },
-    ],
-  });
-
-  const records: AuditRecordResponse[] = [];
-
-  for (const account of accounts) {
-    try {
-      records.push(decodeAuditRecord(Buffer.from(account.account.data)));
-    } catch (error) {
-      console.warn(`Skipping malformed audit record ${account.pubkey.toBase58()}:`, error);
-    }
-  }
-
-  return records.sort((a, b) => b.epoch - a.epoch);
-}
-
-function decodeAuditRecord(data: Buffer): AuditRecordResponse {
-  let offset = 8; // discriminator
-
-  const epoch = Number(data.readBigUInt64LE(offset));
-  offset += 8;
-
-  const timestamp = Number(data.readBigInt64LE(offset));
-  offset += 8;
-
-  const circulatingSupply = data.readBigUInt64LE(offset).toString();
-  offset += 8;
-
-  const spendableBalance = data.readBigUInt64LE(offset).toString();
-  offset += 8;
-
-  const unconfirmedBalance = data.readBigUInt64LE(offset).toString();
-  offset += 8;
-
-  const dataLen = data.readUInt32LE(offset);
-  offset += 4;
-
-  if (offset + dataLen > data.length) {
-    throw new Error(`Audit data length ${dataLen} exceeds account size ${data.length}`);
-  }
-
-  return {
-    epoch,
-    timestamp,
-    circulatingSupply,
-    spendableBalance,
-    unconfirmedBalance,
-    data: data.subarray(offset, offset + dataLen).toString('utf8'),
-  };
 }

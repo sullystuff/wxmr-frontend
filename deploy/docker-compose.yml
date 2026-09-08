@@ -9,7 +9,6 @@ services:
       context: ..
       dockerfile: apps/bridge/Dockerfile
       args:
-        NEXT_PUBLIC_SOLANA_RPC_URL: ${NEXT_PUBLIC_SOLANA_RPC_URL:-https://api.mainnet-beta.solana.com}
         NEXT_PUBLIC_BRIDGE_PROGRAM_ID: ${NEXT_PUBLIC_BRIDGE_PROGRAM_ID:-EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8}
         NEXT_PUBLIC_JUPITER_API_KEY: ${NEXT_PUBLIC_JUPITER_API_KEY:-}
         NEXT_PUBLIC_JUPITER_REFERRAL_ACCOUNT: ${NEXT_PUBLIC_JUPITER_REFERRAL_ACCOUNT:-}

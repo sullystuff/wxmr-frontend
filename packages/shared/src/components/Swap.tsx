@@ -5,7 +5,7 @@ import { useWallet, useConnection } from '@solana/wallet-adapter-react';
 import { VersionedTransaction } from '@solana/web3.js';
 import {
   getAssociatedTokenAddress,
-  getAccount,
+  unpackAccount,
 } from '@solana/spl-token';
 import { useJupiterQuote, JupiterQuote } from '../hooks/useJupiterQuote';
 import { XMR_MINT, USDC_MINT } from '../constants';
@@ -57,10 +57,9 @@ export function SwapPanel({ onClose }: SwapPanelProps) {
           getAssociatedTokenAddress(XMR_MINT, publicKey),
         ]);
 
-        const [usdcAccount, wxmrAccount] = await Promise.all([
-          getAccount(connection, usdcAta).catch(() => null),
-          getAccount(connection, wxmrAta).catch(() => null),
-        ]);
+        const [usdcInfo, wxmrInfo] = await connection.getMultipleAccountsInfo([usdcAta, wxmrAta], 'confirmed');
+        const usdcAccount = usdcInfo ? unpackAccount(usdcAta, usdcInfo) : null;
+        const wxmrAccount = wxmrInfo ? unpackAccount(wxmrAta, wxmrInfo) : null;
 
         setUserUsdcBalance(usdcAccount ? BigInt(usdcAccount.amount.toString()) : BigInt(0));
         setUserWxmrBalance(wxmrAccount ? BigInt(wxmrAccount.amount.toString()) : BigInt(0));

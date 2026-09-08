@@ -1,0 +1,20 @@
+'use client';
+
+import { useMemo } from 'react';
+import { ConnectionContext, WalletProvider } from '@solana/wallet-adapter-react';
+import { WalletModalProvider } from '@solana/wallet-adapter-react-ui';
+import { PhantomWalletAdapter, SolflareWalletAdapter } from '@solana/wallet-adapter-wallets';
+import { BridgeConnection } from '@/lib/bridge-connection';
+import '@solana/wallet-adapter-react-ui/styles.css';
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  const connection = useMemo(() => ({ connection: new BridgeConnection() }), []);
+  const wallets = useMemo(() => [new PhantomWalletAdapter(), new SolflareWalletAdapter()], []);
+  return (
+    <ConnectionContext.Provider value={connection}>
+      <WalletProvider wallets={wallets} autoConnect>
+        <WalletModalProvider>{children}</WalletModalProvider>
+      </WalletProvider>
+    </ConnectionContext.Provider>
+  );
+}

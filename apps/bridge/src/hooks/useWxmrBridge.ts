@@ -17,6 +17,7 @@ import {
 import IDL from '@wxmr/core/idl/wxmr_bridge.json';
 import type { WxmrBridge } from '@wxmr/core/idl/wxmr_bridge';
 import { XMR_MINT } from '@wxmr/shared';
+import { knownWithdrawals, rememberWithdrawals } from '@/lib/withdrawal-storage';
 
 // Program ID - should match deployed program
 const PROGRAM_ID = new PublicKey(
@@ -75,18 +76,20 @@ export interface BridgePageSnapshot {
   wxmrBalance: bigint;
   pendingBalance: bigint;
   depositAccount: DepositAccountInfo | null;
+  withdrawals: WithdrawalInfo[];
 }
 
 export function useWxmrBridge() {
   const { connection } = useConnection();
   const wallet = useWallet();
+  const { publicKey, signTransaction, signAllTransactions } = wallet;
 
   const program = useMemo(() => {
-    if (!wallet.publicKey) return null;
+    if (!publicKey) return null;
     const anchorWallet: AnchorProviderWallet = {
-      publicKey: wallet.publicKey,
-      signTransaction: wallet.signTransaction ?? (async (tx) => tx),
-      signAllTransactions: wallet.signAllTransactions ?? (async (txs) => txs),
+      publicKey: publicKey,
+      signTransaction: signTransaction ?? (async (tx) => tx),
+      signAllTransactions: signAllTransactions ?? (async (txs) => txs),
     };
 
     const provider = new AnchorProvider(
@@ -96,7 +99,7 @@ export function useWxmrBridge() {
     );
 
     return new Program<WxmrBridge>(IDL as WxmrBridge, provider);
-  }, [connection, wallet]);
+  }, [connection, publicKey, signTransaction, signAllTransactions]);
 
   const readProgram = useMemo(() => {
     const readProvider = new AnchorProvider(
@@ -193,6 +196,19 @@ export function useWxmrBridge() {
     }
   }, [program, connection, getBridgeConfigPDA, decodeBridgeConfig]);
 
+  const decodeWithdrawal = useCallback((withdrawalPda: PublicKey, data: Buffer): WithdrawalInfo => {
+    const w = readProgram.coder.accounts.decode('withdrawalRecord', data);
+    if (!wallet.publicKey?.equals(w.user) || !getWithdrawalPDA(w.user, BigInt(w.nonce.toString())).equals(withdrawalPda)) {
+      throw new Error('Withdrawal account does not belong to this wallet');
+    }
+    const status: WithdrawalInfo['status'] = 'sending' in w.status ? 'sending'
+      : 'completed' in w.status ? 'completed' : 'reverted' in w.status ? 'reverted' : 'pending';
+    return {
+      withdrawalPda: withdrawalPda.toBase58(), user: w.user.toBase58(), nonce: BigInt(w.nonce.toString()),
+      amount: BigInt(w.amount.toString()), xmrAddress: w.xmrAddress, status, createdAt: w.createdAt.toNumber(),
+    };
+  }, [readProgram, wallet.publicKey, getWithdrawalPDA]);
+
   // Fetch all deterministic homepage accounts in one RPC request.
   const fetchPageSnapshot = useCallback(async (): Promise<BridgePageSnapshot> => {
     const snapshot: BridgePageSnapshot = {
@@ -201,6 +217,7 @@ export function useWxmrBridge() {
       wxmrBalance: BigInt(0),
       pendingBalance: BigInt(0),
       depositAccount: null,
+      withdrawals: [],
     };
 
     try {
@@ -218,10 +235,26 @@ export function useWxmrBridge() {
         accountKeys.push(userTokenAccount, pendingTokenAccount, depositPda);
       }
 
-      const [configInfo, mintInfo, userTokenInfo, pendingTokenInfo, depositInfo] =
-        await connection.getMultipleAccountsInfo(accountKeys, 'confirmed');
+      const baseAccountCount = accountKeys.length;
+      if (wallet.publicKey) {
+        for (const address of knownWithdrawals(PROGRAM_ID.toBase58(), wallet.publicKey.toBase58())) {
+          try { accountKeys.push(new PublicKey(address)); } catch { /* Ignore invalid browser storage. */ }
+        }
+      }
+      const infos = [];
+      for (let offset = 0; offset < accountKeys.length; offset += 100) {
+        infos.push(...await connection.getMultipleAccountsInfo(accountKeys.slice(offset, offset + 100), 'confirmed'));
+      }
+      const [configInfo, mintInfo, userTokenInfo, pendingTokenInfo, depositInfo] = infos;
+      if (!configInfo || !mintInfo) throw new Error('Bridge configuration or mint is unavailable');
+      for (let i = baseAccountCount; i < infos.length; i++) {
+        const info = infos[i];
+        if (!info || !info.owner.equals(PROGRAM_ID)) continue;
+        snapshot.withdrawals.push(decodeWithdrawal(accountKeys[i], info.data));
+      }
 
       if (configInfo) {
+        if (!configInfo.owner.equals(PROGRAM_ID)) throw new Error('Invalid bridge config owner');
         snapshot.bridgeConfig = decodeBridgeConfig(configInfo.data);
       }
 
@@ -238,14 +271,16 @@ export function useWxmrBridge() {
       }
 
       if (depositPda && depositInfo) {
+        if (!depositInfo.owner.equals(PROGRAM_ID)) throw new Error('Invalid deposit owner');
         snapshot.depositAccount = decodeDepositAccount(depositPda, depositInfo.data);
       }
     } catch (error) {
       console.error('Error fetching bridge page snapshot:', error);
+      throw error;
     }
 
     return snapshot;
-  }, [connection, wallet.publicKey, getBridgeConfigPDA, getDepositPDA, decodeBridgeConfig, decodeDepositAccount]);
+  }, [connection, wallet.publicKey, getBridgeConfigPDA, getDepositPDA, decodeBridgeConfig, decodeDepositAccount, decodeWithdrawal]);
 
   // Create deposit account (one per wallet - permanent)
   const createDepositAccount = useCallback(async (): Promise<{ signature: string; depositPda: string } | null> => {
@@ -320,6 +355,8 @@ export function useWxmrBridge() {
       // Generate unique nonce (timestamp-based)
       const nonce = BigInt(Date.now());
       const withdrawalPda = getWithdrawalPDA(wallet.publicKey, nonce);
+      // Save before asking the wallet to sign: an uncertain confirmation must remain discoverable.
+      rememberWithdrawals(PROGRAM_ID.toBase58(), wallet.publicKey.toBase58(), [withdrawalPda.toBase58()]);
 
       const signature = await program.methods
         .requestWithdrawal(new BN(nonce.toString()), new BN(amount.toString()), xmrAddress, exactOut)
@@ -371,42 +408,17 @@ export function useWxmrBridge() {
     }
   }, [program]);
 
-  // Fetch currently open withdrawal records for current user
-  const fetchMyWithdrawals = useCallback(async (): Promise<WithdrawalInfo[]> => {
-    if (!program || !wallet.publicKey) return [];
-
-    try {
-      const withdrawals = await program.account.withdrawalRecord.all([
-        {
-          memcmp: {
-            offset: 8, // discriminator
-            bytes: wallet.publicKey.toBase58(),
-          },
-        },
-      ]);
-
-      return withdrawals.map((w) => {
-        let status: WithdrawalInfo['status'] = 'pending';
-        if ('pending' in w.account.status) status = 'pending';
-        else if ('sending' in w.account.status) status = 'sending';
-        else if ('completed' in w.account.status) status = 'completed';
-        else if ('reverted' in w.account.status) status = 'reverted';
-
-        return {
-          withdrawalPda: w.publicKey.toBase58(),
-          user: w.account.user.toBase58(),
-          nonce: BigInt(w.account.nonce.toString()),
-          amount: BigInt(w.account.amount.toString()),
-          xmrAddress: w.account.xmrAddress,
-          status,
-          createdAt: w.account.createdAt.toNumber(),
-        };
-      });
-    } catch (error) {
-      console.error('Error fetching withdrawals:', error);
-      return [];
-    }
-  }, [program, wallet.publicKey]);
+  // Older/cross-browser records are discovered only on request, one history page at a time.
+  const discoverMyWithdrawals = useCallback(async (before?: string): Promise<{ nextCursor: string | null; searchedThrough: number | null }> => {
+    if (!wallet.publicKey) throw new Error('Connect a wallet first');
+    const params = new URLSearchParams({ owner: wallet.publicKey.toBase58() });
+    if (before) params.set('before', before);
+    const response = await fetch(`/api/withdrawals?${params}`);
+    const body = await response.json();
+    if (!response.ok) throw new Error(body.error || 'Failed to load withdrawal history');
+    rememberWithdrawals(PROGRAM_ID.toBase58(), wallet.publicKey.toBase58(), body.addresses);
+    return { nextCursor: body.nextCursor, searchedThrough: body.searchedThrough };
+  }, [wallet.publicKey]);
 
   // Get pending token account address (ATA owned by deposit PDA)
   const getPendingTokenAccount = useCallback((depositPda: PublicKey) => {
@@ -458,7 +470,7 @@ export function useWxmrBridge() {
     fetchMyDepositAccount,
     requestWithdrawal,
     fetchWithdrawal,
-    fetchMyWithdrawals,
+    discoverMyWithdrawals,
     fetchPageSnapshot,
     fetchBridgeConfig,
     claimPendingMint,
