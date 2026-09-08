@@ -50,6 +50,8 @@ export function SwapPanel({ onClose }: SwapPanelProps) {
       return;
     }
 
+    let cancelled = false;
+
     const fetchBalances = async () => {
       try {
         const [usdcAta, wxmrAta] = await Promise.all([
@@ -61,6 +63,7 @@ export function SwapPanel({ onClose }: SwapPanelProps) {
         const usdcAccount = usdcInfo ? unpackAccount(usdcAta, usdcInfo) : null;
         const wxmrAccount = wxmrInfo ? unpackAccount(wxmrAta, wxmrInfo) : null;
 
+        if (cancelled) return;
         setUserUsdcBalance(usdcAccount ? BigInt(usdcAccount.amount.toString()) : BigInt(0));
         setUserWxmrBalance(wxmrAccount ? BigInt(wxmrAccount.amount.toString()) : BigInt(0));
       } catch (e) {
@@ -68,7 +71,13 @@ export function SwapPanel({ onClose }: SwapPanelProps) {
       }
     };
 
-    fetchBalances();
+    // Jupiter broadcasts outside our RPC relay. Let its 5-second account cache
+    // expire before the one post-swap refresh, so old balances do not persist.
+    const refresh = setTimeout(fetchBalances, txSignature ? 5_100 : 0);
+    return () => {
+      cancelled = true;
+      clearTimeout(refresh);
+    };
   }, [publicKey, connection, txSignature]); // Refetch after swap
 
   // Parse input
