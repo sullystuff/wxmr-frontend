@@ -18,6 +18,7 @@ import IDL from '@wxmr/core/idl/wxmr_bridge.json';
 import type { WxmrBridge } from '@wxmr/core/idl/wxmr_bridge';
 import { XMR_MINT } from '@wxmr/shared';
 import { knownWithdrawals, rememberWithdrawals } from '@/lib/withdrawal-storage';
+import { readHistoryPage } from '@/lib/chain-history';
 
 // Program ID - should match deployed program
 const PROGRAM_ID = new PublicKey(
@@ -413,11 +414,7 @@ export function useWxmrBridge() {
   // Older/cross-browser records are discovered only on request, one history page at a time.
   const discoverMyWithdrawals = useCallback(async (before?: string): Promise<{ nextCursor: string | null; searchedThrough: number | null }> => {
     if (!wallet.publicKey) throw new Error('Connect a wallet first');
-    const params = new URLSearchParams({ owner: wallet.publicKey.toBase58() });
-    if (before) params.set('before', before);
-    const response = await fetch(`/api/withdrawals?${params}`);
-    const body = await response.json();
-    if (!response.ok) throw new Error(body.error || 'Failed to load withdrawal history');
+    const body = await readHistoryPage(wallet.publicKey, 'withdrawal', before);
     rememberWithdrawals(PROGRAM_ID.toBase58(), wallet.publicKey.toBase58(), body.addresses);
     return { nextCursor: body.nextCursor, searchedThrough: body.searchedThrough };
   }, [wallet.publicKey]);

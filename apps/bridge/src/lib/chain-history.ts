@@ -1,7 +1,8 @@
+import { Buffer } from 'buffer';
 import { PublicKey } from '@solana/web3.js';
 import { utils } from '@coral-xyz/anchor';
 import IDL from '@wxmr/core/idl/wxmr_bridge.json';
-import { rpcResult, RpcRelayError } from './rpc-relay';
+import { rpcResult, RpcError } from './rpc-client';
 
 export const BRIDGE_PROGRAM = new PublicKey(
   process.env.NEXT_PUBLIC_BRIDGE_PROGRAM_ID || 'EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8',
@@ -42,7 +43,7 @@ export async function readHistoryPage(address: PublicKey, kind: 'audit' | 'withd
     try {
       if (utils.bytes.bs58.decode(before).length !== 64) throw new Error('length');
     } catch {
-      throw new RpcRelayError('Invalid history cursor', 400);
+      throw new RpcError('Invalid history cursor', 400);
     }
   }
   const signatures = await rpcResult<{ signature: string; err: unknown; blockTime: number | null }[]>(
@@ -50,14 +51,14 @@ export async function readHistoryPage(address: PublicKey, kind: 'audit' | 'withd
     [address.toBase58(), { limit: HISTORY_PAGE_SIZE, commitment: 'finalized', ...(before ? { before } : {}) }],
   );
   const addresses = new Set<string>();
-  // Sequential on purpose: foreground reads can use the relay between history reads.
+  // Sequential on purpose: foreground reads can use this visitor's budget between history reads.
   for (const entry of signatures) {
     if (entry.err) continue;
     const transaction = await rpcResult<HistoryTransaction | null>('getTransaction', [entry.signature, {
       encoding: 'jsonParsed', commitment: 'finalized', maxSupportedTransactionVersion: 0,
     }]);
     // Do not advance past transactions that the public endpoint cannot retrieve.
-    if (!transaction) throw new RpcRelayError('Transaction history is temporarily unavailable. Please retry.', 502);
+    if (!transaction) throw new RpcError('Transaction history is temporarily unavailable. Please retry.', 502);
     for (const key of extractRecordAddresses(transaction, kind, kind === 'withdrawal' ? address.toBase58() : undefined)) addresses.add(key);
   }
   return {

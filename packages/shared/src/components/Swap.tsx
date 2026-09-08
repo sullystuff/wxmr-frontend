@@ -71,7 +71,7 @@ export function SwapPanel({ onClose }: SwapPanelProps) {
       }
     };
 
-    // Jupiter broadcasts outside our RPC relay. Let its 5-second account cache
+    // Jupiter broadcasts outside the cached RPC client. Let its 5-second account cache
     // expire before the one post-swap refresh, so old balances do not persist.
     const refresh = setTimeout(fetchBalances, txSignature ? 5_100 : 0);
     return () => {

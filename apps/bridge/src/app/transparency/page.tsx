@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { fetchAuditPage } from '@/lib/audits';
 
 // Monero Logo SVG component from cryptologos.cc
 function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
@@ -29,15 +30,6 @@ interface AuditRecord {
   circulatingSupply: bigint;
   spendableBalance: bigint;
   unconfirmedBalance: bigint;
-  data: string;
-}
-
-interface AuditRecordResponse {
-  epoch: number;
-  timestamp: number;
-  circulatingSupply: string;
-  spendableBalance: string;
-  unconfirmedBalance: string;
   data: string;
 }
 
@@ -126,22 +118,7 @@ function formatDate(timestamp: number): string {
 
 // Fetch audit records from on-chain
 async function fetchAuditRecords(before?: string): Promise<{ records: AuditRecord[]; nextCursor: string | null; searchedThrough: number | null }> {
-  const response = await fetch(`/api/audits${before ? `?before=${encodeURIComponent(before)}` : ''}`);
-
-  if (!response.ok) {
-    let message = 'Failed to load audit records';
-    try {
-      const body = await response.json();
-      if (typeof body?.error === 'string') {
-        message = body.error;
-      }
-    } catch {
-      // Keep the default message.
-    }
-    throw new Error(message);
-  }
-
-  const page = await response.json() as { records: AuditRecordResponse[]; nextCursor: string | null; searchedThrough: number | null };
+  const page = await fetchAuditPage(before);
   return { ...page, records: page.records.map((record) => ({
     epoch: record.epoch,
     timestamp: record.timestamp,

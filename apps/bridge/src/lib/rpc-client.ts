@@ -1,7 +1,7 @@
-// One relay is shared by every bridge API route in this Node process.
-// Never use the worker/orchestrator RPC settings here.
-export const PUBLIC_SOLANA_RPC = 'https://api.mainnet.solana.com';
-export const RPC_INTERVAL_MS = 1_250;
+// Each visitor calls the public RPC directly. Components share a browser-local
+// cache and queue; supported browsers coordinate the budget across their tabs.
+export const PUBLIC_SOLANA_RPC = 'https://solana-rpc.publicnode.com';
+export const RPC_INTERVAL_MS = 1_000;
 
 const CACHE_TTL: Record<string, number> = {
   getAccountInfo: 5_000,
@@ -16,33 +16,36 @@ const CACHE_TTL: Record<string, number> = {
   simulateTransaction: 0,
 };
 
-export class RpcRelayError extends Error {
+export class RpcError extends Error {
   constructor(message: string, readonly status = 503) {
     super(message);
   }
 }
 
 type RpcReply = { result?: unknown; error?: { code: number; message: string; data?: unknown } };
-type RelayResult = { reply: RpcReply; cache: 'hit' | 'miss' | 'coalesced' };
+type RpcResult = { reply: RpcReply; cache: 'hit' | 'miss' | 'coalesced' };
 
-export function createRpcRelay(options: {
+export function createRpcClient(options: {
   fetch?: typeof fetch;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
+  runExclusive?: <T>(job: () => Promise<T>) => Promise<T>;
+  readNextStart?: () => number;
+  writeNextStart?: (nextStart: number) => void;
 } = {}) {
   const request = options.fetch ?? globalThis.fetch;
-  const now = options.now ?? (() => performance.now());
+  const now = options.now ?? Date.now;
   const sleep = options.sleep ?? ((ms) => new Promise((resolve) => setTimeout(resolve, ms)));
   const cache = new Map<string, { reply: RpcReply; expires: number }>();
   const pending = new Map<string, Promise<RpcReply>>();
   let tail: Promise<unknown> = Promise.resolve();
   let nextStart = 0;
   let queued = 0;
-  let count = 0;
+  const runExclusive = options.runExclusive ?? (async <T>(job: () => Promise<T>) => job());
 
-  async function call(method: string, params: unknown[] = []): Promise<RelayResult> {
+  async function call(method: string, params: unknown[] = []): Promise<RpcResult> {
     if (!Object.hasOwn(CACHE_TTL, method)) {
-      throw new RpcRelayError('RPC method is not available', 400);
+      throw new RpcError('RPC method is not available', 400);
     }
     const ttl = CACHE_TTL[method];
     const key = JSON.stringify([method, params]);
@@ -51,21 +54,21 @@ export function createRpcRelay(options: {
     const existing = ttl > 0 ? pending.get(key) : undefined;
     if (existing) return { reply: await existing, cache: 'coalesced' };
     if (queued >= 24 || nextStart - now() > 30_000) {
-      throw new RpcRelayError('RPC is busy. Please try again shortly.', 429);
+      throw new RpcError('RPC is busy. Please try again shortly.', 429);
     }
 
     queued++;
     const enqueuedAt = now();
-    const job = tail.then(async () => {
+    const job = tail.then(() => runExclusive(async () => {
+      nextStart = Math.max(nextStart, options.readNextStart?.() ?? 0);
       const delay = Math.max(0, nextStart - now());
       if (now() + delay - enqueuedAt > 30_000) {
-        throw new RpcRelayError('RPC is busy. Please try again shortly.', 429);
+        throw new RpcError('RPC is busy. Please try again shortly.', 429);
       }
       while (nextStart > now()) await sleep(Math.ceil(nextStart - now()));
       // Reserve at dispatch time, including failed calls. No automatic retries.
       nextStart = now() + RPC_INTERVAL_MS;
-      count++;
-      console.info(`[bridge-rpc] upstream=${count} method=${method}`);
+      options.writeNextStart?.(nextStart);
       try {
         const response = await request(PUBLIC_SOLANA_RPC, {
           method: 'POST',
@@ -80,11 +83,11 @@ export function createRpcRelay(options: {
           const retryMs = Number.isFinite(seconds) ? seconds * 1_000
             : retryHeader ? Date.parse(retryHeader) - Date.now() : 0;
           nextStart = Math.max(nextStart, now() + Math.max(5_000, retryMs || 0));
-          throw new RpcRelayError('Public Solana RPC is temporarily unavailable.', response.status === 429 ? 429 : 502);
+          throw new RpcError('Public Solana RPC is temporarily unavailable.', response.status === 429 ? 429 : 502);
         }
         const body = await response.json() as RpcReply;
         if (!body || (!Object.hasOwn(body, 'result') && !body.error)) {
-          throw new RpcRelayError('Invalid response from public Solana RPC.', 502);
+          throw new RpcError('Invalid response from public Solana RPC.', 502);
         }
         const reply: RpcReply = body.error ? { error: body.error } : { result: body.result };
         if (method === 'sendTransaction' && !reply.error) cache.clear();
@@ -95,10 +98,12 @@ export function createRpcRelay(options: {
         }
         return reply;
       } catch (error) {
-        nextStart = Math.max(nextStart, now() + (error instanceof RpcRelayError ? 0 : 5_000));
-        throw error instanceof RpcRelayError ? error : new RpcRelayError('Public Solana RPC request failed.', 502);
+        nextStart = Math.max(nextStart, now() + (error instanceof RpcError ? 0 : 5_000));
+        throw error instanceof RpcError ? error : new RpcError('Public Solana RPC request failed.', 502);
+      } finally {
+        options.writeNextStart?.(nextStart);
       }
-    });
+    }));
     tail = job.catch(() => {});
     if (ttl > 0) pending.set(key, job);
     try {
@@ -111,11 +116,42 @@ export function createRpcRelay(options: {
   return { call };
 }
 
-const shared = globalThis as typeof globalThis & { wxmrBridgeRpc?: ReturnType<typeof createRpcRelay> };
-export const bridgeRpc = shared.wxmrBridgeRpc ??= createRpcRelay();
+const BROWSER_BUDGET_KEY = 'wxmr:public-rpc:next-start';
+
+export const browserRpc = createRpcClient({
+  fetch: (...args) => {
+    if (typeof window === 'undefined') throw new RpcError('Bridge RPC reads run in the browser');
+    return globalThis.fetch(...args);
+  },
+  runExclusive: async (job) => {
+    if (typeof navigator !== 'undefined' && navigator.locks) {
+      return navigator.locks.request('wxmr:public-rpc', { signal: AbortSignal.timeout(30_000) }, job);
+    }
+    return job();
+  },
+  readNextStart: () => {
+    try {
+      const value = Number(localStorage.getItem(BROWSER_BUDGET_KEY));
+      return Number.isFinite(value) ? Math.max(0, value) : 0;
+    } catch { return 0; }
+  },
+  writeNextStart: (nextStart) => {
+    try { localStorage.setItem(BROWSER_BUDGET_KEY, String(nextStart)); } catch { /* Per-tab pacing still applies. */ }
+  },
+});
+
+// Adapt the cached response to web3.js while preserving its request ID.
+export function rpcFetch(client = browserRpc): typeof fetch {
+  return async (_url, options) => {
+    const body = JSON.parse(String(options?.body));
+    if (Array.isArray(body)) throw new RpcError('RPC batches are not supported', 400);
+    const { reply } = await client.call(body.method, body.params ?? []);
+    return Response.json({ jsonrpc: '2.0', id: body.id, ...reply });
+  };
+}
 
 export async function rpcResult<T>(method: string, params: unknown[]): Promise<T> {
-  const { reply } = await bridgeRpc.call(method, params);
-  if (reply.error) throw new RpcRelayError(reply.error.message, 502);
+  const { reply } = await browserRpc.call(method, params);
+  if (reply.error) throw new RpcError(reply.error.message, 502);
   return reply.result as T;
 }

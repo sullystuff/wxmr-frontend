@@ -8,14 +8,15 @@ import {
   type SignatureResult,
 } from '@solana/web3.js';
 
-// HTTP always goes through the site's shared budget, including confirmation.
-// No browser RPC keys or independent WebSocket connections are needed.
+import { PUBLIC_SOLANA_RPC, rpcFetch } from './rpc-client';
+
+// All browser reads and transaction confirmation share this visitor's RPC budget.
 export class BridgeConnection extends Connection {
   constructor() {
-    super('https://api.mainnet.solana.com', {
+    super(PUBLIC_SOLANA_RPC, {
       commitment: 'confirmed',
       disableRetryOnRateLimit: true,
-      fetch: (_url, options) => fetch('/api/solana', options),
+      fetch: rpcFetch(),
     });
   }
 
