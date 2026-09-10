@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import { TRADE_SIZES_USD } from '@/lib/quote-sizes';
 
 const REFRESH_MS = 10_000;
 
@@ -60,8 +61,11 @@ export default function QuotesPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [receivedAt, setReceivedAt] = useState<Date | null>(null);
+  const refreshInFlight = useRef(false);
 
   const fetchSnapshot = useCallback(async () => {
+    if (refreshInFlight.current) return;
+    refreshInFlight.current = true;
     setIsRefreshing(true);
     try {
       const response = await fetch('/api/quotes', { cache: 'no-store' });
@@ -75,6 +79,7 @@ export default function QuotesPage() {
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : 'Quote refresh failed');
     } finally {
+      refreshInFlight.current = false;
       setIsRefreshing(false);
     }
   }, []);
@@ -135,7 +140,10 @@ export default function QuotesPage() {
           </div>
           <div className="xmr-card p-5">
             <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Trade Sizes</p>
-            <p className="mt-2 text-2xl font-bold text-white">{snapshot ? snapshot.rows.map((row) => `$${row.sizeUsd}`).join(' / ') : '$1 / $5 / $10'}</p>
+            <p className="mt-2 text-2xl font-bold text-white">
+              {(snapshot?.rows.map((row) => row.sizeUsd) ?? TRADE_SIZES_USD)
+                .map((sizeUsd) => formatUsd(sizeUsd, 0, 0)).join(' / ')}
+            </p>
             <p className="mt-1 text-xs text-[var(--muted)]">USDC on Solana, USDT on KuCoin</p>
           </div>
         </section>
@@ -213,7 +221,7 @@ function QuoteTable({
               return (
                 <tr key={`${side}-${row.sizeUsd}`} className="transition-colors hover:bg-white/[0.02]">
                   <td className="px-5 py-4 align-top">
-                    <span className="text-base font-semibold text-white">${row.sizeUsd}</span>
+                    <span className="text-base font-semibold text-white">{formatUsd(row.sizeUsd, 0, 0)}</span>
                   </td>
                   {side === 'sell' && (
                     <td className="px-5 py-4 align-top font-mono text-[var(--foreground)]">

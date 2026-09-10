@@ -1,10 +1,10 @@
 import { NextResponse } from 'next/server';
 import { USDC_MINT_ADDRESS, WXMR_MINT_ADDRESS } from '@wxmr/core';
+import { TRADE_SIZES_USD } from '@/lib/quote-sizes';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-const TRADE_SIZES_USD = [1, 5, 10] as const;
 const USDC_DECIMALS = 6;
 const XMR_DECIMALS = 12;
 const JUPITER_QUOTE_URLS = [
@@ -22,6 +22,7 @@ let cachedSnapshot: {
   createdAt: number;
   payload: QuoteSnapshot;
 } | null = null;
+let pendingSnapshot: Promise<QuoteSnapshot> | null = null;
 
 type VenueQuote = {
   ok: boolean;
@@ -102,6 +103,16 @@ export async function GET() {
     return quoteJson(cachedSnapshot.payload);
   }
 
+  if (!pendingSnapshot) {
+    pendingSnapshot = buildSnapshot().finally(() => {
+      pendingSnapshot = null;
+    });
+  }
+
+  return quoteJson(await pendingSnapshot);
+}
+
+async function buildSnapshot(): Promise<QuoteSnapshot> {
   const timestamp = new Date().toISOString();
   const kucoinBookPromise = fetchKucoinBook();
   const solanaBuyQuotes = await fetchJupiterQuotesInOrder(TRADE_SIZES_USD.map((sizeUsd) => () => (
@@ -176,7 +187,7 @@ export async function GET() {
     payload,
   };
 
-  return quoteJson(payload);
+  return payload;
 }
 
 function quoteJson(payload: QuoteSnapshot) {
