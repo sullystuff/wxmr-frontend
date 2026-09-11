@@ -11,7 +11,7 @@ const JUPITER_QUOTE_URLS = [
   'https://api.jup.ag/swap/v1/quote',
   'https://lite-api.jup.ag/swap/v1/quote',
 ] as const;
-const KUCOIN_BOOK_URL = 'https://api.kucoin.com/api/v1/market/orderbook/level2_20?symbol=XMR-USDT';
+const KUCOIN_BOOK_URL = 'https://api.kucoin.com/api/v1/market/orderbook/level2_100?symbol=XMR-USDT';
 const KUCOIN_TAKER_FEE_RATE = 0.001;
 const REQUEST_TIMEOUT_MS = 8_000;
 const SNAPSHOT_CACHE_MS = 10_000;
@@ -175,7 +175,7 @@ async function buildSnapshot(): Promise<QuoteSnapshot> {
     referencePrice,
     sources: {
       solana: 'Jupiter quote USDC/XMR on Solana',
-      kucoin: 'KuCoin public XMR-USDT level2_20 order book',
+      kucoin: 'KuCoin public XMR-USDT level2_100 order book',
     },
     notes: [
       `KuCoin estimates include a ${(KUCOIN_TAKER_FEE_RATE * 100).toFixed(1)}% taker fee paid in USDT on buys and sells; account discounts are not applied.`,

@@ -20,6 +20,7 @@ test('quote snapshots include KuCoin taker fees and share cached refreshes', asy
   const fetchMock = t.mock.method(globalThis, 'fetch', async (input: string | URL | Request) => {
     const url = new URL(input instanceof Request ? input.url : input);
     if (url.hostname === 'api.kucoin.com') {
+      assert.equal(url.pathname, '/api/v1/market/orderbook/level2_100');
       bookRequests += 1;
       return Response.json({
         code: '200000',
@@ -50,7 +51,7 @@ test('quote snapshots include KuCoin taker fees and share cached refreshes', asy
   assert.equal(second.status, 200);
   const snapshot = await first.json();
   assert.deepEqual(await second.json(), snapshot);
-  assert.deepEqual(snapshot.tradeSizesUsd, [1, 5, 10, 100, 500, 1_000, 5_000]);
+  assert.deepEqual(snapshot.tradeSizesUsd, [1, 5, 10, 100, 500, 1_000, 5_000, 10_000]);
   assert.deepEqual(snapshot.rows.map((row: { sizeUsd: number }) => row.sizeUsd), snapshot.tradeSizesUsd);
   assert.equal(snapshot.referencePrice, 500);
   for (const row of snapshot.rows) {
@@ -75,14 +76,14 @@ test('quote snapshots include KuCoin taker fees and share cached refreshes', asy
   }
   assert.equal(bookRequests, 1);
   assert.deepEqual(buyInputs, [
-    '1000000', '5000000', '10000000', '100000000', '500000000', '1000000000', '5000000000',
+    '1000000', '5000000', '10000000', '100000000', '500000000', '1000000000', '5000000000', '10000000000',
   ]);
   assert.deepEqual(sellInputs, [
-    '2000000000', '10000000000', '20000000000', '200000000000', '1000000000000', '2000000000000', '10000000000000',
+    '2000000000', '10000000000', '20000000000', '200000000000', '1000000000000', '2000000000000', '10000000000000', '20000000000000',
   ]);
   const cached = await GET();
   assert.deepEqual(await cached.json(), snapshot);
-  assert.equal(fetchMock.mock.callCount(), 15);
+  assert.equal(fetchMock.mock.callCount(), 17);
 
   await t.test('taker fees can change the better venue for both buys and sells', async () => {
     nearTie = true;
@@ -118,15 +119,15 @@ test('quote snapshots include KuCoin taker fees and share cached refreshes', asy
     assertClose(row.sell.kucoin.usdAmount, 996.003);
     assertClose(row.sell.kucoin.effectivePrice, 498.0015);
 
-    const unavailable = updated.rows[6];
-    assert.equal(unavailable.sizeUsd, 5_000);
-    for (const side of ['buy', 'sell']) {
-      assert.equal(unavailable[side].kucoin.ok, false);
-      assert.equal(unavailable[side].kucoin.xmrAmount, null);
-      assert.equal(unavailable[side].kucoin.usdAmount, null);
-      assert.equal(unavailable[side].kucoin.effectivePrice, null);
-      assert.equal(unavailable[side].betterVenue, null);
-      assert.equal(unavailable[side].solanaEdgeBps, null);
+    for (const unavailable of updated.rows.slice(6)) {
+      for (const side of ['buy', 'sell']) {
+        assert.equal(unavailable[side].kucoin.ok, false);
+        assert.equal(unavailable[side].kucoin.xmrAmount, null);
+        assert.equal(unavailable[side].kucoin.usdAmount, null);
+        assert.equal(unavailable[side].kucoin.effectivePrice, null);
+        assert.equal(unavailable[side].betterVenue, null);
+        assert.equal(unavailable[side].solanaEdgeBps, null);
+      }
     }
   });
 });
