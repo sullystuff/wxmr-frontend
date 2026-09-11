@@ -616,8 +616,8 @@ export default function SwapPage() {
 
   return (
     <main className="min-h-screen xmr-pattern">
-      <header className="mx-auto flex w-full max-w-[30rem] items-center justify-between gap-4 px-4 py-4 md:px-5 md:py-5">
-        <div className="flex min-w-0 items-center gap-3">
+      <header className="mx-auto flex w-full max-w-[30rem] flex-wrap items-center justify-between gap-4 px-4 py-4 md:px-5 md:py-5">
+        <div className="flex min-w-0 shrink-0 items-center gap-3">
           <MoneroLogo className="h-7 w-7 shrink-0" />
           <div className="min-w-0">
             <h1 className="truncate text-lg font-semibold tracking-tight text-white">Swap XMR</h1>
