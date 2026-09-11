@@ -100,9 +100,9 @@ export default function QuotesPage() {
   }, [fetchSnapshot]);
 
   return (
-    <main className="min-h-screen p-4 md:p-8 xmr-pattern">
-      <div className="mx-auto max-w-6xl">
-        <header className="mb-8 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+    <main className="min-h-screen p-4 md:p-6 2xl:p-8 xmr-pattern">
+      <div className="w-full">
+        <header className="mb-5 flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div className="flex items-center gap-4">
             <MoneroLogo className="h-12 w-12" />
             <div>
@@ -127,24 +127,19 @@ export default function QuotesPage() {
           </div>
         </header>
 
-        <section className="mb-6 grid grid-cols-1 gap-4 md:grid-cols-3">
-          <div className="xmr-card p-5">
+        <section className="mb-5 flex flex-wrap items-center gap-x-12 gap-y-4 rounded-xl border border-[var(--border)] bg-[var(--card)] px-5 py-4">
+          <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Reference XMR Price</p>
-            <p className="mt-2 text-2xl font-bold text-[#ff6600]">{formatUsd(snapshot?.referencePrice ?? null, 2, 2)}</p>
-            <p className="mt-1 text-xs text-[var(--muted)]">Used to size the sell-side XMR input</p>
+            <p className="mt-1 text-xl font-bold text-[#ff6600]">{formatUsd(snapshot?.referencePrice ?? null, 2, 2)}</p>
           </div>
-          <div className="xmr-card p-5">
+          <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Last Exchange Tick</p>
-            <p className="mt-2 text-2xl font-bold text-white">{snapshot ? formatTime(snapshot.timestamp) : '--'}</p>
-            <p className="mt-1 text-xs text-[var(--muted)]">Page received {receivedAt ? formatTime(receivedAt.toISOString()) : '--'}</p>
+            <p className="mt-1 text-xl font-bold text-white">{snapshot ? formatTime(snapshot.timestamp) : '--'}</p>
           </div>
-          <div className="xmr-card p-5">
-            <p className="text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">Trade Sizes</p>
-            <p className="mt-2 text-2xl font-bold text-white">
-              {(snapshot?.rows.map((row) => row.sizeUsd) ?? TRADE_SIZES_USD)
-                .map((sizeUsd) => formatUsd(sizeUsd, 0, 0)).join(' / ')}
-            </p>
-            <p className="mt-1 text-xs text-[var(--muted)]">USDC on Solana, USDT on KuCoin</p>
+          <div className="text-xs leading-relaxed text-[var(--muted)] sm:ml-auto sm:text-right">
+            <p>USDC on Solana · USDT on KuCoin</p>
+            <p>Sell inputs sized using the reference price</p>
+            <p>Page received {receivedAt ? formatTime(receivedAt.toISOString()) : '--'}</p>
           </div>
         </section>
 
@@ -154,30 +149,18 @@ export default function QuotesPage() {
           </div>
         )}
 
-        {snapshot && (
-          <div className="mb-6 space-y-1 text-xs text-[var(--muted)]">
-            {snapshot.notes.map((note) => <p key={note}>{note}</p>)}
+        <QuoteTable rows={snapshot?.rows ?? []} />
+
+        <footer className="mt-5 space-y-3 text-xs text-[var(--muted)]">
+          {snapshot && (
+            <div className="space-y-1">
+              {snapshot.notes.map((note) => <p key={note}>{note}</p>)}
+            </div>
+          )}
+          <div className="flex flex-col gap-2 border-t border-[var(--border)] pt-3 md:flex-row md:items-center md:justify-between">
+            <span>Solana source: {snapshot?.sources.solana ?? 'Jupiter quote USDC/XMR on Solana'}</span>
+            <span>KuCoin source: {snapshot?.sources.kucoin ?? 'KuCoin public XMR-USDT order book'}</span>
           </div>
-        )}
-
-        <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-          <QuoteTable
-            title="Buy XMR"
-            caption="Spend USD notional, receive XMR"
-            rows={snapshot?.rows ?? []}
-            side="buy"
-          />
-          <QuoteTable
-            title="Sell XMR"
-            caption="Sell approximate USD notional, receive USD"
-            rows={snapshot?.rows ?? []}
-            side="sell"
-          />
-        </div>
-
-        <footer className="mt-8 flex flex-col gap-2 border-t border-[var(--border)] pt-6 text-xs text-[var(--muted)] md:flex-row md:items-center md:justify-between">
-          <span>Solana source: {snapshot?.sources.solana ?? 'Jupiter quote USDC/XMR on Solana'}</span>
-          <span>KuCoin source: {snapshot?.sources.kucoin ?? 'KuCoin public XMR-USDT order book'}</span>
         </footer>
       </div>
     </main>
@@ -193,65 +176,68 @@ function StatusPill({ isRefreshing, hasSnapshot }: { isRefreshing: boolean; hasS
   );
 }
 
-function QuoteTable({
-  title,
-  caption,
-  rows,
-  side,
-}: {
-  title: string;
-  caption: string;
-  rows: QuoteRow[];
-  side: 'buy' | 'sell';
-}) {
+function QuoteTable({ rows }: { rows: QuoteRow[] }) {
+  const tableRows: Array<QuoteRow | { sizeUsd: number }> = rows.length
+    ? rows : TRADE_SIZES_USD.map((sizeUsd) => ({ sizeUsd }));
+
   return (
     <section className="xmr-card overflow-hidden">
-      <div className="border-b border-[var(--border)] p-5">
-        <h2 className="text-xl font-bold text-white">{title}</h2>
-        <p className="mt-1 text-sm text-[var(--muted)]">{caption}</p>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[680px] text-left text-sm">
-          <thead className="bg-black/20 text-xs uppercase tracking-wide text-[var(--muted)]">
-            <tr>
-              <th className="px-5 py-3 font-semibold">Size</th>
-              {side === 'sell' && <th className="px-5 py-3 font-semibold">XMR In</th>}
-              <th className="px-5 py-3 font-semibold">Solana</th>
-              <th className="px-5 py-3 font-semibold">KuCoin</th>
-              <th className="px-5 py-3 font-semibold">Edge</th>
+      <div
+        className="overflow-x-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[#ff6600]"
+        role="region"
+        aria-label="Buy and sell XMR quotes; scroll horizontally to compare venues"
+        tabIndex={0}
+      >
+        <table className="w-full min-w-[1280px] text-left text-sm tabular-nums">
+          <caption className="sr-only">Buy and sell XMR quotes by USD trade size</caption>
+          <thead>
+            <tr className="border-b border-[var(--border)]">
+              <th rowSpan={2} scope="col" className="sticky left-0 z-10 w-28 border-r border-[var(--border)] bg-[var(--card)] px-4 py-4 text-xs font-semibold uppercase tracking-wide text-[var(--muted)]">
+                USD Size
+              </th>
+              <th colSpan={3} scope="colgroup" className="px-4 py-4">
+                <h2 className="text-xl font-bold text-white">Buy XMR</h2>
+                <p className="mt-1 text-xs font-normal text-[var(--muted)]">Spend USD notional, receive XMR</p>
+              </th>
+              <th colSpan={4} scope="colgroup" className="border-l border-[var(--border)] px-4 py-4">
+                <h2 className="text-xl font-bold text-white">Sell XMR</h2>
+                <p className="mt-1 text-xs font-normal text-[var(--muted)]">Sell approximate USD notional, receive USD</p>
+              </th>
+            </tr>
+            <tr className="border-b border-[var(--border)] bg-black/20 text-xs uppercase tracking-wide text-[var(--muted)]">
+              <th scope="col" className="px-4 py-3 font-semibold">Solana</th>
+              <th scope="col" className="px-4 py-3 font-semibold">KuCoin</th>
+              <th scope="col" className="px-4 py-3 font-semibold">Edge</th>
+              <th scope="col" className="border-l border-[var(--border)] px-4 py-3 font-semibold">XMR In</th>
+              <th scope="col" className="px-4 py-3 font-semibold">Solana</th>
+              <th scope="col" className="px-4 py-3 font-semibold">KuCoin</th>
+              <th scope="col" className="px-4 py-3 font-semibold">Edge</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-[var(--border)]">
-            {rows.length ? rows.map((row) => {
-              const data = row[side];
-              return (
-                <tr key={`${side}-${row.sizeUsd}`} className="transition-colors hover:bg-white/[0.02]">
-                  <td className="px-5 py-4 align-top">
-                    <span className="text-base font-semibold text-white">{formatUsd(row.sizeUsd, 0, 0)}</span>
-                  </td>
-                  {side === 'sell' && (
-                    <td className="px-5 py-4 align-top font-mono text-[var(--foreground)]">
-                      {formatXmr(row.sellXmrAmount)}
-                    </td>
-                  )}
-                  <td className="px-5 py-4 align-top">
-                    <VenueCell quote={data.solana} side={side} />
-                  </td>
-                  <td className="px-5 py-4 align-top">
-                    <VenueCell quote={data.kucoin} side={side} />
-                  </td>
-                  <td className="px-5 py-4 align-top">
-                    <EdgeBadge edgeBps={data.solanaEdgeBps} betterVenue={data.betterVenue} />
-                  </td>
-                </tr>
-              );
-            }) : (
-              <tr>
-                <td colSpan={side === 'sell' ? 5 : 4} className="px-5 py-10 text-center text-[var(--muted)]">
-                  Loading quotes...
+            {tableRows.map((row) => 'buy' in row ? (
+              <tr key={row.sizeUsd} className="group transition-colors hover:bg-white/[0.02]">
+                <th scope="row" className="sticky left-0 z-10 whitespace-nowrap border-r border-[var(--border)] bg-[var(--card)] px-4 py-4 align-top text-base font-semibold text-white group-hover:bg-[var(--card-hover)]">
+                  {formatUsd(row.sizeUsd, 0, 0)}
+                </th>
+                <td className="px-4 py-3 align-top"><VenueCell quote={row.buy.solana} side="buy" /></td>
+                <td className="px-4 py-3 align-top"><VenueCell quote={row.buy.kucoin} side="buy" /></td>
+                <td className="px-4 py-4 align-top"><EdgeBadge edgeBps={row.buy.solanaEdgeBps} betterVenue={row.buy.betterVenue} /></td>
+                <td className="whitespace-nowrap border-l border-[var(--border)] px-4 py-4 align-top font-mono text-[var(--foreground)]">
+                  {formatXmr(row.sellXmrAmount)}
                 </td>
+                <td className="px-4 py-3 align-top"><VenueCell quote={row.sell.solana} side="sell" /></td>
+                <td className="px-4 py-3 align-top"><VenueCell quote={row.sell.kucoin} side="sell" /></td>
+                <td className="px-4 py-4 align-top"><EdgeBadge edgeBps={row.sell.solanaEdgeBps} betterVenue={row.sell.betterVenue} /></td>
               </tr>
-            )}
+            ) : (
+              <tr key={row.sizeUsd}>
+                <th scope="row" className="sticky left-0 z-10 whitespace-nowrap border-r border-[var(--border)] bg-[var(--card)] px-4 py-4 align-top text-base font-semibold text-white">
+                  {formatUsd(row.sizeUsd, 0, 0)}
+                </th>
+                <td colSpan={7} className="px-4 py-4 text-[var(--muted)]">Loading quotes...</td>
+              </tr>
+            ))}
           </tbody>
         </table>
       </div>
@@ -277,7 +263,7 @@ function VenueCell({ quote, side }: { quote: VenueQuote; side: 'buy' | 'sell' })
 
   return (
     <div>
-      <p className="font-mono text-base font-semibold text-white">{primary}</p>
+      <p className="whitespace-nowrap font-mono text-base font-semibold text-white">{primary}</p>
       <p className="mt-1 text-xs text-[var(--muted)]">{formatUsd(quote.effectivePrice, 2, 2)} / XMR</p>
       {quote.venue === 'solana' && (
         <p className="mt-1 text-xs text-[var(--muted)]">
@@ -302,7 +288,7 @@ function EdgeBadge({
 
   const isSolana = betterVenue === 'solana';
   return (
-    <span className={`rounded-md px-2.5 py-1 text-xs font-semibold ${isSolana ? 'bg-green-500/10 text-green-300' : 'bg-blue-500/10 text-blue-300'}`}>
+    <span className={`inline-block whitespace-nowrap rounded-md px-2.5 py-1 text-xs font-semibold ${isSolana ? 'bg-green-500/10 text-green-300' : 'bg-blue-500/10 text-blue-300'}`}>
       {isSolana ? 'Solana' : 'KuCoin'} +{Math.abs(edgeBps).toLocaleString('en-US', {
         minimumFractionDigits: 1,
         maximumFractionDigits: 1,
