@@ -196,11 +196,11 @@ function QuoteTable({ rows }: { rows: QuoteRow[] }) {
                 USD Size
               </th>
               <th colSpan={3} scope="colgroup" className="px-4 py-4">
-                <h2 className="text-xl font-bold text-white">Buy XMR</h2>
+                <h2 className="sticky left-32 w-fit text-xl font-bold text-white">Buy XMR</h2>
                 <p className="mt-1 text-xs font-normal text-[var(--muted)]">Spend USD notional, receive XMR</p>
               </th>
               <th colSpan={4} scope="colgroup" className="border-l border-[var(--border)] px-4 py-4">
-                <h2 className="text-xl font-bold text-white">Sell XMR</h2>
+                <h2 className="sticky left-32 w-fit text-xl font-bold text-white">Sell XMR</h2>
                 <p className="mt-1 text-xs font-normal text-[var(--muted)]">Sell approximate USD notional, receive USD</p>
               </th>
             </tr>
