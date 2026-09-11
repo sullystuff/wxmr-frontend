@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { OpenSourceLink } from '@wxmr/shared';
 import { fetchAuditPage } from '@/lib/audits';
 
 // Monero Logo SVG component from cryptologos.cc
@@ -867,7 +868,8 @@ export default function TransparencyPage() {
 
         {/* Footer */}
         <footer className="mt-16 pt-8 border-t border-[var(--border)]">
-          <div className="flex flex-wrap justify-center gap-6 mb-8">
+          <div className="flex flex-wrap items-center justify-center gap-6 mb-8">
+            <OpenSourceLink />
             <Link
               href="/"
               className="flex items-center gap-2 text-sm text-[var(--muted)] hover:text-[#ff6600] transition-colors"

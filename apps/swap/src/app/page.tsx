@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { OpenSourceLink } from '@wxmr/shared';
 import {
   CHAINS,
   ERC20_ALLOWANCE_ABI,
@@ -635,6 +636,9 @@ export default function SwapPage() {
       </header>
 
       <section className="mx-auto w-full max-w-[30rem] px-4 pb-10 md:px-5">
+        <div className="mb-4 flex justify-center">
+          <OpenSourceLink />
+        </div>
         <div className="overflow-hidden rounded-[20px] border border-[#26272d] bg-[#111216] shadow-2xl shadow-black/40">
           <div className="p-3 md:p-4">
             <div className="mb-3 flex items-center justify-between gap-3 px-1">

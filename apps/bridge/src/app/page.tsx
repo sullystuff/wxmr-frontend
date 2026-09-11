@@ -5,7 +5,7 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useWxmrBridge, DepositAccountInfo, WithdrawalInfo, BridgeConfig } from '@/hooks/useWxmrBridge';
 import { QRCodeSVG } from 'qrcode.react';
-import { SwapModal } from '@wxmr/shared';
+import { OpenSourceLink, SwapModal } from '@wxmr/shared';
 import {
   PICONERO_PER_XMR,
   MIN_XMR_DEPOSIT_PICONERO,
@@ -654,7 +654,7 @@ export default function Home() {
     <main className="min-h-screen p-4 md:p-8 xmr-pattern">
       <div className="max-w-4xl mx-auto">
         {/* Header */}
-        <header className="flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
+        <header className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
           <div className="flex items-center gap-4">
             <MoneroLogo className="w-12 h-12" />
             <div>
@@ -666,6 +666,9 @@ export default function Home() {
           </div>
           <WalletMultiButton />
         </header>
+        <div className="mb-8 flex justify-center md:justify-start">
+          <OpenSourceLink />
+        </div>
         {dataError && (
           <p role="alert" className="mb-4 text-red-400">
             Unable to refresh balances. {dataError}
@@ -1228,7 +1231,8 @@ export default function Home() {
           </div>
 
           {/* Links */}
-          <div className="flex flex-wrap justify-center gap-6 mb-8">
+          <div className="flex flex-wrap items-center justify-center gap-6 mb-8">
+            <OpenSourceLink />
             <Link
               href="/transparency"
               className="flex items-center gap-2 text-sm text-[var(--muted)] hover:text-[#ff6600] transition-colors"
