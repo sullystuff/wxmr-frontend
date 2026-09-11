@@ -154,6 +154,12 @@ export default function QuotesPage() {
           </div>
         )}
 
+        {snapshot && (
+          <div className="mb-6 space-y-1 text-xs text-[var(--muted)]">
+            {snapshot.notes.map((note) => <p key={note}>{note}</p>)}
+          </div>
+        )}
+
         <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
           <QuoteTable
             title="Buy XMR"

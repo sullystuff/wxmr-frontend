@@ -12,6 +12,7 @@ const JUPITER_QUOTE_URLS = [
   'https://lite-api.jup.ag/swap/v1/quote',
 ] as const;
 const KUCOIN_BOOK_URL = 'https://api.kucoin.com/api/v1/market/orderbook/level2_20?symbol=XMR-USDT';
+const KUCOIN_TAKER_FEE_RATE = 0.001;
 const REQUEST_TIMEOUT_MS = 8_000;
 const SNAPSHOT_CACHE_MS = 10_000;
 const JUPITER_REQUEST_GAP_MS = 700;
@@ -177,8 +178,8 @@ async function buildSnapshot(): Promise<QuoteSnapshot> {
       kucoin: 'KuCoin public XMR-USDT level2_20 order book',
     },
     notes: [
-      'KuCoin values are public order-book estimates before exchange account fees.',
-      'Solana values are Jupiter quote estimates without a taker wallet.',
+      `KuCoin estimates include a ${(KUCOIN_TAKER_FEE_RATE * 100).toFixed(1)}% taker fee paid in USDT on buys and sells; account discounts are not applied.`,
+      "Solana estimates include swap fees in Jupiter's quoted output; network fees are excluded.",
     ],
     rows,
   };
@@ -315,7 +316,8 @@ function quoteKucoinBuy(book: KucoinBook, sizeUsd: number): VenueQuote {
     return unavailableQuote('kucoin', 'KuCoin XMR-USDT order book', 'KuCoin asks unavailable');
   }
 
-  let remainingUsd = sizeUsd;
+  // XMR-USDT fees are paid in USDT. Reserve the fee within the total buy budget.
+  let remainingUsd = sizeUsd / (1 + KUCOIN_TAKER_FEE_RATE);
   let xmrAmount = 0;
   let spentUsd = 0;
 
@@ -332,13 +334,14 @@ function quoteKucoinBuy(book: KucoinBook, sizeUsd: number): VenueQuote {
     return unavailableQuote('kucoin', 'KuCoin XMR-USDT order book', 'Insufficient visible ask depth');
   }
 
+  const totalSpentUsd = spentUsd * (1 + KUCOIN_TAKER_FEE_RATE);
   return {
     ok: true,
     venue: 'kucoin',
     source: 'KuCoin XMR-USDT order book',
     xmrAmount,
-    usdAmount: spentUsd,
-    effectivePrice: spentUsd / xmrAmount,
+    usdAmount: totalSpentUsd,
+    effectivePrice: totalSpentUsd / xmrAmount,
   };
 }
 
@@ -366,13 +369,14 @@ function quoteKucoinSell(book: KucoinBook, xmrInput: number): VenueQuote {
     return unavailableQuote('kucoin', 'KuCoin XMR-USDT order book', 'Insufficient visible bid depth');
   }
 
+  const netReceivedUsd = receivedUsd * (1 - KUCOIN_TAKER_FEE_RATE);
   return {
     ok: true,
     venue: 'kucoin',
     source: 'KuCoin XMR-USDT order book',
     xmrAmount: soldXmr,
-    usdAmount: receivedUsd,
-    effectivePrice: receivedUsd / soldXmr,
+    usdAmount: netReceivedUsd,
+    effectivePrice: netReceivedUsd / soldXmr,
   };
 }
 
