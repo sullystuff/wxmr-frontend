@@ -9,11 +9,12 @@ import {
 } from '@solana/web3.js';
 
 import { PUBLIC_SOLANA_RPC, rpcFetch } from './rpc-client';
+import { getSolanaRpcEndpoint } from '@wxmr/shared/solana-rpc';
 
 // All browser reads and transaction confirmation share this visitor's RPC budget.
 export class BridgeConnection extends Connection {
   constructor() {
-    super(PUBLIC_SOLANA_RPC, {
+    super(getSolanaRpcEndpoint(PUBLIC_SOLANA_RPC), {
       commitment: 'confirmed',
       disableRetryOnRateLimit: true,
       fetch: rpcFetch(),

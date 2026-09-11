@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { OpenSourceLink } from '@wxmr/shared';
+import { OpenSourceLink, SolanaRpcSettings } from '@wxmr/shared';
 import { fetchAuditPage } from '@/lib/audits';
 
 // Monero Logo SVG component from cryptologos.cc
@@ -201,12 +201,15 @@ export default function TransparencyPage() {
               <p className="text-[var(--muted)] mt-0.5">Verify our reserves and proofs</p>
             </div>
           </div>
-          <Link 
-            href="/"
-            className="px-6 py-2.5 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] rounded-lg font-semibold transition-all"
-          >
-            Back to Bridge
-          </Link>
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <SolanaRpcSettings />
+            <Link
+              href="/"
+              className="px-6 py-2.5 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] rounded-lg font-semibold transition-all"
+            >
+              Back to Bridge
+            </Link>
+          </div>
         </header>
 
         {/* Introduction */}

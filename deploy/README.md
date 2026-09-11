@@ -10,11 +10,27 @@ provided as an alternative further down.
 
 ### Bridge RPC budget
 
-The `wxmr.io` bridge browser calls `https://solana-rpc.publicnode.com` directly.
+The `wxmr.io` bridge browser calls `https://solana-rpc.publicnode.com` directly by default.
 The Solana Labs mainnet endpoints rejected direct `wxmr.io` browser requests with
 HTTP 403 during verification; PublicNode accepted them. The bridge ignores the
 shared `SOLANA_RPC_URL` and `NEXT_PUBLIC_SOLANA_RPC_URL` settings, which still
 configure the swap app and orchestrator. No paid RPC URL is embedded in the bridge.
+
+Visitors can choose **Solana RPC** on the bridge, transparency, or swap page to
+save a custom mainnet HTTP(S) endpoint. The browser checks `getGenesisHash`
+directly before saving; the provider must allow browser requests (CORS). Path and
+query API keys are supported, and the input is masked unless **Show URL** is checked.
+Remote HTTP endpoints require an HTTP site; HTTPS sites can also use HTTP loopback
+nodes. See the [Solana RPC method documentation](https://solana.com/docs/rpc/http/getgenesishash).
+
+The URL is stored in localStorage for that origin only, so `wxmr.io` and
+`swap.wxmr.io` have independent settings. **Save & reload** and **Use default &
+reload** explicitly reload the current page; other tabs retain their current
+connection until reloaded. The bridge routes balances, wallet submissions,
+confirmation, withdrawal history, and audit history through the selection, keeping
+the same queue/cache policy below. There is no automatic public-RPC fallback for
+a failed custom endpoint. Swap wallet RPC uses the selection too; quote services,
+wallet-internal requests, and server-side cross-chain processing keep their own endpoints.
 
 Balances, history, and confirmation share a browser-local queue: request starts
 are at least 1,000 ms apart (at most 1 request/second per visitor), with no automatic

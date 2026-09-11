@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./solana-rpc": "./src/solana-rpc.ts",
     "./styles/design-system.css": "./src/styles/design-system.css"
   },
   "peerDependencies": {

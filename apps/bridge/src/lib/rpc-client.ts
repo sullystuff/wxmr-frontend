@@ -1,4 +1,6 @@
-// Each visitor calls the public RPC directly. Components share a browser-local
+import { getSolanaRpcEndpoint } from '@wxmr/shared/solana-rpc';
+
+// Each visitor calls their selected RPC directly. Components share a browser-local
 // cache and queue; supported browsers coordinate the budget across their tabs.
 export const PUBLIC_SOLANA_RPC = 'https://solana-rpc.publicnode.com';
 export const RPC_INTERVAL_MS = 1_000;
@@ -26,6 +28,7 @@ type RpcReply = { result?: unknown; error?: { code: number; message: string; dat
 type RpcResult = { reply: RpcReply; cache: 'hit' | 'miss' | 'coalesced' };
 
 export function createRpcClient(options: {
+  endpoint?: string;
   fetch?: typeof fetch;
   now?: () => number;
   sleep?: (ms: number) => Promise<void>;
@@ -70,12 +73,14 @@ export function createRpcClient(options: {
       nextStart = now() + RPC_INTERVAL_MS;
       options.writeNextStart?.(nextStart);
       try {
-        const response = await request(PUBLIC_SOLANA_RPC, {
+        const response = await request(options.endpoint ?? PUBLIC_SOLANA_RPC, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
           signal: AbortSignal.timeout(12_000),
           cache: 'no-store',
+          credentials: 'omit',
+          referrerPolicy: 'no-referrer',
         });
         if (!response.ok) {
           const retryHeader = response.headers.get('retry-after');
@@ -83,11 +88,11 @@ export function createRpcClient(options: {
           const retryMs = Number.isFinite(seconds) ? seconds * 1_000
             : retryHeader ? Date.parse(retryHeader) - Date.now() : 0;
           nextStart = Math.max(nextStart, now() + Math.max(5_000, retryMs || 0));
-          throw new RpcError('Public Solana RPC is temporarily unavailable.', response.status === 429 ? 429 : 502);
+          throw new RpcError('Solana RPC is temporarily unavailable.', response.status === 429 ? 429 : 502);
         }
         const body = await response.json() as RpcReply;
         if (!body || (!Object.hasOwn(body, 'result') && !body.error)) {
-          throw new RpcError('Invalid response from public Solana RPC.', 502);
+          throw new RpcError('Invalid response from Solana RPC.', 502);
         }
         const reply: RpcReply = body.error ? { error: body.error } : { result: body.result };
         if (method === 'sendTransaction' && !reply.error) cache.clear();
@@ -99,7 +104,7 @@ export function createRpcClient(options: {
         return reply;
       } catch (error) {
         nextStart = Math.max(nextStart, now() + (error instanceof RpcError ? 0 : 5_000));
-        throw error instanceof RpcError ? error : new RpcError('Public Solana RPC request failed.', 502);
+        throw error instanceof RpcError ? error : new RpcError('Solana RPC request failed.', 502);
       } finally {
         options.writeNextStart?.(nextStart);
       }
@@ -121,7 +126,7 @@ const BROWSER_BUDGET_KEY = 'wxmr:public-rpc:next-start';
 export const browserRpc = createRpcClient({
   fetch: (...args) => {
     if (typeof window === 'undefined') throw new RpcError('Bridge RPC reads run in the browser');
-    return globalThis.fetch(...args);
+    return globalThis.fetch(getSolanaRpcEndpoint(PUBLIC_SOLANA_RPC), args[1]);
   },
   runExclusive: async (job) => {
     if (typeof navigator !== 'undefined' && navigator.locks) {

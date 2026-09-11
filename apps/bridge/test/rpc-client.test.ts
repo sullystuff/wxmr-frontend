@@ -124,3 +124,22 @@ test('web3 fetch preserves IDs and cached reads bypass the network', async () =>
   assert.equal(starts.length, 1);
   await assert.rejects(request(PUBLIC_SOLANA_RPC, { body: '[]' }), /batches are not supported/);
 });
+
+test('custom clients use their own endpoint and cache without falling back after failure', async () => {
+  const urls: string[] = [];
+  const request: typeof fetch = async (url) => {
+    urls.push(String(url));
+    return Response.json({ result: String(url) });
+  };
+  const alice = createRpcClient({ endpoint: 'https://alice.example/rpc', fetch: request });
+  const bob = createRpcClient({ endpoint: 'https://bob.example/rpc', fetch: request });
+  assert.equal((await alice.call('getAccountInfo', ['same-account'])).reply.result, 'https://alice.example/rpc');
+  assert.equal((await bob.call('getAccountInfo', ['same-account'])).reply.result, 'https://bob.example/rpc');
+  assert.equal((await alice.call('getAccountInfo', ['same-account'])).cache, 'hit');
+  const failed = createRpcClient({ endpoint: 'https://failed.example/rpc', fetch: async (url) => {
+    urls.push(String(url));
+    throw new Error('connection failed');
+  } });
+  await assert.rejects(failed.call('getLatestBlockhash'), /Solana RPC request failed/);
+  assert.deepEqual(urls, ['https://alice.example/rpc', 'https://bob.example/rpc', 'https://failed.example/rpc']);
+});

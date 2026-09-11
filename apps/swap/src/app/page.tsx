@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { OpenSourceLink } from '@wxmr/shared';
+import { OpenSourceLink, SolanaRpcSettings } from '@wxmr/shared';
 import {
   CHAINS,
   ERC20_ALLOWANCE_ABI,
@@ -624,6 +624,7 @@ export default function SwapPage() {
             <p className="hidden text-xs text-[#8b919d] sm:block">Cross-chain swaps with XMR routes built in</p>
           </div>
         </div>
+        <SolanaRpcSettings disabled={isLoading} />
         {quote && !quoteExpired && (
           <div className="hidden items-center gap-2 rounded-full border border-[#273226] bg-[#111711] px-3 py-2 text-xs font-medium text-[#9ee6a8] sm:flex">
             <span className="relative flex h-2 w-2">

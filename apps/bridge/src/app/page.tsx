@@ -5,7 +5,7 @@ import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useWxmrBridge, DepositAccountInfo, WithdrawalInfo, BridgeConfig } from '@/hooks/useWxmrBridge';
 import { QRCodeSVG } from 'qrcode.react';
-import { OpenSourceLink, SwapModal } from '@wxmr/shared';
+import { OpenSourceLink, SolanaRpcSettings, SwapModal } from '@wxmr/shared';
 import {
   PICONERO_PER_XMR,
   MIN_XMR_DEPOSIT_PICONERO,
@@ -664,7 +664,10 @@ export default function Home() {
               <p className="text-[var(--muted)] mt-0.5">Monero token on Solana</p>
             </div>
           </div>
-          <WalletMultiButton />
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            <SolanaRpcSettings disabled={loading} />
+            <WalletMultiButton />
+          </div>
         </header>
         <div className="mb-8 flex justify-center md:justify-start">
           <OpenSourceLink />

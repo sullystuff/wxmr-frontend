@@ -9,6 +9,7 @@ import { WagmiProvider, createConfig, http } from 'wagmi';
 import { arbitrum, avalanche, base, bsc, hyperEvm, linea, mainnet, monad, optimism, polygon } from 'wagmi/chains';
 import { injected, walletConnect } from 'wagmi/connectors';
 import { EVM_RPC_URL_BY_CHAIN } from './evm-rpc';
+import { getSolanaRpcEndpoint } from '@wxmr/shared/solana-rpc';
 import '@solana/wallet-adapter-react-ui/styles.css';
 
 const walletConnectProjectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
@@ -43,7 +44,7 @@ const config = createConfig({
 export function AppProviders({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => new QueryClient());
   const wagmiConfig = useMemo(() => config, []);
-  const solanaEndpoint = process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com';
+  const solanaEndpoint = getSolanaRpcEndpoint(process.env.NEXT_PUBLIC_SOLANA_RPC_URL || 'https://api.mainnet-beta.solana.com');
   const solanaWallets = useMemo(
     () => [
       new PhantomWalletAdapter(),
