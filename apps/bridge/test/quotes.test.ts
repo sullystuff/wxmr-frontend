@@ -24,7 +24,7 @@ test('concurrent quote refreshes share one batch for every trade size and cache 
     (isBuy ? buyInputs : sellInputs).push(amount);
     return Response.json({
       inAmount: amount,
-      outAmount: (isBuy ? BigInt(amount) * 2_000n : BigInt(amount) / 2_000n).toString(),
+      outAmount: (isBuy ? BigInt(amount) * BigInt(2_000) : BigInt(amount) / BigInt(2_000)).toString(),
       routePlan: [{}],
       priceImpactPct: '0',
     });

@@ -5,7 +5,7 @@ import {
   placeholderAddressForChain,
   selectableDestinationChains,
   selectableSourceChains,
-} from "../src/lib/route-options.ts";
+} from "../src/lib/route-options";
 
 test("BTC remains selectable as an input chain", () => {
   assert.ok(selectableSourceChains().includes("bitcoin"));
