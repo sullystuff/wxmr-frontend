@@ -19,6 +19,7 @@ import type { WxmrBridge } from '@wxmr/core/idl/wxmr_bridge';
 import { XMR_MINT } from '@wxmr/shared';
 import { knownWithdrawals, rememberWithdrawals } from '@/lib/withdrawal-storage';
 import { readHistoryPage } from '@/lib/chain-history';
+import { buildCancelWithdrawalTransaction, getNextWithdrawalNonce } from '@wxmr/core/bridge';
 
 // Program ID - should match deployed program
 const PROGRAM_ID = new PublicKey(
@@ -355,8 +356,7 @@ export function useWxmrBridge() {
       const wxmrMint = new PublicKey(config.wxmrMint);
       const userTokenAccount = await getAssociatedTokenAddress(wxmrMint, wallet.publicKey);
 
-      // Generate unique nonce (timestamp-based)
-      const nonce = BigInt(Date.now());
+      const nonce = await getNextWithdrawalNonce(connection, wallet.publicKey, PROGRAM_ID);
       const withdrawalPda = getWithdrawalPDA(wallet.publicKey, nonce);
       // Save before asking the wallet to sign: an uncertain confirmation must remain discoverable.
       rememberWithdrawals(PROGRAM_ID.toBase58(), wallet.publicKey.toBase58(), [withdrawalPda.toBase58()]);
@@ -381,7 +381,16 @@ export function useWxmrBridge() {
       console.error('Error requesting withdrawal:', error);
       throw error;
     }
-  }, [program, wallet.publicKey, fetchBridgeConfig, getWithdrawalPDA, getBridgeConfigPDA]);
+  }, [program, wallet.publicKey, connection, fetchBridgeConfig, getWithdrawalPDA, getBridgeConfigPDA]);
+
+  const cancelWithdrawal = useCallback(async (withdrawalPda: string): Promise<{ signature: string; refundAmount: bigint }> => {
+    if (!program || !wallet.publicKey || !program.provider.sendAndConfirm) throw new Error('Connect your wallet first');
+    const { transaction, refundAmount } = await buildCancelWithdrawalTransaction({
+      connection, user: wallet.publicKey, withdrawalPda, programId: PROGRAM_ID,
+    });
+    const signature = await program.provider.sendAndConfirm(transaction, [], { commitment: 'finalized' });
+    return { signature, refundAmount };
+  }, [program, wallet.publicKey, connection]);
 
   // Fetch withdrawal info
   const fetchWithdrawal = useCallback(async (withdrawalPda: string): Promise<WithdrawalInfo | null> => {
@@ -468,6 +477,7 @@ export function useWxmrBridge() {
     createDepositAccount,
     fetchMyDepositAccount,
     requestWithdrawal,
+    cancelWithdrawal,
     fetchWithdrawal,
     discoverMyWithdrawals,
     fetchPageSnapshot,

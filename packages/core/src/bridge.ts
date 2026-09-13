@@ -1,4 +1,5 @@
-import anchor from "@coral-xyz/anchor";
+import { AnchorProvider, Program } from "@coral-xyz/anchor";
+import BN from "bn.js";
 import type { Program as AnchorProgram } from "@coral-xyz/anchor";
 import {
   type Commitment,
@@ -7,6 +8,7 @@ import {
   Keypair,
   PublicKey,
   SystemProgram,
+  SYSVAR_CLOCK_PUBKEY,
   Transaction,
   VersionedTransaction,
   sendAndConfirmTransaction,
@@ -20,8 +22,6 @@ import {
 import IDL from "./idl/wxmr_bridge.json" with { type: "json" };
 import type { WxmrBridge } from "./idl/wxmr_bridge.js";
 import { BRIDGE_PROGRAM_ID } from "./constants.js";
-
-const { AnchorProvider, BN, Program } = anchor;
 
 export interface AnchorProviderWallet {
   publicKey: PublicKey;
@@ -82,6 +82,61 @@ export interface DepositAccountOptions {
 
 const PRIORITY_FEE_MICROLAMPORTS = 50_000;
 const COMPUTE_UNIT_LIMIT = 100_000;
+export const WITHDRAWAL_CANCEL_DELAY_SECONDS = 300;
+
+// A legacy request may have used a random u64 nonce above any timestamp.
+// Read the retained watermark rather than assuming Date.now() exceeds it.
+export async function getNextWithdrawalNonce(
+  connection: Connection, user: PublicKey,
+  programId: PublicKey | string = BRIDGE_PROGRAM_ID,
+): Promise<bigint> {
+  const id = getBridgeProgramId(programId);
+  const statePda = PublicKey.findProgramAddressSync([Buffer.from('withdrawal_state'), user.toBuffer()], id)[0];
+  const info = await connection.getAccountInfo(statePda, 'confirmed');
+  let minimum = 1n;
+  if (info) {
+    if (!info.owner.equals(id)) throw new Error('Invalid withdrawal nonce account');
+    const program = createBridgeProgram(connection, createReadonlyWallet(user), 'confirmed');
+    const state = program.coder.accounts.decode('userWithdrawalState', info.data);
+    if (!state.user.equals(user)) throw new Error('Invalid withdrawal nonce owner');
+    minimum = BigInt(state.lastNonce.toString()) + 1n;
+  }
+  if (minimum > 0xffffffffffffffffn) throw new Error('This wallet has exhausted its withdrawal nonces');
+  const timestamp = BigInt(Date.now());
+  return minimum > timestamp ? minimum : timestamp;
+}
+
+export async function buildCancelWithdrawalTransaction(options: {
+  connection: Connection; user: PublicKey; withdrawalPda: PublicKey | string;
+  programId?: PublicKey | string;
+}): Promise<{ transaction: Transaction; refundAmount: bigint }> {
+  const id = getBridgeProgramId(options.programId);
+  const withdrawal = new PublicKey(options.withdrawalPda);
+  const program = createBridgeProgram(options.connection, createReadonlyWallet(options.user), 'confirmed');
+  const [info, clock] = await options.connection.getMultipleAccountsInfo([withdrawal, SYSVAR_CLOCK_PUBKEY], 'confirmed');
+  if (!info) throw new Error('This withdrawal has already been closed. Refresh its status.');
+  if (!info.owner.equals(id)) throw new Error('Invalid withdrawal account');
+  const record = program.coder.accounts.decode('withdrawalRecord', info.data);
+  if (!record.user.equals(options.user) || !getWithdrawalPda(options.user, BigInt(record.nonce.toString()), id).equals(withdrawal)) {
+    throw new Error('Only the withdrawal owner can cancel this request');
+  }
+  if (!('pending' in record.status)) throw new Error('This withdrawal is already being sent and cannot be canceled');
+  if (!clock || clock.data.length < 40) throw new Error('Unable to check the withdrawal age');
+  if (clock.data.readBigInt64LE(32) - BigInt(record.createdAt.toString()) < BigInt(WITHDRAWAL_CANCEL_DELAY_SECONDS)) {
+    throw new Error('Wait until the withdrawal is five minutes old before canceling');
+  }
+  const configPda = getBridgeConfigPda(id);
+  const config = await program.account.bridgeConfig.fetch(configPda);
+  const userTokenAccount = await getAssociatedTokenAddress(config.wxmrMint, options.user);
+  const withdrawalState = PublicKey.findProgramAddressSync([Buffer.from('withdrawal_state'), options.user.toBuffer()], id)[0];
+  const instruction = await program.methods.cancelWithdrawal().accountsStrict({
+    config: configPda, withdrawal, wxmrMint: config.wxmrMint, userTokenAccount,
+    user: options.user, authority: config.authority, withdrawalState,
+    tokenProgram: TOKEN_PROGRAM_ID, associatedTokenProgram: ASSOCIATED_TOKEN_PROGRAM_ID,
+    systemProgram: SystemProgram.programId,
+  }).instruction();
+  return { transaction: new Transaction().add(...getPriorityFeeInstructions(), instruction), refundAmount: BigInt(record.amount.toString()) };
+}
 
 export function getBridgeProgramId(programId: PublicKey | string = BRIDGE_PROGRAM_ID): PublicKey {
   return typeof programId === "string" ? new PublicKey(programId) : programId;
@@ -326,7 +381,7 @@ export async function buildRequestWithdrawalTransaction(
   const config = await program.account.bridgeConfig.fetch(getBridgeConfigPda(programId));
   const wxmrMint = config.wxmrMint as PublicKey;
   const userTokenAccount = await getAssociatedTokenAddress(wxmrMint, options.user);
-  const nonce = options.nonce ?? BigInt(Date.now());
+  const nonce = options.nonce ?? await getNextWithdrawalNonce(options.connection, options.user, programId);
   const withdrawalPda = getWithdrawalPda(options.user, nonce, programId);
   const instruction = await program.methods
     .requestWithdrawal(

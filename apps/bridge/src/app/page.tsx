@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import dynamic from 'next/dynamic';
 import { useWxmrBridge, DepositAccountInfo, WithdrawalInfo, BridgeConfig } from '@/hooks/useWxmrBridge';
+import { CancelWithdrawalButton } from '@/components/CancelWithdrawalButton';
 import { QRCodeSVG } from 'qrcode.react';
 import { OpenSourceLink, SolanaRpcSettings, SwapModal } from '@wxmr/shared';
 import {
@@ -437,6 +438,7 @@ export default function Home() {
     publicKey,
     createDepositAccount,
     requestWithdrawal,
+    cancelWithdrawal,
     discoverMyWithdrawals,
     fetchPageSnapshot,
     claimPendingMint,
@@ -450,6 +452,7 @@ export default function Home() {
   const [wxmrBalance, setWxmrBalance] = useState<bigint>(BigInt(0));
   const [pendingBalance, setPendingBalance] = useState<bigint>(BigInt(0));
   const [loading, setLoading] = useState(false);
+  const [cancelingWithdrawal, setCancelingWithdrawal] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -591,6 +594,25 @@ export default function Home() {
       setError(getErrorMessage(err, 'Failed to claim pending tokens'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleCancelWithdrawal = async (withdrawal: WithdrawalInfo) => {
+    if (loading) return;
+    setLoading(true);
+    setCancelingWithdrawal(withdrawal.withdrawalPda);
+    setError(null);
+    setSuccess(null);
+    try {
+      const result = await cancelWithdrawal(withdrawal.withdrawalPda);
+      setSuccess(`Withdrawal canceled. ${formatXmr(result.refundAmount)} wXMR returned; the original bridge fee was retained. TX: ${result.signature}`);
+      await loadData();
+    } catch (err) {
+      setError(getErrorMessage(err, 'Unable to confirm cancellation. Refresh status before trying again.'));
+      await loadData();
+    } finally {
+      setLoading(false);
+      setCancelingWithdrawal(null);
     }
   };
 
@@ -772,7 +794,7 @@ export default function Home() {
             <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
               <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
             </svg>
-            <span>{success}</span>
+            <span className="min-w-0 break-words">{success}</span>
           </div>
         )}
 
@@ -944,7 +966,7 @@ export default function Home() {
                           value={withdrawAmount}
                           onChange={(e) => setWithdrawAmount(e.target.value)}
                           placeholder="0.0"
-                          className="xmr-input flex-1 px-4 py-3 text-white"
+                          className="xmr-input min-w-0 flex-1 px-4 py-3 text-white"
                         />
                         <button
                           onClick={() => setWithdrawAmount(formatXmrAmount(maxWithdrawAmount))}
@@ -1115,6 +1137,14 @@ export default function Home() {
                         <p className="text-xs text-[var(--muted)] mt-2 font-mono">
                           To: {truncateAddress(withdrawal.xmrAddress, 12)}
                         </p>
+                        {withdrawal.status === 'pending' && withdrawal.user === publicKey?.toBase58() && (
+                          <CancelWithdrawalButton
+                            createdAt={withdrawal.createdAt}
+                            disabled={loading}
+                            canceling={cancelingWithdrawal === withdrawal.withdrawalPda}
+                            onCancel={() => void handleCancelWithdrawal(withdrawal)}
+                          />
+                        )}
                       </div>
                     ))}
                   </div>
