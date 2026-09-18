@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { OpenSourceLink, SolanaRpcSettings } from '@wxmr/shared';
 import { fetchAuditPage } from '@/lib/audits';
+import { ReserveAuditCard } from '@/components/ReserveAuditCard';
 
 // Monero Logo SVG component from cryptologos.cc
 function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
@@ -26,6 +27,7 @@ const BRIDGE_DATA = {
 
 // Audit record interface
 interface AuditRecord {
+  account: string;
   epoch: number;
   timestamp: number;
   circulatingSupply: bigint;
@@ -121,6 +123,7 @@ function formatDate(timestamp: number): string {
 async function fetchAuditRecords(before?: string): Promise<{ records: AuditRecord[]; nextCursor: string | null; searchedThrough: number | null }> {
   const page = await fetchAuditPage(before);
   return { ...page, records: page.records.map((record) => ({
+    account: record.account,
     epoch: record.epoch,
     timestamp: record.timestamp,
     circulatingSupply: BigInt(record.circulatingSupply),
@@ -171,7 +174,7 @@ export default function TransparencyPage() {
     setAuditError(null);
     try {
       const page = await fetchAuditRecords(auditCursor || undefined);
-      setAudits((previous) => [...new Map([...previous, ...page.records].map((record) => [record.epoch, record])).values()].sort((a, b) => b.epoch - a.epoch));
+      setAudits((previous) => [...new Map([...previous, ...page.records].map((record) => [record.epoch, record])).values()].sort((a, b) => b.timestamp - a.timestamp || b.epoch - a.epoch));
       setAuditCursor(page.nextCursor);
       setSearchedThrough(page.searchedThrough);
     } catch (error) {
@@ -503,7 +506,7 @@ export default function TransparencyPage() {
 
         {/* Daily Audit History */}
         <InfoCard
-          title="Daily Audit History"
+          title="Reserve Proofs and Audit History"
           icon={
             <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
@@ -511,8 +514,9 @@ export default function TransparencyPage() {
           }
         >
           <p className="text-[var(--muted)] mb-4">
-            Every day (and when needed for Solana to Monero transfers), we consolidate all spendable XMR and record proof on-chain.
-            Each audit includes transaction keys so you can verify we control the native XMR backing Solana XMR.
+            Native Monero reserve proofs and existing consolidation audit records are stored on Solana.
+            Reserve proofs demonstrate control of the included XMR outputs without making an additional Monero transaction.
+            Consolidation records retain their transaction keys for verification.
           </p>
 
           <div className="mb-4 text-sm text-[var(--muted)]">
@@ -542,6 +546,9 @@ export default function TransparencyPage() {
               {audits.map((audit) => {
                 const isExpanded = expandedEpoch === audit.epoch;
                 
+                if (audit.data.startsWith('{"format":"wxmr-reserve-v1"')) {
+                  return <ReserveAuditCard key={audit.epoch} data={audit.data} account={audit.account} />;
+                }
                 let auditData: AuditData | null = null;
                 try {
                   auditData = JSON.parse(audit.data);
