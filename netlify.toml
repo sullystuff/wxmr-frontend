@@ -1,0 +1,21 @@
+# Netlify config for the wXMR bridge app (apps/bridge) in this Turborepo monorepo.
+#
+# Netlify's recommended monorepo setup keeps the base directory at the repo root
+# so dependency installation and the build command run from the root, where the
+# npm workspace and turbo config live. The bridge app is built via turbo so its
+# workspace dependency @wxmr/core (which ships compiled dist/) is built first.
+
+[build]
+  command = "npm run build:bridge"
+  publish = "apps/bridge/.next"
+
+[build.environment]
+  NODE_VERSION = "20"
+  NEXT_PUBLIC_SOLANA_RPC_URL = "https://api.mainnet-beta.solana.com"
+  NEXT_PUBLIC_BRIDGE_PROGRAM_ID = "EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8"
+  NEXT_PUBLIC_JUPITER_API_KEY = "ea60fa86-fbc1-4713-a3b1-b805f57323a7"
+  NEXT_PUBLIC_JUPITER_REFERRAL_ACCOUNT = "GL8sVV4TQptcgFoXmWK4VQUUCUCFyCdSSPtHva9SppcJ"
+  NEXT_PUBLIC_JUPITER_REFERRAL_FEE = "50"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

@@ -123,10 +123,24 @@ export function createRpcClient(options: {
 
 const BROWSER_BUDGET_KEY = 'wxmr:public-rpc:next-start';
 
+const FALLBACK_SOLANA_RPCS = [
+  PUBLIC_SOLANA_RPC,
+  process.env.NEXT_PUBLIC_SOLANA_RPC_URL,
+  'https://api.mainnet-beta.solana.com',
+].filter((endpoint): endpoint is string => Boolean(endpoint));
+
 export const browserRpc = createRpcClient({
-  fetch: (...args) => {
+  fetch: async (...args) => {
     if (typeof window === 'undefined') throw new RpcError('Bridge RPC reads run in the browser');
-    return globalThis.fetch(getSolanaRpcEndpoint(PUBLIC_SOLANA_RPC), args[1]);
+    const primary = getSolanaRpcEndpoint(PUBLIC_SOLANA_RPC);
+    const endpoints = [primary, ...FALLBACK_SOLANA_RPCS.filter((endpoint) => endpoint !== primary)];
+    let lastResponse: Response | undefined;
+    for (const endpoint of endpoints) {
+      const response = await globalThis.fetch(endpoint, args[1]);
+      if (response.ok) return response;
+      lastResponse = response;
+    }
+    return lastResponse!;
   },
   runExclusive: async (job) => {
     if (typeof navigator !== 'undefined' && navigator.locks) {
