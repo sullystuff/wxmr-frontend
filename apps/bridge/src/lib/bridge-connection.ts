@@ -35,7 +35,7 @@ export class BridgeConnection extends Connection {
     const wantsProcessed = ['processed', 'recent'].includes(commitment);
     while (Date.now() - started < 60_000) {
       signal?.throwIfAborted();
-      const { context, value } = await this.getSignatureStatuses([signature], { searchTransactionHistory: true });
+      const { context, value } = await this.getSignatureStatuses([signature]);
       const status = value[0];
       if (status && (wantsProcessed || status.confirmationStatus === 'finalized'
         || (!wantsFinalized && status.confirmationStatus === 'confirmed'))) {

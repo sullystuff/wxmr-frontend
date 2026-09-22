@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { createRpcClient, PUBLIC_SOLANA_RPC, RPC_INTERVAL_MS, rpcFetch } from '../src/lib/rpc-client';
+import { createRpcClient, PUBLIC_SOLANA_RPC, RPC_INTERVAL_MS, rpcFetch, batchWithFallback, RpcError } from '../src/lib/rpc-client';
 
 function fixture(responses: Response[] = []) {
   let clock = 0;
@@ -11,7 +11,10 @@ function fixture(responses: Response[] = []) {
     fetch: async (url, init) => {
       assert.equal(url, PUBLIC_SOLANA_RPC);
       const body = JSON.parse(String(init?.body));
-      starts.push({ time: clock, method: body.method, params: body.params });
+      starts.push({ time: clock, method: Array.isArray(body) ? 'batch' : body.method, params: Array.isArray(body) ? body : body.params });
+      if (Array.isArray(body)) {
+        return Response.json(body.map((request) => ({ jsonrpc: '2.0', id: request.id, result: { value: request.params } })));
+      }
       return responses.shift() ?? Response.json({ jsonrpc: '2.0', id: 1, result: { value: body.params } });
     },
   });
@@ -122,7 +125,95 @@ test('web3 fetch preserves IDs and cached reads bypass the network', async () =>
     assert.equal((await response.json()).id, id);
   }
   assert.equal(starts.length, 1);
-  await assert.rejects(request(PUBLIC_SOLANA_RPC, { body: '[]' }), /batches are not supported/);
+  const batchResponse = await request(PUBLIC_SOLANA_RPC, {
+    body: JSON.stringify([
+      { jsonrpc: '2.0', id: 1, method: 'getAccountInfo', params: ['batch-a'] },
+      { jsonrpc: '2.0', id: 'two', method: 'getAccountInfo', params: ['batch-b'] },
+    ]),
+  });
+  const batch = await batchResponse.json();
+  assert.equal(batch.length, 2);
+  assert.equal(batch[0].id, 1);
+  assert.equal(batch[1].id, 'two');
+  assert.equal(starts.length, 2);
+});
+
+test('batched reads dispatch once, cache each result, and reuse cached entries', async () => {
+  const { client, starts } = fixture();
+  const results = await client.callBatch([
+    { method: 'getTransaction', params: ['tx-1'] },
+    { method: 'getTransaction', params: ['tx-2'] },
+    { method: 'getTransaction', params: ['tx-3'] },
+  ]);
+  assert.deepEqual(results.map((r) => r.cache), ['miss', 'miss', 'miss']);
+  assert.equal(starts.length, 1);
+  assert.equal(starts[0].method, 'batch');
+  assert.equal((await client.call('getTransaction', ['tx-2'])).cache, 'hit');
+  assert.equal(starts.length, 1);
+  const second = await client.callBatch([
+    { method: 'getTransaction', params: ['tx-2'] },
+    { method: 'getTransaction', params: ['tx-4'] },
+  ]);
+  assert.deepEqual(second.map((r) => r.cache), ['hit', 'miss']);
+  assert.equal(starts.length, 2);
+});
+
+test('a single call coalesces onto an in-flight batch', async () => {
+  const { client, starts } = fixture();
+  const inFlight = client.callBatch([{ method: 'getTransaction', params: ['tx-5'] }]);
+  const coalesced = await client.call('getTransaction', ['tx-5']);
+  const batchResult = await inFlight;
+  assert.equal(coalesced.cache, 'coalesced');
+  assert.equal(batchResult[0].cache, 'miss');
+  assert.equal(starts.length, 1);
+});
+
+test('batches reject uncached methods and share the 1-RPS budget', async () => {
+  const { client, starts } = fixture();
+  await assert.rejects(client.callBatch([{ method: 'getLatestBlockhash', params: [] }]), /Only cached read methods can be batched/);
+  await assert.rejects(client.callBatch([{ method: 'sendTransaction', params: ['tx'] }]), /Only cached read methods can be batched/);
+  const results = await Promise.all([
+    client.callBatch([{ method: 'getTransaction', params: ['a'] }, { method: 'getTransaction', params: ['b'] }]),
+    client.call('getAccountInfo', ['c']),
+  ]);
+  assert.equal(starts.length, 2);
+  assert.ok(starts[1].time - starts[0].time >= RPC_INTERVAL_MS);
+  assert.deepEqual(results[0].map((r) => r.cache), ['miss', 'miss']);
+});
+
+test('rejected batches fall back to individual reads on the same endpoint', async () => {
+  let batchAttempts = 0;
+  const batch = async () => {
+    batchAttempts++;
+    throw new RpcError("Maximum number of 'getTransaction' calls in a batch request is 1.", 502);
+  };
+  const singles: string[] = [];
+  const single = async (_method: string, params: unknown[]) => {
+    singles.push(String(params[0]));
+    return `tx-${params[0]}`;
+  };
+  const results = await batchWithFallback(
+    [{ method: 'getTransaction', params: ['a'] }, { method: 'getTransaction', params: ['b'] }],
+    batch, single,
+  );
+  assert.equal(batchAttempts, 1);
+  assert.deepEqual(singles, ['a', 'b']);
+  assert.deepEqual(results, ['tx-a', 'tx-b']);
+});
+
+test('failed batches reject cleanly without unhandled per-request promises', async () => {
+  let clock = 0;
+  const client = createRpcClient({
+    now: () => clock,
+    sleep: async (ms) => { clock += ms; },
+    fetch: async () => new Response('limited', { status: 429, headers: { 'retry-after': '20' } }),
+  });
+  await assert.rejects(client.callBatch([
+    { method: 'getTransaction', params: ['tx-1'] },
+    { method: 'getTransaction', params: ['tx-2'] },
+  ]), /temporarily unavailable/);
+  // Let the per-request promises settle: an unhandled rejection would fail this test.
+  await new Promise((resolve) => setTimeout(resolve, 10));
 });
 
 test('custom clients use their own endpoint and cache without falling back after failure', async () => {

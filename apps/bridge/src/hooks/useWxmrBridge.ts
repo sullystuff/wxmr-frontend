@@ -17,9 +17,9 @@ import {
 import IDL from '@wxmr/core/idl/wxmr_bridge.json';
 import type { WxmrBridge } from '@wxmr/core/idl/wxmr_bridge';
 import { XMR_MINT } from '@wxmr/shared';
-import { knownWithdrawals, rememberWithdrawals } from '@/lib/withdrawal-storage';
+import { knownWithdrawals, rememberWithdrawals, markWithdrawalPending, markWithdrawalsResolved } from '@/lib/withdrawal-storage';
 import { readHistoryPage } from '@/lib/chain-history';
-import { buildCancelWithdrawalTransaction, getNextWithdrawalNonce } from '@wxmr/core/bridge';
+import { buildCancelWithdrawalTransaction } from '@wxmr/core/bridge';
 
 // Program ID - should match deployed program
 const PROGRAM_ID = new PublicKey(
@@ -250,11 +250,21 @@ export function useWxmrBridge() {
       }
       const [configInfo, mintInfo, userTokenInfo, pendingTokenInfo, depositInfo] = infos;
       if (!configInfo || !mintInfo) throw new Error('Bridge configuration or mint is unavailable');
+      const resolvedWithdrawals: string[] = [];
       for (let i = baseAccountCount; i < infos.length; i++) {
         const info = infos[i];
-        if (!info || !info.owner.equals(PROGRAM_ID)) continue;
+        if (!info || !info.owner.equals(PROGRAM_ID)) {
+          resolvedWithdrawals.push(accountKeys[i].toBase58());
+          continue;
+        }
         const withdrawal = decodeWithdrawal(accountKeys[i], info.data);
-        if (withdrawal) snapshot.withdrawals.push(withdrawal);
+        if (withdrawal) {
+          snapshot.withdrawals.push(withdrawal);
+          if (withdrawal.status !== 'pending') resolvedWithdrawals.push(withdrawal.withdrawalPda);
+        }
+      }
+      if (wallet.publicKey && resolvedWithdrawals.length) {
+        markWithdrawalsResolved(PROGRAM_ID.toBase58(), wallet.publicKey.toBase58(), resolvedWithdrawals);
       }
 
       if (configInfo) {
@@ -349,17 +359,28 @@ export function useWxmrBridge() {
     if (!program || !wallet.publicKey) return null;
 
     try {
-      const config = await fetchBridgeConfig();
-      if (!config) throw new Error('Bridge not initialized');
+      const configPda = getBridgeConfigPDA();
+      const statePda = PublicKey.findProgramAddressSync([Buffer.from('withdrawal_state'), wallet.publicKey.toBuffer()], PROGRAM_ID)[0];
+      const [configInfo, stateInfo] = await connection.getMultipleAccountsInfo([configPda, statePda], 'confirmed');
+      if (!configInfo || !configInfo.owner.equals(PROGRAM_ID)) throw new Error('Bridge not initialized');
+      const config = decodeBridgeConfig(configInfo.data);
 
       // Get user's token account
       const wxmrMint = new PublicKey(config.wxmrMint);
       const userTokenAccount = await getAssociatedTokenAddress(wxmrMint, wallet.publicKey);
 
-      const nonce = await getNextWithdrawalNonce(connection, wallet.publicKey, PROGRAM_ID);
+      let minimum = BigInt(1);
+      if (stateInfo) {
+        if (!stateInfo.owner.equals(PROGRAM_ID)) throw new Error('Invalid withdrawal nonce account');
+        const state = readProgram.coder.accounts.decode('userWithdrawalState', stateInfo.data);
+        if (!state.user.equals(wallet.publicKey)) throw new Error('Invalid withdrawal nonce owner');
+        minimum = BigInt(state.lastNonce.toString()) + BigInt(1);
+      }
+      if (minimum > BigInt('0xffffffffffffffff')) throw new Error('This wallet has exhausted its withdrawal nonces');
+      const nonce = minimum > BigInt(Date.now()) ? minimum : BigInt(Date.now());
       const withdrawalPda = getWithdrawalPDA(wallet.publicKey, nonce);
       // Save before asking the wallet to sign: an uncertain confirmation must remain discoverable.
-      rememberWithdrawals(PROGRAM_ID.toBase58(), wallet.publicKey.toBase58(), [withdrawalPda.toBase58()]);
+      markWithdrawalPending(PROGRAM_ID.toBase58(), wallet.publicKey.toBase58(), withdrawalPda.toBase58());
 
       const signature = await program.methods
         .requestWithdrawal(new BN(nonce.toString()), new BN(amount.toString()), xmrAddress, exactOut)
@@ -381,7 +402,7 @@ export function useWxmrBridge() {
       console.error('Error requesting withdrawal:', error);
       throw error;
     }
-  }, [program, wallet.publicKey, connection, fetchBridgeConfig, getWithdrawalPDA, getBridgeConfigPDA]);
+  }, [program, wallet.publicKey, connection, decodeBridgeConfig, readProgram, getWithdrawalPDA, getBridgeConfigPDA]);
 
   const cancelWithdrawal = useCallback(async (withdrawalPda: string): Promise<{ signature: string; refundAmount: bigint }> => {
     if (!program || !wallet.publicKey || !program.provider.sendAndConfirm) throw new Error('Connect your wallet first');
