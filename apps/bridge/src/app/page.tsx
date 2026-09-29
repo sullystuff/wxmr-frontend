@@ -6,7 +6,7 @@ import dynamic from 'next/dynamic';
 import { useWxmrBridge, DepositAccountInfo, WithdrawalInfo, BridgeConfig } from '@/hooks/useWxmrBridge';
 import { CancelWithdrawalButton } from '@/components/CancelWithdrawalButton';
 import { QRCodeSVG } from 'qrcode.react';
-import { OpenSourceLink, SolanaRpcSettings, SwapModal } from '@wxmr/shared';
+import { CopyAddress, OpenSourceLink, SolanaRpcSettings, SwapModal } from '@wxmr/shared';
 import {
   PICONERO_PER_XMR,
   MIN_XMR_DEPOSIT_PICONERO,
@@ -211,9 +211,9 @@ function QRCodeModal({ address, onClose }: { address: string; onClose: () => voi
         </div>
         <div className="mt-4">
           <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">Address</p>
-          <code className="text-xs bg-[var(--background)] p-3 rounded-lg block break-all font-mono border border-[var(--border)] text-[#ff6600] select-all cursor-pointer">
+          <CopyAddress address={address} label="XMR bridge address" className="text-xs bg-[var(--background)] p-3 rounded-lg block break-all font-mono border border-[var(--border)] text-[#ff6600] w-full">
             {address}
-          </code>
+          </CopyAddress>
         </div>
         <button
           onClick={onClose}
@@ -488,7 +488,6 @@ export default function Home() {
   const [qrAddress, setQrAddress] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(false);
   const [showSwapModal, setShowSwapModal] = useState(false);
-  const [copied, setCopied] = useState(false);
   const loadRequestRef = useRef(0);
   const historyRequestRef = useRef(0);
   const [dataError, setDataError] = useState<string | null>(null);
@@ -877,28 +876,18 @@ export default function Home() {
                   <div className="bg-[var(--background)] rounded-xl p-4 border border-[var(--border)] mb-4">
                     <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">Your Native XMR Bridge Address</p>
                     <div className="flex gap-2">
-                      <code className="text-sm bg-[var(--card)] p-3 rounded-lg flex-1 break-all font-mono border border-[var(--border)] text-[#ff6600] select-all cursor-pointer">
+                      <CopyAddress address={depositAccount.xmrDepositAddress} label="XMR bridge address" className="text-sm bg-[var(--card)] p-3 rounded-lg flex-1 break-all font-mono border border-[var(--border)] text-[#ff6600] w-full">
                         {depositAccount.xmrDepositAddress}
-                      </code>
-                      <button
-                        onClick={() => {
-                          navigator.clipboard.writeText(depositAccount.xmrDepositAddress);
-                          setCopied(true);
-                          setTimeout(() => setCopied(false), 2000);
-                        }}
+                      </CopyAddress>
+                      <CopyAddress
+                        address={depositAccount.xmrDepositAddress}
+                        label="XMR bridge address"
                         className="p-3 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all flex-shrink-0"
-                        title="Copy Address"
                       >
-                        {copied ? (
-                          <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                        ) : (
-                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                          </svg>
-                        )}
-                      </button>
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                        </svg>
+                      </CopyAddress>
                       <button
                         onClick={() => setQrAddress(depositAccount.xmrDepositAddress)}
                         className="p-3 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all flex-shrink-0"
@@ -1135,7 +1124,7 @@ export default function Home() {
                           {formatXmr(withdrawal.amount)} <span className="text-sm font-normal text-[var(--muted)]">XMR</span>
                         </p>
                         <p className="text-xs text-[var(--muted)] mt-2 font-mono">
-                          To: {truncateAddress(withdrawal.xmrAddress, 12)}
+                          To: <CopyAddress address={withdrawal.xmrAddress} label="withdrawal destination address">{truncateAddress(withdrawal.xmrAddress, 12)}</CopyAddress>
                         </p>
                         {withdrawal.status === 'pending' && withdrawal.user === publicKey?.toBase58() && (
                           <CancelWithdrawalButton
@@ -1160,7 +1149,7 @@ export default function Home() {
             {isConnected ? (
               <div className="flex items-center gap-2">
                 <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <span>Connected: <code className="text-[var(--foreground)]">{truncateAddress(publicKey?.toBase58() || '', 8)}</code></span>
+                <span>Connected: <CopyAddress address={publicKey?.toBase58()} label="connected wallet address" className="font-mono text-[var(--foreground)]">{truncateAddress(publicKey?.toBase58() || '', 8)}</CopyAddress></span>
               </div>
             ) : (
               <div className="flex items-center gap-2">
@@ -1169,8 +1158,11 @@ export default function Home() {
               </div>
             )}
             {bridgeConfig && (
-              <p>
-                Bridge Authority: <code className="text-[var(--foreground)]">{truncateAddress(bridgeConfig.authority, 8)}</code>
+              <p className="flex min-w-0 max-w-full items-baseline gap-1">
+                <span className="shrink-0">Bridge Authority:</span>
+                <CopyAddress address={bridgeConfig.authority} label="bridge authority address" className="font-mono text-[var(--foreground)]">
+                  <span className="block truncate">{bridgeConfig.authority}</span>
+                </CopyAddress>
               </p>
             )}
           </div>
@@ -1225,9 +1217,7 @@ export default function Home() {
               <div>
                 <p className="text-xs text-[var(--muted)] mb-1">Mint Address</p>
                 <div className="flex items-center gap-2">
-                  <code className="text-sm font-mono text-[#ff6600] bg-[var(--background)] px-3 py-2 rounded-lg border border-[var(--border)] flex-1 break-all">
-                    WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp
-                  </code>
+                  <CopyAddress address="WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp" label="mint address" className="text-sm font-mono text-[#ff6600] bg-[var(--background)] px-3 py-2 rounded-lg border border-[var(--border)] flex-1 break-all" />
                   <a
                     href="https://solscan.io/token/WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp"
                     target="_blank"
@@ -1244,9 +1234,7 @@ export default function Home() {
               <div>
                 <p className="text-xs text-[var(--muted)] mb-1">Bridge Program</p>
                 <div className="flex items-center gap-2">
-                  <code className="text-sm font-mono text-[var(--foreground)] bg-[var(--background)] px-3 py-2 rounded-lg border border-[var(--border)] flex-1 break-all">
-                    EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8
-                  </code>
+                  <CopyAddress address="EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8" label="bridge program address" className="text-sm font-mono text-[var(--foreground)] bg-[var(--background)] px-3 py-2 rounded-lg border border-[var(--border)] flex-1 break-all" />
                   <a
                     href="https://solscan.io/account/EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8"
                     target="_blank"

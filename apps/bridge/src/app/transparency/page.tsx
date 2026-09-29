@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { OpenSourceLink, SolanaRpcSettings } from '@wxmr/shared';
+import { CopyAddress, OpenSourceLink, SolanaRpcSettings } from '@wxmr/shared';
 import { fetchAuditPage } from '@/lib/audits';
 
 // Monero Logo SVG component from cryptologos.cc
@@ -283,24 +283,16 @@ export default function TransparencyPage() {
             <div>
               <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">XMR Address</p>
               <div className="flex gap-2">
-                <code className="text-xs bg-[var(--card)] p-3 rounded-lg flex-1 break-all font-mono border border-[var(--border)] text-[#ff6600]">
-                  {BRIDGE_DATA.xmrAddress}
-                </code>
-                <button
-                  onClick={() => copyToClipboard(BRIDGE_DATA.xmrAddress, 'address')}
+                <CopyAddress address={BRIDGE_DATA.xmrAddress} label="XMR reserve address" className="text-xs bg-[var(--card)] p-3 rounded-lg flex-1 break-all font-mono border border-[var(--border)] text-[#ff6600]" />
+                <CopyAddress
+                  address={BRIDGE_DATA.xmrAddress}
+                  label="XMR reserve address"
                   className="p-3 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all flex-shrink-0"
-                  title="Copy"
                 >
-                  {copied === 'address' ? (
-                    <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                  )}
-                </button>
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                  </svg>
+                </CopyAddress>
               </div>
             </div>
             <div>
@@ -427,9 +419,7 @@ export default function TransparencyPage() {
             <div className="bg-[var(--background)] rounded-lg p-4 border border-[var(--border)]">
               <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">XMR Token Mint</p>
               <div className="flex items-center gap-2">
-                <code className="text-sm font-mono text-[#ff6600] flex-1 break-all">
-                  {BRIDGE_DATA.xmrMint}
-                </code>
+                <CopyAddress address={BRIDGE_DATA.xmrMint} label="mint address" className="text-sm font-mono text-[#ff6600] flex-1 break-all" />
                 <a
                   href={`https://solscan.io/token/${BRIDGE_DATA.xmrMint}`}
                   target="_blank"
@@ -450,9 +440,7 @@ export default function TransparencyPage() {
             <div className="bg-[var(--background)] rounded-lg p-4 border border-[var(--border)]">
               <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">Bridge Program</p>
               <div className="flex items-center gap-2">
-                <code className="text-sm font-mono flex-1 break-all">
-                  {BRIDGE_DATA.bridgeProgram}
-                </code>
+                <CopyAddress address={BRIDGE_DATA.bridgeProgram} label="bridge program address" className="text-sm font-mono flex-1 break-all" />
                 <a
                   href={`https://solscan.io/account/${BRIDGE_DATA.bridgeProgram}`}
                   target="_blank"
@@ -747,13 +735,10 @@ export default function TransparencyPage() {
                             <p className="text-xs text-[var(--muted)] uppercase mb-2">Consolidation Destination</p>
                             <div className="bg-[var(--background)] p-3 rounded-lg border border-[var(--border)]">
                               <div className="flex gap-2">
-                                <code className="font-mono text-xs text-[#ff6600] break-all flex-1">{auditData.address}</code>
-                                <button
-                                  onClick={() => copyToClipboard(auditData!.address, `addr-${audit.epoch}`)}
-                                  className="p-1 hover:bg-[var(--card-hover)] rounded flex-shrink-0"
-                                >
-                                  {copied === `addr-${audit.epoch}` ? '✓' : '📋'}
-                                </button>
+                                <CopyAddress address={auditData.address} label="consolidation destination address" className="font-mono text-xs text-[#ff6600] break-all flex-1" />
+                                <CopyAddress address={auditData.address} label="consolidation destination address" className="p-1 hover:bg-[var(--card-hover)] rounded flex-shrink-0">
+                                  <span aria-hidden="true">📋</span>
+                                </CopyAddress>
                               </div>
                               <p className="text-xs text-[var(--muted)] mt-1">
                                 All XMR was swept to this address (our primary wallet)

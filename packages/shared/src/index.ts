@@ -1,6 +1,7 @@
 export { Providers } from './providers';
 export { SwapPanel, SwapModal } from './components/Swap';
 export { OpenSourceLink } from './components/OpenSourceLink';
+export { CopyAddress } from './components/CopyAddress';
 export { SolanaRpcSettings } from './components/SolanaRpcSettings';
 export { UsdcIcon, XmrIcon } from './components/icons';
 export { useJupiterQuote } from './hooks/useJupiterQuote';
