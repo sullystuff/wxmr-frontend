@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { QRCodeSVG } from 'qrcode.react';
+import { CopyAddress } from '@wxmr/shared';
 import { CHAINS, type FundingInstructions, type FundingMode, type Order } from '@wxmr/core';
 
 type DepositAddressFunding = Extract<FundingInstructions, { type: 'deposit-address' }>;
@@ -60,7 +61,7 @@ export function AddressDepositFunding({
               {showQr ? 'Hide QR' : 'Show QR'}
             </button>
           </div>
-          <div className="break-all font-mono text-sm text-white">{funding.address}</div>
+          <CopyAddress address={funding.address} label={`${chainName} deposit address`} className="w-full break-all font-mono text-sm text-white" />
           {showQr && (
             <div className="mt-3 flex justify-center rounded-lg bg-white p-3">
               <QRCodeSVG value={funding.address} size={168} marginSize={0} />
@@ -123,27 +124,14 @@ export function DepositMethodToggle({
 }
 
 function CopyValueButton({ label, value }: { label: string; value?: string }) {
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), 1500);
-    return () => clearTimeout(timer);
-  }, [copied]);
   return (
-    <button
-      onClick={() => {
-        if (!value || !navigator.clipboard) return;
-        navigator.clipboard.writeText(value).then(() => setCopied(true)).catch(() => {});
-      }}
-      disabled={!value}
-      className={`w-full rounded-xl border px-4 py-3 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-        copied
-          ? 'border-[#35d071]/50 bg-[#122316] text-[#9ee6a8]'
-          : 'border-[#493424] bg-[#23170e] text-white enabled:hover:border-[#f26822]'
-      }`}
+    <CopyAddress
+      address={value}
+      label={label.replace(/^Copy /, '')}
+      className="w-full rounded-xl border border-[#493424] bg-[#23170e] px-4 py-3 text-center text-sm font-semibold text-white transition-colors enabled:hover:border-[#f26822] disabled:opacity-60"
     >
-      {copied ? 'Copied' : label}
-    </button>
+      {label}
+    </CopyAddress>
   );
 }
 

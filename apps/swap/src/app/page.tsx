@@ -1,7 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { OpenSourceLink, SolanaRpcSettings } from '@wxmr/shared';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { CopyAddress, OpenSourceLink, SolanaRpcSettings } from '@wxmr/shared';
 import {
   CHAINS,
   ERC20_ALLOWANCE_ABI,
@@ -1087,7 +1087,7 @@ function RecipientPanel({
             <div className="rounded-lg border border-[#f26822]/35 bg-[#1a120c] p-3">
               <div className="text-sm font-semibold text-white">This is an XMR-SOL deposit address</div>
               <div className="mt-1 text-xs leading-relaxed text-[#c59a7c]">
-                Send XMR-SOL directly to {shortAddress(depositAddressMatch.owner)} instead of withdrawing native XMR and depositing it again.
+                Send XMR-SOL directly to <CopyAddress address={depositAddressMatch.owner} label="Solana receive address" className="font-mono">{shortAddress(depositAddressMatch.owner)}</CopyAddress> instead of withdrawing native XMR and depositing it again.
               </div>
               <button
                 type="button"
@@ -1555,12 +1555,12 @@ function BtcDepositFunding({
       <div className="space-y-3">
         <Metric label="Amount" value={`${amount} BTC`} />
         <Metric label="Route" value={`BTC -> USDC-SOL via ${provider} -> XMR-SOL -> native XMR`} />
-        {funding.sourceAddress && <Metric label="BTC refund address" value={funding.sourceAddress} />}
+        {funding.sourceAddress && <Metric label="BTC refund address" value={<CopyAddress address={funding.sourceAddress} label="BTC refund address" className="break-all font-mono" />} />}
         <div className="rounded-xl border border-[#493424] bg-[#120d09] p-3">
           <div className="mb-2 text-xs uppercase tracking-[0.08em] text-[#a8846d]">Bitcoin deposit address</div>
-          <div className="break-all font-mono text-sm text-white">
+          <CopyAddress address={funding.address} label="BTC deposit address" className="w-full break-all font-mono text-sm text-white">
             {addressReady ? funding.address : 'Preparing deposit address...'}
-          </div>
+          </CopyAddress>
         </div>
         {funding.memo && <Metric label="Memo" value={funding.memo} />}
         <CopyAddressButton label="Copy BTC address" value={funding.address} />
@@ -1688,7 +1688,9 @@ function SolanaDirectFunding({
         <div className="min-w-0">
           <div className="text-sm font-semibold text-white">Pay with Solana wallet</div>
           <div className={`truncate text-xs text-[#c59a7c] ${publicKey ? 'font-mono' : ''}`}>
-            {publicKey ? shortAddress(publicKey.toBase58()) : 'Connect a Solana wallet'}
+            {publicKey ? (
+              <CopyAddress address={publicKey.toBase58()} label="connected Solana wallet address">{shortAddress(publicKey.toBase58())}</CopyAddress>
+            ) : 'Connect a Solana wallet'}
           </div>
         </div>
         <WalletMultiButton />
@@ -1781,7 +1783,9 @@ function SolanaTransferFunding({
         <div className="min-w-0">
           <div className="text-sm font-semibold text-white">Pay with Solana wallet</div>
           <div className={`truncate text-xs text-[#c59a7c] ${publicKey ? 'font-mono' : ''}`}>
-            {publicKey ? shortAddress(publicKey.toBase58()) : 'Connect a Solana wallet'}
+            {publicKey ? (
+              <CopyAddress address={publicKey.toBase58()} label="connected Solana wallet address">{shortAddress(publicKey.toBase58())}</CopyAddress>
+            ) : 'Connect a Solana wallet'}
           </div>
         </div>
         <WalletMultiButton />
@@ -1824,9 +1828,9 @@ function XmrDepositFunding({
         <Metric label="Amount" value={`${amount} XMR`} />
         <div className="rounded-xl border border-[#493424] bg-[#120d09] p-3">
           <div className="mb-2 text-xs uppercase tracking-[0.08em] text-[#a8846d]">Deposit address</div>
-          <div className="break-all font-mono text-sm text-white">
+          <CopyAddress address={funding.address} label="XMR deposit address" className="w-full break-all font-mono text-sm text-white">
             {addressReady ? funding.address : 'Preparing deposit address...'}
-          </div>
+          </CopyAddress>
         </div>
         <CopyAddressButton label="Copy XMR address" value={funding.address} />
       </div>
@@ -1917,7 +1921,9 @@ function MayanEvmFunding({
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="text-sm font-semibold text-white">Pay with wallet</div>
-          <div className={`truncate text-xs text-[#c59a7c] ${address ? 'font-mono' : ''}`}>{address ? shortAddress(address) : 'Connect an EVM wallet'}</div>
+          <div className={`truncate text-xs text-[#c59a7c] ${address ? 'font-mono' : ''}`}>{address ? (
+            <CopyAddress address={address} label="connected EVM wallet address">{shortAddress(address)}</CopyAddress>
+          ) : 'Connect an EVM wallet'}</div>
         </div>
         <button
           onClick={() => (address ? disconnect() : setShowConnect(true))}
@@ -2275,34 +2281,15 @@ function useEscapeKey(active: boolean, onEscape: () => void) {
   }, [active, onEscape]);
 }
 
-function useCopyFeedback(): [boolean, (value?: string) => void] {
-  const [copied, setCopied] = useState(false);
-  useEffect(() => {
-    if (!copied) return;
-    const timer = setTimeout(() => setCopied(false), 1500);
-    return () => clearTimeout(timer);
-  }, [copied]);
-  const copy = (value?: string) => {
-    if (!value || !navigator.clipboard) return;
-    navigator.clipboard.writeText(value).then(() => setCopied(true)).catch(() => {});
-  };
-  return [copied, copy];
-}
-
 function CopyAddressButton({ label, value }: { label: string; value?: string }) {
-  const [copied, copy] = useCopyFeedback();
   return (
-    <button
-      onClick={() => copy(value)}
-      disabled={!value}
-      className={`w-full rounded-xl border px-4 py-3 text-sm font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-60 ${
-        copied
-          ? 'border-[#35d071]/50 bg-[#122316] text-[#9ee6a8]'
-          : 'border-[#493424] bg-[#23170e] text-white enabled:hover:border-[#f26822]'
-      }`}
+    <CopyAddress
+      address={value}
+      label={label.replace(/^Copy /, '')}
+      className="w-full rounded-xl border border-[#493424] bg-[#23170e] px-4 py-3 text-center text-sm font-semibold text-white transition-colors enabled:hover:border-[#f26822] disabled:opacity-60"
     >
-      {copied ? 'Copied' : label}
-    </button>
+      {label}
+    </CopyAddress>
   );
 }
 
@@ -2323,7 +2310,7 @@ function TokenLogo({ token }: { token?: MayanToken }) {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string }) {
+function Metric({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="min-w-0 rounded-xl border border-[#292b31] bg-[#0b0c10] px-3 py-3">
       <div className="truncate text-[11px] uppercase tracking-[0.08em] text-[#8b919d]">{label}</div>
