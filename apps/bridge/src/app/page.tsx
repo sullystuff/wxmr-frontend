@@ -754,7 +754,7 @@ export default function Home() {
           >
             <span>Monero -&gt; Solana</span>
             <span className={`text-xs font-medium ${activeTab === 'deposit' ? 'text-white/75' : 'text-[var(--muted)]'}`}>
-              Fee: 0%
+              Fee: {DEPOSIT_FEE_PERCENT}
             </span>
           </button>
           <button
