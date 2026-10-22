@@ -17,6 +17,7 @@ import {
 } from '@wxmr/core';
 
 const BASIS_POINTS = BigInt(10000);
+const DEPOSIT_FEE_BPS = 10;
 const WITHDRAW_FEE_BPS = 10;
 // Wallet selection comes from browser storage and must not change server HTML during hydration.
 const WalletMultiButton = dynamic(
@@ -27,6 +28,7 @@ const WalletMultiButton = dynamic(
 const MIN_WITHDRAW_XMR = formatXmrAmount(MIN_XMR_WITHDRAWAL_PICONERO);
 const MIN_DEPOSIT_XMR = formatXmrAmount(MIN_XMR_DEPOSIT_PICONERO);
 const DEPOSIT_DUST_XMR = formatXmrAmount(XMR_DEPOSIT_DUST_PICONERO);
+const DEPOSIT_FEE_PERCENT = formatFeePercent(DEPOSIT_FEE_BPS);
 
 // Monero Logo SVG component from cryptologos.cc
 function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
@@ -829,6 +831,7 @@ export default function Home() {
                   <p className="text-[var(--muted)] mb-6">
                     Create a bridge address to receive native XMR from Monero.
                     Minimum deposit {MIN_DEPOSIT_XMR} XMR — smaller amounts are not minted.
+                    A {DEPOSIT_FEE_PERCENT} fee is taken in wXMR when the deposit is minted.
                     Transfers under {DEPOSIT_DUST_XMR} XMR (per transfer and per input!) are ignored as dust.
                     You can bridge into Solana any number of times.
                   </p>
@@ -869,7 +872,7 @@ export default function Home() {
                   <div className="flex items-center gap-2 mb-4">
                     <StatusBadge status="active" />
                     <span className="text-sm text-[var(--muted)]">
-                      Total bridged to Solana: <span className="text-[#ff6600] font-medium">{formatXmr(depositAccount.totalDeposited)} XMR</span>
+                      Total XMR deposited: <span className="text-[#ff6600] font-medium">{formatXmr(depositAccount.totalDeposited)} XMR</span>
                     </span>
                   </div>
                   
@@ -904,7 +907,8 @@ export default function Home() {
                     <p className="text-sm text-green-400">
                       <strong>Minimum deposit {MIN_DEPOSIT_XMR} XMR</strong> — smaller amounts are not minted,
                       and transfers under {DEPOSIT_DUST_XMR} XMR are ignored as dust. Once confirmed (10 blocks),
-                      XMR on Solana will be automatically minted to your wallet. You can bridge into Solana multiple times.
+                      wXMR is minted automatically: {DEPOSIT_FEE_PERCENT} goes to the bridge fee treasury and the rest goes to you.
+                      You can bridge into Solana multiple times.
                     </p>
                   </div>
 
