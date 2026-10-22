@@ -11,6 +11,8 @@ envLoader.loadWxmrEnv();
 const standalone = process.env.NEXT_OUTPUT_STANDALONE === "1";
 
 const nextConfig: NextConfig = {
+  // Keep local review artifacts separate from the normal release build.
+  distDir: process.env.WXMR_PREVIEW_DIST || ".next",
   reactCompiler: true,
   transpilePackages: ["@wxmr/shared", "@wxmr/core"],
   ...(standalone

@@ -1,887 +1,426 @@
-'use client';
+"use client";
 
-import { useState, useEffect } from 'react';
-import Link from 'next/link';
-import { CopyAddress, OpenSourceLink, SolanaRpcSettings } from '@wxmr/shared';
-import { fetchAuditPage } from '@/lib/audits';
+import { useCallback, useEffect, useState } from "react";
+import Link from "next/link";
+import { CopyAddress, SolanaRpcSettings } from "@wxmr/shared";
+import { BridgeShell } from "@/components/BridgeShell";
+import { Icon } from "@/components/BridgeIcons";
+import { ReserveAuditCard } from "@/components/ReserveAuditCard";
+import { compactXmr } from "@/components/ReserveOverview";
+import { useLatestReserve } from "@/hooks/useLatestReserve";
+import { useHeartbeat } from "@/hooks/useHeartbeat";
+import { useXmrPrice, usdValue } from "@/hooks/useXmrPrice";
+import { fetchAuditPage } from "@/lib/audits";
+import { parseReserveReport, RESERVE_FORMAT } from "@/lib/reserve-proof";
 
-// Monero Logo SVG component from cryptologos.cc
-function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 3756.09 3756.49" xmlns="http://www.w3.org/2000/svg">
-      <path d="M4128,2249.81C4128,3287,3287.26,4127.86,2250,4127.86S372,3287,372,2249.81,1212.76,371.75,2250,371.75,4128,1212.54,4128,2249.81Z" transform="translate(-371.96 -371.75)" fill="#fff"/>
-      <path d="M2250,371.75c-1036.89,0-1879.12,842.06-1877.8,1878,0.26,207.26,33.31,406.63,95.34,593.12h561.88V1263L2250,2483.57,3470.52,1263v1579.9h562c62.12-186.48,95-385.85,95.37-593.12C4129.66,1212.76,3287,372,2250,372Z" transform="translate(-371.96 -371.75)" fill="#f26822"/>
-      <path d="M1969.3,2764.17l-532.67-532.7v994.14H1029.38l-384.29.07c329.63,540.8,925.35,902.56,1604.91,902.56S3525.31,3766.4,3855,3225.6H3063.25V2231.47l-532.7,532.7-280.61,280.61-280.62-280.61h0Z" transform="translate(-371.96 -371.75)" fill="#4d4d4d"/>
-    </svg>
-  );
-}
-
-// Hardcoded values - in production these would come from an API
-const BRIDGE_DATA = {
-  xmrAddress: '45ZYpKmPaPmh3bnRP1XpMz8cASJQf1cfUgq32H8trCYA4RodzXhsmt2VYkQX9QQ65CetiGja65tH2JmKC3gEZtZjB7AzMpd',
-  viewKey: 'e4e02de197582ff2e93f9eaefc96e122a13ffa838736ef38f4a8ea27a0dc4909',
-  xmrMint: 'WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp',
-  bridgeProgram: 'EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8',
+type AuditRecord = Awaited<
+  ReturnType<typeof fetchAuditPage>
+>["records"][number];
+type LegacyData = {
+  address?: string;
+  txs?: { txid: string; key: string; amount: number; fee: number }[];
+  burn?: { txid: string; amount: number };
+  totalFee?: number;
 };
+const RESERVE_ADDRESS =
+  "45ZYpKmPaPmh3bnRP1XpMz8cASJQf1cfUgq32H8trCYA4RodzXhsmt2VYkQX9QQ65CetiGja65tH2JmKC3gEZtZjB7AzMpd";
+const VIEW_KEY =
+  "e4e02de197582ff2e93f9eaefc96e122a13ffa838736ef38f4a8ea27a0dc4909";
 
-// Audit record interface
-interface AuditRecord {
-  epoch: number;
-  timestamp: number;
-  circulatingSupply: bigint;
-  spendableBalance: bigint;
-  unconfirmedBalance: bigint;
-  data: string;
+function date(value: number) {
+  return new Date(value * 1000).toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
 }
 
-// Parsed audit data type
-interface AuditData {
-  timestamp: number;        // Unix timestamp (used as unique ID)
-  triggeredBy: 'scheduled' | 'withdrawal_failure' | 'input_threshold';
-  address: string;
-  totalAmount: number;
-  totalFee: number;
-  txs: Array<{ txid: string; key: string; amount: number; fee: number }>;
-  unconfirmed: Array<{ tx: string; amt: number; conf: number }>;
-  burn?: { txid: string; amount: number }; // Solana XMR burned to cover fees
-  // Legacy support
-  epoch?: number;
-}
-
-// InfoCard component
-function InfoCard({ 
-  title, 
-  icon, 
-  children 
-}: { 
-  title: string; 
-  icon: React.ReactNode; 
-  children: React.ReactNode;
-}) {
+function LegacyAudit({ record }: { record: AuditRecord }) {
+  let data: LegacyData | null = null;
+  try {
+    data = JSON.parse(record.data);
+  } catch {
+    /* Retain the raw record below. */
+  }
   return (
-    <div className="xmr-card p-6 mb-6">
-      <h2 className="text-lg font-bold mb-4 flex items-center gap-2">
-        {icon}
-        {title}
-      </h2>
-      {children}
-    </div>
-  );
-}
-
-// Expandable section
-function ExpandableSection({ 
-  title, 
-  children,
-  defaultOpen = false 
-}: { 
-  title: string; 
-  children: React.ReactNode;
-  defaultOpen?: boolean;
-}) {
-  const [isOpen, setIsOpen] = useState(defaultOpen);
-  
-  return (
-    <div className="border border-[var(--border)] rounded-lg overflow-hidden mb-4">
-      <button
-        onClick={() => setIsOpen(!isOpen)}
-        className="w-full px-4 py-3 bg-[var(--background)] hover:bg-[var(--card-hover)] flex justify-between items-center text-left transition-colors"
-      >
-        <span className="font-medium">{title}</span>
-        <svg 
-          className={`w-5 h-5 transition-transform ${isOpen ? 'rotate-180' : ''}`} 
-          fill="none" 
-          stroke="currentColor" 
-          viewBox="0 0 24 24"
-        >
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-        </svg>
-      </button>
-      {isOpen && (
-        <div className="px-4 py-4 border-t border-[var(--border)] bg-[var(--card)]">
-          {children}
+    <details className="legacy-audit">
+      <summary>
+        <div>
+          <span className="history-type">
+            <Icon name="activity" />
+            Consolidation record
+          </span>
+          <p>{date(record.timestamp)}</p>
         </div>
-      )}
-    </div>
+        <div className="history-value">
+          {compactXmr(record.spendableBalance)}{" "}
+          <span>XMR reported spendable</span>
+        </div>
+        <Icon name="chevron" />
+      </summary>
+      <div className="audit-details">
+        <p className="muted">
+          A historical wallet consolidation record with transaction keys and
+          balance figures from the recorded audit.
+        </p>
+        <dl className="audit-facts">
+          <div>
+            <dt>Supply reference</dt>
+            <dd>{compactXmr(record.circulatingSupply, 12)} wXMR</dd>
+          </div>
+          <div>
+            <dt>Reported spendable</dt>
+            <dd>{compactXmr(record.spendableBalance, 12)} XMR</dd>
+          </div>
+          <div>
+            <dt>Reported unconfirmed</dt>
+            <dd>{compactXmr(record.unconfirmedBalance, 12)} XMR</dd>
+          </div>
+        </dl>
+        {data?.burn && (
+          <p className="audit-burn">
+            Recorded fee-covering burn:{" "}
+            <a
+              href={`https://solscan.io/tx/${data.burn.txid}`}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {compactXmr(BigInt(data.burn.amount), 12)} wXMR
+              <Icon name="external" />
+            </a>
+          </p>
+        )}
+        {data?.txs?.map((tx, i) => (
+          <div className="audit-transaction" key={tx.txid}>
+            <div className="section-label">
+              CONSOLIDATION TRANSACTION {i + 1}
+            </div>
+            <p className="field-label">Transaction hash</p>
+            <CopyAddress
+              address={tx.txid}
+              label="Monero transaction hash"
+              className="contract-address"
+            />
+            <p className="field-label">Public payment proof key</p>
+            <CopyAddress
+              address={tx.key}
+              label="Monero transaction proof key"
+              className="contract-address"
+            />
+            <div className="audit-transaction-actions">
+              <a
+                className="text-link"
+                href={`https://xmrchain.net/tx/${tx.txid}`}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                View transaction
+                <Icon name="external" />
+              </a>
+              <form
+                action="https://xmrchain.net/prove"
+                method="POST"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <input type="hidden" name="txhash" value={tx.txid} />
+                <input type="hidden" name="txprvkey" value={tx.key} />
+                <input type="hidden" name="raw_tx_data" value="" />
+                <input
+                  type="hidden"
+                  name="xmraddress"
+                  value={data?.address || RESERVE_ADDRESS}
+                />
+                <button type="submit" className="text-link">
+                  Check payment proof
+                  <Icon name="external" />
+                </button>
+              </form>
+            </div>
+          </div>
+        ))}
+        <a
+          className="text-link"
+          href={`https://solscan.io/account/${record.account}`}
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          Inspect on-chain record
+          <Icon name="external" />
+        </a>
+        <details className="raw-record">
+          <summary>Raw published data</summary>
+          <pre>{record.data}</pre>
+        </details>
+      </div>
+    </details>
   );
-}
-
-// Format XMR amount from atomic units
-function formatXmr(atomic: bigint | number): string {
-  const num = typeof atomic === 'bigint' ? Number(atomic) : atomic;
-  return (num / 1e12).toFixed(12);
-}
-
-// Format timestamp
-function formatDate(timestamp: number): string {
-  return new Date(timestamp * 1000).toLocaleString();
-}
-
-// Fetch audit records from on-chain
-async function fetchAuditRecords(before?: string): Promise<{ records: AuditRecord[]; nextCursor: string | null; searchedThrough: number | null }> {
-  const page = await fetchAuditPage(before);
-  return { ...page, records: page.records.map((record) => ({
-    epoch: record.epoch,
-    timestamp: record.timestamp,
-    circulatingSupply: BigInt(record.circulatingSupply),
-    spendableBalance: BigInt(record.spendableBalance),
-    unconfirmedBalance: BigInt(record.unconfirmedBalance),
-    data: record.data,
-  })) };
 }
 
 export default function TransparencyPage() {
-  const [copied, setCopied] = useState<string | null>(null);
-  const [audits, setAudits] = useState<AuditRecord[]>([]);
-  const [loadingAudits, setLoadingAudits] = useState(true);
-  const [auditError, setAuditError] = useState<string | null>(null);
-  const [auditCursor, setAuditCursor] = useState<string | null>(null);
+  const { reserve: currentReserve, loading: latestLoading, error: latestError } = useLatestReserve();
+  const { heartbeat } = useHeartbeat();
+  const price = useXmrPrice();
+  const [records, setRecords] = useState<AuditRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [cursor, setCursor] = useState<string | null | undefined>(undefined);
   const [searchedThrough, setSearchedThrough] = useState<number | null>(null);
-  const [expandedEpoch, setExpandedEpoch] = useState<number | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    fetchAuditRecords()
-      .then((page) => {
-        if (cancelled) return;
-        setAudits(page.records);
-        setAuditCursor(page.nextCursor);
-        setSearchedThrough(page.searchedThrough);
-        setAuditError(null);
-      })
-      .catch((error) => {
-        if (cancelled) return;
-        console.error('Error fetching audit records:', error);
-        setAuditError(error instanceof Error ? error.message : 'Failed to load audit records');
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoadingAudits(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  const loadMoreAudits = async () => {
-    setLoadingAudits(true);
-    setAuditError(null);
+  const load = useCallback(async (before?: string) => {
+    setLoading(true);
+    setError(null);
     try {
-      const page = await fetchAuditRecords(auditCursor || undefined);
-      setAudits((previous) => [...new Map([...previous, ...page.records].map((record) => [record.epoch, record])).values()].sort((a, b) => b.epoch - a.epoch));
-      setAuditCursor(page.nextCursor);
+      const page = await fetchAuditPage(before);
+      setRecords((prior) =>
+        [
+          ...new Map(
+            [...prior, ...page.records].map((r) => [r.account, r]),
+          ).values(),
+        ].sort((a, b) => b.timestamp - a.timestamp),
+      );
+      setCursor(page.nextCursor);
       setSearchedThrough(page.searchedThrough);
-    } catch (error) {
-      setAuditError(error instanceof Error ? error.message : 'Failed to load audit records');
+    } catch (e) {
+      setError(
+        e instanceof Error ? e.message : "Unable to load reserve records.",
+      );
     } finally {
-      setLoadingAudits(false);
+      setLoading(false);
     }
-  };
-
-  const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(label);
-    setTimeout(() => setCopied(null), 2000);
-  };
-
+  }, []);
+  useEffect(() => {
+    void load();
+  }, [load]);
+  const latest = currentReserve?.report;
   return (
-    <main className="min-h-screen p-4 md:p-8 xmr-pattern">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <header className="flex flex-col md:flex-row justify-between items-center mb-10 gap-4">
-          <div className="flex items-center gap-4">
-            <MoneroLogo className="w-12 h-12" />
-            <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-[#ff6600] to-[#ff8533] bg-clip-text text-transparent">
-                Transparency
-              </h1>
-              <p className="text-[var(--muted)] mt-0.5">Verify our reserves and proofs</p>
-            </div>
-          </div>
-          <div className="flex flex-wrap items-center justify-center gap-3">
-            <SolanaRpcSettings />
-            <Link
-              href="/"
-              className="px-6 py-2.5 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] rounded-lg font-semibold transition-all"
-            >
-              Back to Bridge
-            </Link>
-          </div>
-        </header>
-
-        {/* Introduction */}
-        <div className="xmr-card p-6 mb-8 xmr-glow">
-          <h2 className="text-xl font-bold mb-3">Proof of Reserves</h2>
-          <p className="text-[var(--muted)] leading-relaxed">
-            The Monero bridge is designed for transparency. Every XMR token on Solana is backed 1:1 by native XMR.
-            We provide cryptographic tools so you can independently verify both bridge directions.
-          </p>
-        </div>
-
-        {/* View Key Section */}
-        <InfoCard
-          title="Monero View Key"
-          icon={
-            <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" />
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M2.458 12C3.732 7.943 7.523 5 12 5c4.478 0 8.268 2.943 9.542 7-1.274 4.057-5.064 7-9.542 7-4.477 0-8.268-2.943-9.542-7z" />
-            </svg>
-          }
-        >
-          <p className="text-[var(--muted)] mb-4">
-            The <strong className="text-white">view key</strong> allows you to see all incoming transactions 
-            to our wallet. Combined with the tx keys we provide for Solana to Monero transfers, you can fully audit the bridge.
-          </p>
-
-          <ExpandableSection title="What is a Monero View Key?" defaultOpen>
-            <div className="text-sm text-[var(--muted)] space-y-3">
-              <p>
-                Monero uses two key pairs: a <strong className="text-white">spend key</strong> (needed to send XMR) 
-                and a <strong className="text-white">view key</strong> (only needed to see incoming transactions).
-              </p>
-              <p>
-                <strong className="text-white">Important:</strong> The view key only reveals <em>incoming</em> transactions 
-                (Monero to Solana transfers). It does NOT show outgoing transactions or the current balance.
-                To verify Solana to Monero transfers, you need the tx keys we provide for each transfer (see below).
-              </p>
-              <p>
-                Together, the view key (for Monero to Solana) + tx keys (for Solana to Monero) allow full transparency.
-                The view key cannot be used to steal funds.
-              </p>
-            </div>
-          </ExpandableSection>
-
-          <ExpandableSection title="How to Verify Monero -> Solana">
-            <div className="text-sm text-[var(--muted)] space-y-4">
-              <p><strong className="text-white">Option 1: View-Only Wallet</strong></p>
-              <ol className="list-decimal list-inside space-y-2 ml-4">
-                <li>Open Monero GUI or CLI wallet</li>
-                <li>Select &quot;Restore wallet from keys&quot;</li>
-                <li>Enter the address and view key below</li>
-                <li>Leave spend key blank (or enter zeros)</li>
-                <li>Sync with a Monero node to see all incoming XMR transfers</li>
-              </ol>
-              <p className="mt-2 text-xs">
-                Note: This shows total XMR received, not current balance (outputs are hidden without spend key).
-              </p>
-              
-              <p className="mt-4"><strong className="text-white">Option 2: Block Explorer</strong></p>
-              <p>
-                Some Monero block explorers like{' '}
-                <a href="https://xmrchain.net" target="_blank" rel="noopener noreferrer" className="text-[#ff6600] hover:underline">
-                  xmrchain.net
-                </a>{' '}
-                allow you to search by address and provide your view key to see incoming transactions.
-              </p>
-            </div>
-          </ExpandableSection>
-
-          <div className="bg-[var(--background)] rounded-xl p-4 border border-[var(--border)] space-y-4 mt-4">
-            <div>
-              <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">XMR Address</p>
-              <div className="flex gap-2">
-                <CopyAddress address={BRIDGE_DATA.xmrAddress} label="XMR reserve address" className="text-xs bg-[var(--card)] p-3 rounded-lg flex-1 break-all font-mono border border-[var(--border)] text-[#ff6600]" />
-                <CopyAddress
-                  address={BRIDGE_DATA.xmrAddress}
-                  label="XMR reserve address"
-                  className="p-3 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all flex-shrink-0"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                  </svg>
-                </CopyAddress>
-              </div>
-            </div>
-            <div>
-              <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">View Key</p>
-              <div className="flex gap-2">
-                <code className="text-xs bg-[var(--card)] p-3 rounded-lg flex-1 break-all font-mono border border-[var(--border)]">
-                  {BRIDGE_DATA.viewKey}
-                </code>
-                <button
-                  onClick={() => copyToClipboard(BRIDGE_DATA.viewKey, 'viewkey')}
-                  className="p-3 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all flex-shrink-0"
-                  title="Copy"
-                >
-                  {copied === 'viewkey' ? (
-                    <svg className="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                  ) : (
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                    </svg>
-                  )}
-                </button>
-              </div>
-            </div>
-          </div>
-        </InfoCard>
-
-        {/* Transaction Key Section */}
-        <InfoCard
-          title="Transaction Keys (Solana -> Monero Proofs)"
-          icon={
-            <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
-          }
-        >
-          <p className="text-[var(--muted)] mb-4">
-            Every Solana to Monero transfer we process includes a <strong className="text-white">transaction key</strong> (tx key)
-            that cryptographically proves the payment was made to your address.
-          </p>
-
-          <ExpandableSection title="What is a Transaction Key?" defaultOpen>
-            <div className="text-sm text-[var(--muted)] space-y-3">
-              <p>
-                When a Monero transaction is created, a unique <strong className="text-white">transaction private key</strong> is 
-                generated. This key can be shared to prove that a specific payment was made to a specific address.
-              </p>
-              <p>
-                Unlike Bitcoin where transactions are publicly visible on the blockchain, Monero transactions are 
-                private by default. The tx key is the cryptographic proof that a payment was made.
-              </p>
-              <p>
-                When we complete your Solana to Monero transfer, we emit the tx key in the Solana transaction event. You can use
-                this to verify that your XMR was actually sent, even though Monero transactions are private.
-              </p>
-            </div>
-          </ExpandableSection>
-
-          <ExpandableSection title="How to Verify Solana -> Monero">
-            <div className="text-sm text-[var(--muted)] space-y-4">
-              <p><strong className="text-white">What you need:</strong></p>
-              <ul className="list-disc list-inside space-y-1 ml-4">
-                <li>Transaction ID (txid) - the Monero transaction hash</li>
-                <li>Your XMR address - where you requested the native XMR</li>
-                <li>Transaction Key (tx key) - from the Solana bridge event</li>
-              </ul>
-              
-              <p className="mt-4"><strong className="text-white">Verification steps:</strong></p>
-              <ol className="list-decimal list-inside space-y-2 ml-4">
-                <li>
-                  Go to{' '}
-                  <a href="https://xmrchain.net" target="_blank" rel="noopener noreferrer" className="text-[#ff6600] hover:underline">
-                    xmrchain.net
-                  </a>
-                </li>
-                <li>Paste the transaction ID and press Enter</li>
-                <li>Click &quot;Prove sending&quot;</li>
-                <li>Enter your XMR address (output address) and the tx key</li>
-                <li>Click &quot;Prove Send&quot; - it will show the exact amount sent to you</li>
-              </ol>
-
-              <p className="mt-4"><strong className="text-white">Alternative: Monero CLI</strong></p>
-              <code className="block bg-[var(--background)] p-3 rounded-lg font-mono text-xs mt-2">
-                monero-wallet-cli check_tx_key &lt;txid&gt; &lt;address&gt; &lt;tx_key&gt;
-              </code>
-            </div>
-          </ExpandableSection>
-
-          <ExpandableSection title="Where to Find the TX Key">
-            <div className="text-sm text-[var(--muted)] space-y-3">
-              <p>
-                The tx key is emitted in the <code className="bg-[var(--background)] px-1 rounded">WithdrawCompletedEvent</code> on Solana 
-                when your Solana to Monero transfer is finalized. You can find it by:
-              </p>
-              <ol className="list-decimal list-inside space-y-2 ml-4">
-                <li>Finding your bridge completion transaction on Solscan</li>
-                <li>Looking at the &quot;Instruction Logs&quot; or &quot;Events&quot; section</li>
-                <li>The event contains: txid, recipient address, and tx key</li>
-              </ol>
-              <p className="mt-3 text-xs">
-                We also log tx keys in our backend - if you need help finding a tx key for a completed transfer,
-                contact support with your transfer details.
-              </p>
-            </div>
-          </ExpandableSection>
-        </InfoCard>
-
-        {/* On-Chain Data Section */}
-        <InfoCard
-          title="On-Chain Verification"
-          icon={
-            <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
-            </svg>
-          }
-        >
-          <p className="text-[var(--muted)] mb-4">
-            All bridge operations are recorded on-chain. The Solana program tracks both bridge directions,
-            and all events are permanently stored.
-          </p>
-
-          <div className="space-y-4">
-            <div className="bg-[var(--background)] rounded-lg p-4 border border-[var(--border)]">
-              <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">XMR Token Mint</p>
-              <div className="flex items-center gap-2">
-                <CopyAddress address={BRIDGE_DATA.xmrMint} label="mint address" className="text-sm font-mono text-[#ff6600] flex-1 break-all" />
-                <a
-                  href={`https://solscan.io/token/${BRIDGE_DATA.xmrMint}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-2 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all"
-                  title="View on Solscan"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                  </svg>
-                </a>
-              </div>
-              <p className="text-xs text-[var(--muted)] mt-2">
-                Total supply = total XMR on Solana in circulation
-              </p>
-            </div>
-
-            <div className="bg-[var(--background)] rounded-lg p-4 border border-[var(--border)]">
-              <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">Bridge Program</p>
-              <div className="flex items-center gap-2">
-                <CopyAddress address={BRIDGE_DATA.bridgeProgram} label="bridge program address" className="text-sm font-mono flex-1 break-all" />
-                <a
-                  href={`https://solscan.io/account/${BRIDGE_DATA.bridgeProgram}`}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="p-2 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all"
-                  title="View on Solscan"
-                >
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                  </svg>
-                </a>
-              </div>
-              <p className="text-xs text-[var(--muted)] mt-2">
-                Contains BridgeConfig with bridge volume stats
-              </p>
-            </div>
-          </div>
-        </InfoCard>
-
-        {/* Full Auditability */}
-        <InfoCard
-          title="Full Auditability"
-          icon={
-            <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-            </svg>
-          }
-        >
-          <div className="space-y-4 text-[var(--muted)]">
-            <p>
-              <strong className="text-white">Everything is verifiable:</strong>
+    <BridgeShell>
+      <main id="main" className="bridge-main reserves-main">
+        <div className="page-intro">
+          <div>
+            <p className="eyebrow">
+              <span className="orange-dash" />
+              THE EVIDENCE, IN THE OPEN
             </p>
-            <ul className="list-disc list-inside space-y-2 ml-4">
-              <li>Verify all Monero to Solana transfers using our public view key</li>
-              <li>Verify any Solana to Monero transfer with the tx key we provide</li>
-              <li>Check total XMR supply on Solana matches reserves</li>
-              <li>All bridge events permanently recorded on-chain</li>
-            </ul>
-
-            <div className="mt-4 p-4 bg-[#ff6600]/10 border border-[#ff6600]/30 rounded-lg">
-              <p className="text-sm">
-                <strong className="text-[#ff6600]">Don&apos;t trust, verify.</strong> We provide all the cryptographic 
-                tools you need to independently audit both bridge directions.
-              </p>
-            </div>
+            <h1>
+              Reserves you can <span>inspect.</span>
+            </h1>
+            <p>
+              Published Monero proofs and Solana records. Verify them on your
+              terms.
+            </p>
           </div>
-        </InfoCard>
-
-        {/* Daily Audit History */}
-        <InfoCard
-          title="Daily Audit History"
-          icon={
-            <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-3 7h3m-3 4h3m-6-4h.01M9 16h.01" />
-            </svg>
-          }
+          <Link href="/docs#verification" className="intro-help">
+            How to verify
+            <Icon name="arrow" />
+          </Link>
+        </div>
+        <section
+          className="reserve-stat-grid"
+          aria-label="Latest reserve proof"
         >
-          <p className="text-[var(--muted)] mb-4">
-            Every day (and when needed for Solana to Monero transfers), we consolidate all spendable XMR and record proof on-chain.
-            Each audit includes transaction keys so you can verify we control the native XMR backing Solana XMR.
-          </p>
-
-          <div className="mb-4 text-sm text-[var(--muted)]">
-            <p>Audit history loads in pages of bridge activity. Keep loading earlier activity to find older audits.</p>
-            {searchedThrough && <p>Searched back to {formatDate(searchedThrough)}.</p>}
-            {(auditCursor || auditError) && (
-              <button className="mt-2 underline disabled:opacity-50" disabled={loadingAudits} onClick={() => void loadMoreAudits()}>
-                {loadingAudits ? 'Loading…' : auditError ? 'Retry' : 'Load earlier activity'}
-              </button>
+          <div>
+            <span className="field-label">Reported unspent at check</span>
+            <p>
+              {latest ? compactXmr(latest.verified.unspentAtomic) : "—"}
+              <small>XMR</small>
+            </p>
+          </div>
+          <div>
+            <span className="field-label">Token supply reference</span>
+            <p>
+              {latest ? compactXmr(latest.solana.supplyAtomic) : "—"}
+              <small>wXMR</small>
+            </p>
+          </div>
+          <div>
+            <span className="field-label">Recorded publisher check</span>
+            <p className="stat-date">
+              {latest
+                ? date(latest.verified.at)
+                : latestLoading
+                  ? "Loading latest proof…"
+                  : latestError ? "Proof lookup unavailable" : "Waiting for proof pointer"}
+            </p>
+          </div>
+        </section>
+        <p className="reserve-stat-caption">
+          Native reserve proofs publish daily, including confirmed locked outputs. The daily wallet sweep runs separately.
+          {heartbeat && <> Current TVL: {compactXmr(heartbeat.balanceAtomic)} XMR{price ? ` (≈ ${usdValue(heartbeat.balanceAtomic, price.usd)} USD)` : ""}.</>}
+        </p>
+        {currentReserve && <section className="latest-reserve-proof" aria-label="Latest daily reserve proof">
+          <p className="eyebrow">LATEST DAILY PROOF</p>
+          <ReserveAuditCard data={currentReserve.data} account={currentReserve.account} />
+        </section>}
+        <div className="reserves-content">
+          <section className="proof-history" aria-labelledby="proof-title">
+            <div className="section-heading">
+              <div>
+                <p className="eyebrow">ON-CHAIN PUBLICATIONS</p>
+                <h2 id="proof-title">Reserve proofs & audit history</h2>
+              </div>
+              <span className="tiny-tag">{records.length} LOADED</span>
+            </div>
+            <p className="section-description">
+              Native reserve proofs demonstrate control of the included XMR
+              outputs. Older consolidation records retain their transaction keys
+              for inspection.
+            </p>
+            {error && (
+              <div className="notice error-notice" role="alert">
+                <Icon name="info" />
+                <p>{error}</p>
+              </div>
             )}
-          </div>
-          {loadingAudits && audits.length === 0 ? (
-            <div className="text-center py-8 text-[var(--muted)]">
-              <div className="animate-spin w-6 h-6 border-2 border-[#ff6600] border-t-transparent rounded-full mx-auto mb-2"></div>
-              Loading audit history...
+            {loading && records.length === 0 ? (
+              <div className="history-loading">
+                <span className="spinner" />
+                <p>Reading published records from Solana…</p>
+              </div>
+            ) : records.length === 0 && !error ? (
+              <div className="activity-empty compact">
+                <Icon name="shield" />
+                <h3>No reports in the activity loaded yet.</h3>
+                <p>Load earlier activity to look for reserve publications.</p>
+              </div>
+            ) : (
+              <div className="proof-records">
+                {records.map((record) =>
+                  record.data.startsWith(`{"format":"${RESERVE_FORMAT}"`) ? (
+                    <ReserveAuditCard
+                      key={record.account}
+                      data={record.data}
+                      account={record.account}
+                    />
+                  ) : (
+                    <LegacyAudit key={record.account} record={record} />
+                  ),
+                )}
+              </div>
+            )}
+            <div className="history-pagination">
+              {(cursor !== null || error) && (
+                <button
+                  className="secondary-button"
+                  disabled={loading}
+                  onClick={() => void load(cursor || undefined)}
+                >
+                  {loading
+                    ? "Loading…"
+                    : error
+                      ? "Retry lookup"
+                      : "Load earlier activity"}
+                  <Icon name="arrow" />
+                </button>
+              )}
+              {searchedThrough && (
+                <p>Activity searched back to {date(searchedThrough)}.</p>
+              )}
             </div>
-          ) : auditError ? (
-            <div className="text-center py-8 text-red-400">
-              {auditError}
+          </section>
+          <aside className="verification-sidebar">
+            <div className="verification-note">
+              <Icon name="shield" />
+              <h2>What a proof tells you.</h2>
+              <p>
+                A native Monero reserve proof lets you check control of the
+                included outputs and their spent status using a synchronized
+                Monero node.
+              </p>
+              <p>
+                The browser displays the publisher’s recorded check. Download
+                the report and verify it yourself for an independent result.
+              </p>
+              <Link className="text-link" href="/docs#verification">
+                Verification guide
+                <Icon name="arrow" />
+              </Link>
             </div>
-          ) : audits.length === 0 ? (
-            <div className="text-center py-8 text-[var(--muted)]">
-              No audits found in the activity loaded so far.
+            <div className="verification-note">
+              <Icon name="info" />
+              <h2>Privacy across two networks.</h2>
+              <p>
+                Monero and Solana have different privacy properties. wXMR
+                balances and transfers are public on Solana.
+              </p>
+              <p>
+                Bridge records can link a Solana wallet with deposit addresses,
+                withdrawal destinations, and amounts.
+              </p>
+              <Link className="text-link" href="/docs#privacy">
+                Understand bridge privacy
+                <Icon name="arrow" />
+              </Link>
             </div>
-          ) : (
-            <div className="space-y-3">
-              {audits.map((audit) => {
-                const isExpanded = expandedEpoch === audit.epoch;
-                
-                let auditData: AuditData | null = null;
-                try {
-                  auditData = JSON.parse(audit.data);
-                } catch {
-                  auditData = null;
-                }
-
-                // The epoch field is now a Unix timestamp
-                const auditDate = formatDate(audit.epoch);
-                const triggeredBy = auditData?.triggeredBy;
-                
-                return (
-                  <div key={audit.epoch} className="border border-[var(--border)] rounded-lg overflow-hidden">
-                    <button
-                      onClick={() => setExpandedEpoch(isExpanded ? null : audit.epoch)}
-                      className="w-full p-4 bg-[var(--background)] hover:bg-[var(--card-hover)] flex justify-between items-center text-left transition-colors"
-                    >
-                      <div>
-                        <span className="font-semibold text-white">{auditDate}</span>
-                        {triggeredBy === 'withdrawal_failure' && (
-                          <span className="text-xs text-yellow-400 ml-2 px-2 py-0.5 bg-yellow-400/10 rounded">
-                            triggered by bridge-out
-                          </span>
-                        )}
-                        {triggeredBy === 'scheduled' && (
-                          <span className="text-xs text-green-400 ml-2 px-2 py-0.5 bg-green-400/10 rounded">
-                            scheduled
-                          </span>
-                        )}
-                        {triggeredBy === 'input_threshold' && (
-                          <span className="text-xs text-yellow-400 ml-2 px-2 py-0.5 bg-yellow-400/10 rounded">
-                            input threshold
-                          </span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-4">
-                        <div className="text-right text-sm">
-                          <div className="text-[#ff6600]">{formatXmr(audit.spendableBalance)} XMR</div>
-                          <div className="text-xs text-[var(--muted)]">consolidated</div>
-                        </div>
-                        <svg 
-                          className={`w-5 h-5 transition-transform ${isExpanded ? 'rotate-180' : ''}`} 
-                          fill="none" 
-                          stroke="currentColor" 
-                          viewBox="0 0 24 24"
-                        >
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                      </div>
-                    </button>
-                    
-                    {isExpanded && (
-                      <div className="p-4 border-t border-[var(--border)] bg-[var(--card)] space-y-4">
-                        {/* Balance Summary Box */}
-                        <div className="bg-[var(--background)] rounded-lg p-4 border border-[var(--border)]">
-                          <p className="text-xs text-[var(--muted)] uppercase mb-3 font-semibold">Balance Summary</p>
-                          
-                          {/* Main comparison */}
-                          <div className="space-y-2 text-sm font-mono">
-                            <div className="flex justify-between">
-                              <span className="text-[var(--muted)]">Solana XMR Circulating Supply:</span>
-                              <span className="text-white">{formatXmr(audit.circulatingSupply)} XMR</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-[var(--muted)]">XMR Spendable (after fees):</span>
-                              <span className="text-[#ff6600]">{formatXmr(audit.spendableBalance)} XMR</span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-[var(--muted)]">XMR Unconfirmed (pending):</span>
-                              <span className="text-yellow-400">{formatXmr(audit.unconfirmedBalance)} XMR</span>
-                            </div>
-                            
-                            <div className="border-t border-[var(--border)] pt-2 mt-2">
-                              <div className="flex justify-between font-semibold">
-                                <span className="text-[var(--muted)]">Total XMR Backing:</span>
-                                <span className="text-green-400">
-                                  {formatXmr(BigInt(audit.spendableBalance.toString()) + BigInt(audit.unconfirmedBalance.toString()))} XMR
-                                </span>
-                              </div>
-                            </div>
-                            
-                            {/* Fee difference explanation */}
-                            {(() => {
-                              const totalXmr = BigInt(audit.spendableBalance.toString()) + BigInt(audit.unconfirmedBalance.toString());
-                              const solanaXmrSupply = BigInt(audit.circulatingSupply.toString());
-                              const difference = solanaXmrSupply - totalXmr;
-                              
-                              if (difference > BigInt(0)) {
-                                return (
-                                  <div className="mt-3 p-3 bg-red-500/10 border border-red-500/20 rounded-lg text-xs">
-                                    <div className="flex justify-between mb-1">
-                                      <span className="text-[var(--muted)]">Shortfall (fees we paid):</span>
-                                      <span className="text-red-400 font-semibold">-{formatXmr(difference)} XMR</span>
-                                    </div>
-                                    <p className="text-[var(--muted)]">
-                                      This {formatXmr(difference)} XMR difference is the cumulative cost of consolidation fees 
-                                      the bridge operator has paid. Users never pay these fees—we absorb the cost of managing Monero UTXOs.
-                                    </p>
-                                  </div>
-                                );
-                              }
-                              return null;
-                            })()}
-                            
-                            {/* Solana XMR burn to cover shortfall */}
-                            {auditData?.burn && (() => {
-                              const totalXmr = BigInt(audit.spendableBalance.toString()) + BigInt(audit.unconfirmedBalance.toString());
-                              const burnedAmount = BigInt(auditData.burn.amount);
-                              const newWxmrSupply = BigInt(audit.circulatingSupply.toString()) - burnedAmount;
-                              const isExactMatch = newWxmrSupply === totalXmr;
-                              
-                              return (
-                                <div className="mt-3 p-3 bg-green-500/10 border border-green-500/20 rounded-lg text-xs">
-                                  <div className="flex justify-between mb-2">
-                                    <span className="text-[var(--muted)]">Solana XMR Burned:</span>
-                                    <span className="text-green-400 font-semibold">{formatXmr(auditData.burn.amount)} XMR</span>
-                                  </div>
-                                  
-                                  {/* Post-burn state - THE MATCH */}
-                                  <div className="bg-green-500/20 rounded-lg p-3 mb-2 border border-green-500/30">
-                                    <p className="text-green-400 font-bold text-center mb-2">
-                                      {isExactMatch ? '✅ EXACT 1:1 MATCH' : 'Final State'}
-                                    </p>
-                                    <div className="space-y-1 font-mono">
-                                      <div className="flex justify-between">
-                                        <span className="text-[var(--muted)]">Solana XMR Supply (after burn):</span>
-                                        <span className="text-white">{formatXmr(newWxmrSupply)} XMR</span>
-                                      </div>
-                                      <div className="flex justify-between">
-                                        <span className="text-[var(--muted)]">XMR Backing:</span>
-                                        <span className="text-white">{formatXmr(totalXmr)} XMR</span>
-                                      </div>
-                                    </div>
-                                    {isExactMatch && (
-                                      <p className="text-center text-green-400 mt-2 text-[10px]">
-                                        Every Solana XMR is backed by exactly 1 native XMR
-                                      </p>
-                                    )}
-                                  </div>
-                                  
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-[var(--muted)]">Burn TX:</span>
-                                    <a
-                                      href={`https://solscan.io/tx/${auditData.burn.txid}`}
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="font-mono text-green-400 hover:underline truncate flex-1"
-                                    >
-                                      {auditData.burn.txid.slice(0, 20)}...
-                                    </a>
-                                    <button
-                                      onClick={() => copyToClipboard(auditData!.burn!.txid, `burn-${audit.epoch}`)}
-                                      className="p-1 hover:bg-[var(--card-hover)] rounded flex-shrink-0"
-                                    >
-                                      {copied === `burn-${audit.epoch}` ? '✓' : '📋'}
-                                    </button>
-                                  </div>
-                                  <div className="mt-3 p-2 rounded border border-green-500/20 bg-[var(--background)]">
-                                    <p className="text-[var(--muted)]">
-                                      Daily burn accounting must also include the XMR transaction fees we paid on users&apos; behalf,
-                                      so we burn an equivalent amount of Solana XMR for those fees too.
-                                    </p>
-                                  </div>
-                                </div>
-                              );
-                            })()}
-                          </div>
-                          
-                          {/* Total fees this epoch */}
-                          {auditData?.totalFee && auditData.totalFee > 0 && (
-                            <div className="mt-3 pt-3 border-t border-[var(--border)]">
-                              <div className="flex justify-between text-sm">
-                                <span className="text-[var(--muted)]">Fees we paid this epoch:</span>
-                                <span className="text-red-400 font-mono">-{formatXmr(auditData.totalFee)} XMR</span>
-                              </div>
-                              <p className="text-xs text-[var(--muted)] mt-1">
-                                Paid by bridge operator, not deducted from user balances
-                              </p>
-                            </div>
-                          )}
-                        </div>
-
-                        {/* Unconfirmed Transfers (viewable with view key) */}
-                        {auditData?.unconfirmed && auditData.unconfirmed.length > 0 && (
-                          <div className="mt-4">
-                            <p className="text-xs text-[var(--muted)] uppercase mb-2">
-                              Unconfirmed Monero -&gt; Solana Transfers (verify with view key)
-                            </p>
-                            <div className="space-y-1">
-                              {auditData.unconfirmed.map((tx, i) => (
-                                <div key={i} className="text-xs font-mono bg-[var(--background)] p-2 rounded flex justify-between">
-                                  <span className="text-[var(--muted)]">{tx.tx.slice(0, 16)}...</span>
-                                  <span className="text-yellow-400">{formatXmr(tx.amt)} XMR</span>
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Primary Address */}
-                        {auditData?.address && (
-                          <div className="mt-4">
-                            <p className="text-xs text-[var(--muted)] uppercase mb-2">Consolidation Destination</p>
-                            <div className="bg-[var(--background)] p-3 rounded-lg border border-[var(--border)]">
-                              <div className="flex gap-2">
-                                <CopyAddress address={auditData.address} label="consolidation destination address" className="font-mono text-xs text-[#ff6600] break-all flex-1" />
-                                <CopyAddress address={auditData.address} label="consolidation destination address" className="p-1 hover:bg-[var(--card-hover)] rounded flex-shrink-0">
-                                  <span aria-hidden="true">📋</span>
-                                </CopyAddress>
-                              </div>
-                              <p className="text-xs text-[var(--muted)] mt-1">
-                                All XMR was swept to this address (our primary wallet)
-                              </p>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Consolidation Transactions with TX Keys */}
-                        {auditData?.txs && auditData.txs.length > 0 && (
-                          <div className="mt-4">
-                            <p className="text-xs text-[var(--muted)] uppercase mb-2">
-                              Consolidation Transactions ({auditData.txs.length})
-                            </p>
-                            <p className="text-xs text-[var(--muted)] mb-3">
-                              Each transaction proves we control the XMR. Use the TX key to verify on xmrchain.net.
-                            </p>
-                            <div className="space-y-3">
-                              {auditData.txs.map((tx, i) => (
-                                <div key={i} className="bg-[var(--background)] p-3 rounded-lg border border-[var(--border)]">
-                                  <div className="flex justify-between items-start mb-2">
-                                    <span className="text-xs text-[var(--muted)]">TX #{i + 1}</span>
-                                    <div className="text-right">
-                                      <span className="text-sm text-[#ff6600] font-mono">{formatXmr(tx.amount)} XMR</span>
-                                      <span className="text-xs text-red-400 ml-2">(-{formatXmr(tx.fee)} fee)</span>
-                                    </div>
-                                  </div>
-                                  
-                                  <div className="space-y-2 text-xs">
-                                    <div>
-                                      <p className="text-[var(--muted)]">TXID:</p>
-                                      <div className="flex gap-2">
-                                        <code className="font-mono text-white break-all flex-1">{tx.txid}</code>
-                                        <button
-                                          onClick={() => copyToClipboard(tx.txid, `txid-${audit.epoch}-${i}`)}
-                                          className="p-1 hover:bg-[var(--card-hover)] rounded"
-                                        >
-                                          {copied === `txid-${audit.epoch}-${i}` ? '✓' : '📋'}
-                                        </button>
-                                      </div>
-                                    </div>
-                                    
-                                    <div>
-                                      <p className="text-[var(--muted)]">TX Key (proof of ownership):</p>
-                                      <div className="flex gap-2">
-                                        <code className="font-mono text-green-400 break-all flex-1">{tx.key}</code>
-                                        <button
-                                          onClick={() => copyToClipboard(tx.key, `key-${audit.epoch}-${i}`)}
-                                          className="p-1 hover:bg-[var(--card-hover)] rounded"
-                                        >
-                                          {copied === `key-${audit.epoch}-${i}` ? '✓' : '📋'}
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </div>
-                                  
-                                  <a
-                                    href={`https://xmrchain.net/tx/${tx.txid}`}
-                                    target="_blank"
-                                    rel="noopener noreferrer"
-                                    className="inline-flex items-center gap-1 text-xs text-[#ff6600] hover:underline mt-2"
-                                  >
-                                    Verify on xmrchain.net →
-                                  </a>
-                                  {(auditData.address || BRIDGE_DATA.xmrAddress) && (
-                                    <form
-                                      action="https://xmrchain.net/prove"
-                                      method="POST"
-                                      target="_blank"
-                                      rel="noopener noreferrer"
-                                      className="inline-block mt-2 ml-3"
-                                    >
-                                      <input type="hidden" name="txhash" value={tx.txid} />
-                                      <input type="hidden" name="txprvkey" value={tx.key} />
-                                      <input type="hidden" name="raw_tx_data" value="" />
-                                      <input type="hidden" name="xmraddress" value={auditData.address || BRIDGE_DATA.xmrAddress} />
-                                      <button
-                                        type="submit"
-                                        className="inline-flex cursor-pointer items-center gap-1 text-xs text-green-400 hover:underline"
-                                      >
-                                        Prove payment →
-                                      </button>
-                                    </form>
-                                  )}
-                                </div>
-                              ))}
-                            </div>
-                            
-                            {auditData.totalFee > 0 && (
-                              <p className="text-xs text-[var(--muted)] mt-2">
-                                Total fees paid: {formatXmr(auditData.totalFee)} XMR
-                              </p>
-                            )}
-                          </div>
-                        )}
-
-                        {/* Verification Instructions */}
-                        <div className="mt-4 p-3 bg-[var(--background)] rounded-lg text-xs text-[var(--muted)]">
-                          <p className="font-semibold text-white mb-1">How to verify:</p>
-                          <ol className="list-decimal list-inside space-y-1">
-                            <li>Go to xmrchain.net and paste the TXID</li>
-                            <li>Click &quot;Prove sending&quot;</li>
-                            <li>Enter our XMR address and the TX key</li>
-                            <li>Confirms we spent the exact amount shown</li>
-                          </ol>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
+            <div className="verification-note rpc-note">
+              <h2>Your connection.</h2>
+              <p>
+                Choose the Solana RPC provider your browser uses to inspect
+                on-chain records.
+              </p>
+              <SolanaRpcSettings />
             </div>
-          )}
-        </InfoCard>
-
-        {/* Footer */}
-        <footer className="mt-16 pt-8 border-t border-[var(--border)]">
-          <div className="flex flex-wrap items-center justify-center gap-6 mb-8">
-            <OpenSourceLink />
-            <Link
-              href="/"
-              className="flex items-center gap-2 text-sm text-[var(--muted)] hover:text-[#ff6600] transition-colors"
-            >
-              <MoneroLogo className="w-4 h-4" />
-              Back to Bridge
-            </Link>
-            <a
-              href="https://getmonero.org"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 text-sm text-[var(--muted)] hover:text-[#ff6600] transition-colors"
-            >
-              Learn about Monero
-            </a>
-          </div>
-          <div className="flex justify-center">
-            <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
-              <MoneroLogo className="w-4 h-4 opacity-50" />
-              <span>Powered by Monero & Solana</span>
+          </aside>
+        </div>
+        <section className="public-verification">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">VERIFY INDEPENDENTLY</p>
+              <h2>Public addresses & view key</h2>
             </div>
           </div>
-        </footer>
-      </div>
-    </main>
+          <div className="public-keys-grid">
+            <div>
+              <h3>Monero wallet inspection</h3>
+              <p>
+                A view-only wallet can reveal incoming transfers. The view key
+                alone does not establish the current unspent balance.
+              </p>
+              <details className="contract-details">
+                <summary>
+                  Show address & public view key
+                  <Icon name="chevron" />
+                </summary>
+                <div>
+                  <p className="field-label">Reserve wallet address</p>
+                  <CopyAddress
+                    address={RESERVE_ADDRESS}
+                    label="Monero reserve wallet address"
+                    className="contract-address"
+                  />
+                  <p className="field-label">Public view key</p>
+                  <CopyAddress
+                    address={VIEW_KEY}
+                    label="public Monero view key"
+                    className="contract-address"
+                  />
+                </div>
+              </details>
+            </div>
+            <div>
+              <h3>Solana program & token</h3>
+              <p>
+                Inspect token supply and bridge records directly on Solana.
+                Click an address to copy its full value.
+              </p>
+              <p className="field-label">wXMR token mint</p>
+              <CopyAddress
+                address="WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp"
+                label="wXMR token mint"
+                className="contract-address"
+              />
+              <p className="field-label">Bridge program</p>
+              <CopyAddress
+                address="EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8"
+                label="bridge program"
+                className="contract-address"
+              />
+            </div>
+          </div>
+        </section>
+      </main>
+    </BridgeShell>
   );
 }

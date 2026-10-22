@@ -1,12 +1,22 @@
-'use client';
+"use client";
 
-import { useState, useEffect, useCallback, useRef } from 'react';
-import Link from 'next/link';
-import dynamic from 'next/dynamic';
-import { useWxmrBridge, DepositAccountInfo, WithdrawalInfo, BridgeConfig } from '@/hooks/useWxmrBridge';
-import { CancelWithdrawalButton } from '@/components/CancelWithdrawalButton';
-import { QRCodeSVG } from 'qrcode.react';
-import { CopyAddress, OpenSourceLink, SolanaRpcSettings, SwapModal } from '@wxmr/shared';
+import { useState, useEffect, useCallback, useRef } from "react";
+import Link from "next/link";
+import {
+  useWxmrBridge,
+  DepositAccountInfo,
+  WithdrawalInfo,
+  BridgeConfig,
+} from "@/hooks/useWxmrBridge";
+import { CancelWithdrawalButton } from "@/components/CancelWithdrawalButton";
+import { QRCodeSVG } from "qrcode.react";
+import { CopyAddress } from "@wxmr/shared";
+import { BridgeShell, WalletButton } from "@/components/BridgeShell";
+import { Icon, TokenIcon } from "@/components/BridgeIcons";
+import { MoneroQrScanner } from "@/components/MoneroQrScanner";
+import { BridgeDialog } from "@/components/BridgeDialog";
+import { BridgeStatus } from "@/components/BridgeStatus";
+import { ReserveOverview } from "@/components/ReserveOverview";
 import {
   PICONERO_PER_XMR,
   MIN_XMR_DEPOSIT_PICONERO,
@@ -14,37 +24,25 @@ import {
   XMR_DEPOSIT_DUST_PICONERO,
   formatXmrAmount,
   validateMoneroAddress,
-} from '@wxmr/core';
+} from "@wxmr/core";
 
 const BASIS_POINTS = BigInt(10000);
 const DEPOSIT_FEE_BPS = 10;
 const WITHDRAW_FEE_BPS = 10;
-// Wallet selection comes from browser storage and must not change server HTML during hydration.
-const WalletMultiButton = dynamic(
-  () => import('@solana/wallet-adapter-react-ui').then((module) => module.WalletMultiButton),
-  { ssr: false },
-);
-
 const MIN_WITHDRAW_XMR = formatXmrAmount(MIN_XMR_WITHDRAWAL_PICONERO);
 const MIN_DEPOSIT_XMR = formatXmrAmount(MIN_XMR_DEPOSIT_PICONERO);
 const DEPOSIT_DUST_XMR = formatXmrAmount(XMR_DEPOSIT_DUST_PICONERO);
 const DEPOSIT_FEE_PERCENT = formatFeePercent(DEPOSIT_FEE_BPS);
 
-// Monero Logo SVG component from cryptologos.cc
-function MoneroLogo({ className = "w-8 h-8" }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 3756.09 3756.49" xmlns="http://www.w3.org/2000/svg">
-      <path d="M4128,2249.81C4128,3287,3287.26,4127.86,2250,4127.86S372,3287,372,2249.81,1212.76,371.75,2250,371.75,4128,1212.54,4128,2249.81Z" transform="translate(-371.96 -371.75)" fill="#fff"/>
-      <path d="M2250,371.75c-1036.89,0-1879.12,842.06-1877.8,1878,0.26,207.26,33.31,406.63,95.34,593.12h561.88V1263L2250,2483.57,3470.52,1263v1579.9h562c62.12-186.48,95-385.85,95.37-593.12C4129.66,1212.76,3287,372,2250,372Z" transform="translate(-371.96 -371.75)" fill="#f26822"/>
-      <path d="M1969.3,2764.17l-532.67-532.7v994.14H1029.38l-384.29.07c329.63,540.8,925.35,902.56,1604.91,902.56S3525.31,3766.4,3855,3225.6H3063.25V2231.47l-532.7,532.7-280.61,280.61-280.62-280.61h0Z" transform="translate(-371.96 -371.75)" fill="#4d4d4d"/>
-    </svg>
-  );
-}
-
 // Format piconero to XMR (12 decimal places)
 function formatXmr(piconero: bigint): string {
-  const xmr = Number(piconero) / Number(PICONERO_PER_XMR);
-  return xmr.toLocaleString('en-US', { minimumFractionDigits: 4, maximumFractionDigits: 12 });
+  const whole = (piconero / PICONERO_PER_XMR).toLocaleString("en-US");
+  const fraction = (piconero % PICONERO_PER_XMR)
+    .toString()
+    .padStart(12, "0")
+    .replace(/0+$/, "")
+    .padEnd(4, "0");
+  return `${whole}.${fraction}`;
 }
 
 function parseXmrToPiconero(amount: string): bigint | null {
@@ -52,14 +50,16 @@ function parseXmrToPiconero(amount: string): bigint | null {
   const match = trimmed.match(/^(?:(\d+)(?:\.(\d{0,12})?)?|\.(\d{1,12}))$/);
   if (!match) return null;
 
-  const whole = match[1] ?? '0';
-  const fractional = match[2] ?? match[3] ?? '';
-  return BigInt(whole) * PICONERO_PER_XMR + BigInt(fractional.padEnd(12, '0') || '0');
+  const whole = match[1] ?? "0";
+  const fractional = match[2] ?? match[3] ?? "";
+  return (
+    BigInt(whole) * PICONERO_PER_XMR + BigInt(fractional.padEnd(12, "0") || "0")
+  );
 }
 
 function formatFeePercent(feeBps: number): string {
   const percent = feeBps / 100;
-  return `${percent.toLocaleString('en-US', {
+  return `${percent.toLocaleString("en-US", {
     minimumFractionDigits: 0,
     maximumFractionDigits: 2,
   })}%`;
@@ -68,10 +68,13 @@ function formatFeePercent(feeBps: number): string {
 function calculateWithdrawalFee(amount: bigint, feeBps: number): bigint {
   if (amount <= BigInt(0) || feeBps <= 0) return BigInt(0);
 
-  return amount * BigInt(feeBps) / BASIS_POINTS;
+  return (amount * BigInt(feeBps)) / BASIS_POINTS;
 }
 
-function getGrossAmountForExactReceive(receiveAmount: bigint, feeBps: number): bigint | null {
+function getGrossAmountForExactReceive(
+  receiveAmount: bigint,
+  feeBps: number,
+): bigint | null {
   if (receiveAmount <= BigInt(0)) return null;
   if (feeBps <= 0) return receiveAmount;
 
@@ -79,7 +82,8 @@ function getGrossAmountForExactReceive(receiveAmount: bigint, feeBps: number): b
   const netBps = BASIS_POINTS - feeBpsBigInt;
   if (netBps <= BigInt(0)) return null;
 
-  let grossAmount = (receiveAmount * BASIS_POINTS + netBps - BigInt(1)) / netBps;
+  let grossAmount =
+    (receiveAmount * BASIS_POINTS + netBps - BigInt(1)) / netBps;
 
   while (grossAmount > BigInt(0)) {
     const netAmount = grossAmount - calculateWithdrawalFee(grossAmount, feeBps);
@@ -87,14 +91,21 @@ function getGrossAmountForExactReceive(receiveAmount: bigint, feeBps: number): b
     grossAmount -= BigInt(1);
   }
 
-  while (grossAmount - calculateWithdrawalFee(grossAmount, feeBps) < receiveAmount) {
+  while (
+    grossAmount - calculateWithdrawalFee(grossAmount, feeBps) <
+    receiveAmount
+  ) {
     grossAmount += BigInt(1);
   }
 
   return grossAmount;
 }
 
-function getWithdrawalPreview(amount: bigint | null, exactOut: boolean, feeBps: number) {
+function getWithdrawalPreview(
+  amount: bigint | null,
+  exactOut: boolean,
+  feeBps: number,
+) {
   if (amount === null || amount <= BigInt(0)) return null;
 
   if (exactOut) {
@@ -142,53 +153,34 @@ function getErrorMessage(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
 }
 
-// Status badge component
-function StatusBadge({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    pending: 'bg-yellow-500/20 text-yellow-400 border border-yellow-500/30',
-    active: 'bg-green-500/20 text-green-400 border border-green-500/30',
-    sending: 'bg-blue-500/20 text-blue-400 border border-blue-500/30',
-    completed: 'bg-green-500/20 text-green-400 border border-green-500/30',
-    reverted: 'bg-red-500/20 text-red-400 border border-red-500/30',
-  };
-
-  const labels: Record<string, string> = {
-    pending: 'Pending',
-    active: 'Active',
-    sending: 'Sending',
-    completed: 'Completed',
-    reverted: 'Reverted',
-  };
-
-  return (
-    <span className={`xmr-badge ${colors[status] || 'bg-gray-500/20 text-gray-400 border border-gray-500/30'}`}>
-      {labels[status] || status}
-    </span>
-  );
-}
-
 // QR Code Modal component
-function QRCodeModal({ address, onClose }: { address: string; onClose: () => void }) {
+function QRCodeModal({
+  address,
+  onClose,
+}: {
+  address: string;
+  onClose: () => void;
+}) {
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === "Escape") onClose();
     };
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
+    window.addEventListener("keydown", handleEscape);
+    return () => window.removeEventListener("keydown", handleEscape);
   }, [onClose]);
 
   return (
-    <div 
+    <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
       onClick={onClose}
     >
-      <div 
+      <div
         className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-bold flex items-center gap-2">
-            <MoneroLogo className="w-5 h-5" />
+            <TokenIcon token="xmr" className="w-5 h-5" />
             Native XMR Bridge Address
           </h3>
           <button
@@ -196,15 +188,25 @@ function QRCodeModal({ address, onClose }: { address: string; onClose: () => voi
             className="p-2 hover:bg-[var(--background)] rounded-lg transition-colors"
             aria-label="Close"
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+            <svg
+              className="w-5 h-5"
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M6 18L18 6M6 6l12 12"
+              />
             </svg>
           </button>
         </div>
         <div className="bg-white rounded-xl p-4 flex justify-center">
-          <QRCodeSVG 
-            value={address} 
-            size={256} 
+          <QRCodeSVG
+            value={address}
+            size={256}
             level="M"
             includeMargin={true}
             bgColor="#ffffff"
@@ -212,8 +214,14 @@ function QRCodeModal({ address, onClose }: { address: string; onClose: () => voi
           />
         </div>
         <div className="mt-4">
-          <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">Address</p>
-          <CopyAddress address={address} label="XMR bridge address" className="text-xs bg-[var(--background)] p-3 rounded-lg block break-all font-mono border border-[var(--border)] text-[#ff6600] w-full">
+          <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">
+            Address
+          </p>
+          <CopyAddress
+            address={address}
+            label="XMR bridge address"
+            className="text-xs bg-[var(--background)] p-3 rounded-lg block break-all font-mono border border-[var(--border)] text-[#ff6600] w-full"
+          >
             {address}
           </CopyAddress>
         </div>
@@ -222,211 +230,6 @@ function QRCodeModal({ address, onClose }: { address: string; onClose: () => voi
           className="mt-4 w-full py-2.5 bg-[var(--background)] hover:bg-[var(--card-hover)] border border-[var(--border)] rounded-lg text-sm font-medium transition-colors"
         >
           Close
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// QR Scanner Modal component
-function QRScannerModal({ onScan, onClose }: { onScan: (address: string) => void; onClose: () => void }) {
-  const scannerRef = useRef<HTMLDivElement>(null);
-  const html5QrCodeRef = useRef<{ stop: () => Promise<void> } | null>(null);
-  const stoppedRef = useRef(false);
-  const onScanRef = useRef(onScan);
-  const onCloseRef = useRef(onClose);
-  const [error, setError] = useState<string | null>(null);
-  const [cameraUnavailable, setCameraUnavailable] = useState(false);
-  const [isStarting, setIsStarting] = useState(true);
-
-  // Keep refs up to date without restarting the scanner
-  useEffect(() => { onScanRef.current = onScan; }, [onScan]);
-  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
-
-  useEffect(() => {
-    let mounted = true;
-
-    const startScanner = async () => {
-      // Pre-check: camera API available?
-      if (!navigator.mediaDevices?.getUserMedia) {
-        if (mounted) {
-          setIsStarting(false);
-          setCameraUnavailable(true);
-        }
-        return;
-      }
-
-      try {
-        const { Html5Qrcode } = await import('html5-qrcode');
-        
-        if (!mounted || !scannerRef.current) return;
-
-        const html5QrCode = new Html5Qrcode('qr-scanner-region');
-        html5QrCodeRef.current = html5QrCode;
-
-        // Race the start against a timeout — some in-app browsers hang
-        const startPromise = html5QrCode.start(
-          { facingMode: 'environment' },
-          {
-            fps: 10,
-            qrbox: { width: 250, height: 250 },
-          },
-          async (decodedText) => {
-            if (stoppedRef.current) return;
-            stoppedRef.current = true;
-
-            let address = decodedText;
-            if (decodedText.toLowerCase().startsWith('monero:')) {
-              address = decodedText.slice(7).split('?')[0];
-            }
-            onScanRef.current(address);
-            // Wait for the scanner to fully stop (releases camera & cleans up DOM)
-            // BEFORE unmounting the component via onClose
-            try { await html5QrCode.stop(); } catch { /* already stopped */ }
-            onCloseRef.current();
-          },
-          () => {}
-        );
-
-        const timeout = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('timeout')), 8000)
-        );
-
-        await Promise.race([startPromise, timeout]);
-
-        if (mounted) {
-          setIsStarting(false);
-        }
-      } catch (err) {
-        if (mounted) {
-          setIsStarting(false);
-          const message = err instanceof Error ? err.message : '';
-          const name = err instanceof Error ? err.name : '';
-          if (message === 'timeout') {
-            setCameraUnavailable(true);
-          } else if (name === 'NotAllowedError') {
-            setError('Camera access denied. Please allow camera access to scan QR codes.');
-          } else if (name === 'NotFoundError' || name === 'NotReadableError') {
-            setCameraUnavailable(true);
-          } else {
-            setCameraUnavailable(true);
-          }
-        }
-      }
-    };
-
-    startScanner();
-
-    return () => {
-      mounted = false;
-      if (html5QrCodeRef.current && !stoppedRef.current) {
-        stoppedRef.current = true;
-        html5QrCodeRef.current.stop().catch(() => {});
-      }
-    };
-  }, []); // Run once on mount - callbacks accessed via stable refs
-
-  useEffect(() => {
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
-    };
-    window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
-  }, [onClose]);
-
-  const handlePasteFromClipboard = async () => {
-    try {
-      const text = await navigator.clipboard.readText();
-      const trimmed = text.trim();
-      if (trimmed) {
-        let address = trimmed;
-        if (trimmed.toLowerCase().startsWith('monero:')) {
-          address = trimmed.slice(7).split('?')[0];
-        }
-        onScan(address);
-        onClose();
-      }
-    } catch {
-      // Clipboard API might not be available either; ignore
-    }
-  };
-
-  return (
-    <div 
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm"
-      onClick={onClose}
-    >
-      <div 
-        className="bg-[var(--card)] border border-[var(--border)] rounded-2xl p-6 max-w-md w-full mx-4 shadow-2xl"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-bold flex items-center gap-2">
-            <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-            </svg>
-            {cameraUnavailable ? 'Enter Monero Destination' : 'Scan Monero Destination'}
-          </h3>
-          <button
-            onClick={onClose}
-            className="p-2 hover:bg-[var(--background)] rounded-lg transition-colors"
-            aria-label="Close"
-          >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-            </svg>
-          </button>
-        </div>
-        
-        {error ? (
-          <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-lg text-sm">
-            {error}
-          </div>
-        ) : cameraUnavailable ? (
-          <div className="space-y-3">
-            <p className="text-sm text-[var(--muted)]">
-              Camera is not available in this browser. You can paste an address from your clipboard instead.
-            </p>
-            <button
-              onClick={handlePasteFromClipboard}
-              className="w-full py-3 bg-[#ff6600]/20 hover:bg-[#ff6600]/30 border border-[#ff6600]/40 text-[#ff6600] rounded-lg text-sm font-semibold transition-colors flex items-center justify-center gap-2"
-            >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-              </svg>
-              Paste from Clipboard
-            </button>
-          </div>
-        ) : (
-          <>
-            {isStarting && (
-              <div className="flex items-center justify-center py-8">
-                <svg className="animate-spin w-8 h-8 text-[#ff6600]" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                </svg>
-              </div>
-            )}
-            <div 
-              id="qr-scanner-region" 
-              ref={scannerRef}
-              className="rounded-xl overflow-hidden"
-              style={{ display: isStarting ? 'none' : 'block' }}
-            />
-          </>
-        )}
-        
-        {!cameraUnavailable && (
-          <p className="text-xs text-[var(--muted)] mt-4 text-center">
-            Point your camera at a Monero address QR code
-          </p>
-        )}
-        
-        <button
-          onClick={onClose}
-          className="mt-4 w-full py-2.5 bg-[var(--background)] hover:bg-[var(--card-hover)] border border-[var(--border)] rounded-lg text-sm font-medium transition-colors"
-        >
-          Cancel
         </button>
       </div>
     </div>
@@ -446,60 +249,78 @@ export default function Home() {
     claimPendingMint,
   } = useWxmrBridge();
 
-  const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw'>('deposit');
-  const [depositAccount, setDepositAccount] = useState<DepositAccountInfo | null>(null);
+  const [activeTab, setActiveTab] = useState<"deposit" | "withdraw">("deposit");
+  const [depositAccount, setDepositAccount] =
+    useState<DepositAccountInfo | null>(null);
   const [withdrawals, setWithdrawals] = useState<WithdrawalInfo[]>([]);
   const [bridgeConfig, setBridgeConfig] = useState<BridgeConfig | null>(null);
   const [circulatingSupply, setCirculatingSupply] = useState<bigint>(BigInt(0));
   const [wxmrBalance, setWxmrBalance] = useState<bigint>(BigInt(0));
   const [pendingBalance, setPendingBalance] = useState<bigint>(BigInt(0));
   const [loading, setLoading] = useState(false);
-  const [cancelingWithdrawal, setCancelingWithdrawal] = useState<string | null>(null);
+  const [cancelingWithdrawal, setCancelingWithdrawal] = useState<string | null>(
+    null,
+  );
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
   // Withdrawal form state
-  const [withdrawAmount, setWithdrawAmount] = useState('');
-  const [xmrAddress, setXmrAddress] = useState('');
+  const [withdrawAmount, setWithdrawAmount] = useState("");
+  const [xmrAddress, setXmrAddress] = useState("");
   const [withdrawExactOut, setWithdrawExactOut] = useState(false);
   const withdrawFeeBps = WITHDRAW_FEE_BPS;
   const withdrawFeePercent = formatFeePercent(withdrawFeeBps);
   const parsedWithdrawAmount = parseXmrToPiconero(withdrawAmount);
-  const withdrawPreview = getWithdrawalPreview(parsedWithdrawAmount, withdrawExactOut, withdrawFeeBps);
+  const withdrawPreview = getWithdrawalPreview(
+    parsedWithdrawAmount,
+    withdrawExactOut,
+    withdrawFeeBps,
+  );
   const maxWithdrawAmount = withdrawExactOut
     ? getMaxExactReceiveAmount(wxmrBalance, withdrawFeeBps)
     : wxmrBalance;
-  const isWithdrawAmountBelowMinimum = parsedWithdrawAmount !== null
-    && parsedWithdrawAmount > BigInt(0)
-    && parsedWithdrawAmount < MIN_XMR_WITHDRAWAL_PICONERO;
-  const isWithdrawAmountOverBalance = withdrawPreview !== null
-    && withdrawPreview.burnAmount > wxmrBalance;
+  const isWithdrawAmountBelowMinimum =
+    parsedWithdrawAmount !== null &&
+    parsedWithdrawAmount > BigInt(0) &&
+    parsedWithdrawAmount < MIN_XMR_WITHDRAWAL_PICONERO;
+  const isWithdrawAmountOverBalance =
+    withdrawPreview !== null && withdrawPreview.burnAmount > wxmrBalance;
   // Same validation the on-chain program runs (base58, checksum, network tag,
   // ed25519 keys) so a bad address never reaches the Solana network.
   const trimmedXmrAddress = xmrAddress.trim();
-  const xmrAddressValidation = trimmedXmrAddress ? validateMoneroAddress(trimmedXmrAddress) : null;
-  const canRequestWithdrawal = !loading
-    && Boolean(withdrawAmount)
-    && xmrAddressValidation?.valid === true
-    && parsedWithdrawAmount !== null
-    && withdrawPreview !== null
-    && parsedWithdrawAmount >= MIN_XMR_WITHDRAWAL_PICONERO
-    && !isWithdrawAmountOverBalance;
+  const xmrAddressValidation = trimmedXmrAddress
+    ? validateMoneroAddress(trimmedXmrAddress)
+    : null;
+  const canRequestWithdrawal =
+    !loading &&
+    isConnected &&
+    Boolean(withdrawAmount) &&
+    xmrAddressValidation?.valid === true &&
+    parsedWithdrawAmount !== null &&
+    withdrawPreview !== null &&
+    parsedWithdrawAmount >= MIN_XMR_WITHDRAWAL_PICONERO &&
+    !isWithdrawAmountOverBalance;
 
   // Modal states
   const [qrAddress, setQrAddress] = useState<string | null>(null);
   const [showScanner, setShowScanner] = useState(false);
-  const [showSwapModal, setShowSwapModal] = useState(false);
+  const [dataReady, setDataReady] = useState(false);
+  const [lastSynced, setLastSynced] = useState<Date | null>(null);
+  const [refreshingData, setRefreshingData] = useState(false);
+  const [reviewOpen, setReviewOpen] = useState(false);
   const loadRequestRef = useRef(0);
   const historyRequestRef = useRef(0);
   const [dataError, setDataError] = useState<string | null>(null);
   const [historyLoading, setHistoryLoading] = useState(false);
-  const [historyCursor, setHistoryCursor] = useState<string | null | undefined>(undefined);
+  const [historyCursor, setHistoryCursor] = useState<string | null | undefined>(
+    undefined,
+  );
   const [historyThrough, setHistoryThrough] = useState<number | null>(null);
 
   // Load data — bridge config always, wallet-specific data only when connected
   const loadData = useCallback(async () => {
     const requestId = ++loadRequestRef.current;
+    setRefreshingData(true);
 
     try {
       const snapshot = await fetchPageSnapshot();
@@ -507,15 +328,22 @@ export default function Home() {
       if (requestId !== loadRequestRef.current) return;
 
       setDataError(null);
+      setDataReady(true);
+      setLastSynced(new Date());
       setBridgeConfig(snapshot.bridgeConfig);
       setCirculatingSupply(snapshot.circulatingSupply);
       setWxmrBalance(snapshot.wxmrBalance);
       setPendingBalance(snapshot.pendingBalance);
       setDepositAccount(snapshot.depositAccount);
-      setWithdrawals(snapshot.withdrawals.sort((a, b) => b.createdAt - a.createdAt));
+      setWithdrawals(
+        snapshot.withdrawals.sort((a, b) => b.createdAt - a.createdAt),
+      );
     } catch (err) {
-      if (requestId === loadRequestRef.current) setDataError(getErrorMessage(err, 'Unable to refresh bridge balances'));
-      console.error('Error loading data:', err);
+      if (requestId === loadRequestRef.current)
+        setDataError(getErrorMessage(err, "Unable to refresh bridge balances"));
+      console.error("Error loading data:", err);
+    } finally {
+      if (requestId === loadRequestRef.current) setRefreshingData(false);
     }
   }, [fetchPageSnapshot]);
 
@@ -523,6 +351,9 @@ export default function Home() {
   useEffect(() => {
     const loadRequests = loadRequestRef;
     const historyRequests = historyRequestRef;
+    setDataReady(false);
+    setLastSynced(null);
+    setReviewOpen(false);
     setWxmrBalance(BigInt(0));
     setPendingBalance(BigInt(0));
     setDepositAccount(null);
@@ -547,7 +378,8 @@ export default function Home() {
       setHistoryThrough(page.searchedThrough);
       await loadData();
     } catch (err) {
-      if (requestId === historyRequestRef.current) setError(getErrorMessage(err, 'Unable to load earlier transfers'));
+      if (requestId === historyRequestRef.current)
+        setError(getErrorMessage(err, "Unable to load earlier transfers"));
     } finally {
       if (requestId === historyRequestRef.current) setHistoryLoading(false);
     }
@@ -569,11 +401,13 @@ export default function Home() {
     try {
       const result = await createDepositAccount();
       if (result) {
-        setSuccess(`Bridge address created! TX: ${result.signature.slice(0, 20)}...`);
+        setSuccess(
+          `Bridge address created! TX: ${result.signature.slice(0, 20)}...`,
+        );
         await loadData();
       }
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to create bridge address'));
+      setError(getErrorMessage(err, "Failed to create bridge address"));
     } finally {
       setLoading(false);
     }
@@ -592,7 +426,7 @@ export default function Home() {
         await loadData();
       }
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to claim pending tokens'));
+      setError(getErrorMessage(err, "Failed to claim pending tokens"));
     } finally {
       setLoading(false);
     }
@@ -606,10 +440,17 @@ export default function Home() {
     setSuccess(null);
     try {
       const result = await cancelWithdrawal(withdrawal.withdrawalPda);
-      setSuccess(`Withdrawal canceled. ${formatXmr(result.refundAmount)} wXMR returned; the original bridge fee was retained. TX: ${result.signature}`);
+      setSuccess(
+        `Withdrawal canceled. ${formatXmr(result.refundAmount)} wXMR returned; the original bridge fee was retained. TX: ${result.signature}`,
+      );
       await loadData();
     } catch (err) {
-      setError(getErrorMessage(err, 'Unable to confirm cancellation. Refresh status before trying again.'));
+      setError(
+        getErrorMessage(
+          err,
+          "Unable to confirm cancellation. Refresh status before trying again.",
+        ),
+      );
       await loadData();
     } finally {
       setLoading(false);
@@ -621,7 +462,7 @@ export default function Home() {
   const handleWithdraw = async () => {
     const destination = xmrAddress.trim();
     if (!withdrawAmount || !destination) {
-      setError('Please enter amount and Monero destination address');
+      setError("Please enter amount and Monero destination address");
       return;
     }
 
@@ -635,13 +476,17 @@ export default function Home() {
 
     const amountPiconero = parseXmrToPiconero(withdrawAmount);
     if (amountPiconero === null || amountPiconero <= BigInt(0)) {
-      setError('Invalid amount');
+      setError("Invalid amount");
       return;
     }
 
-    const preview = getWithdrawalPreview(amountPiconero, withdrawExactOut, withdrawFeeBps);
+    const preview = getWithdrawalPreview(
+      amountPiconero,
+      withdrawExactOut,
+      withdrawFeeBps,
+    );
     if (!preview) {
-      setError('Invalid amount');
+      setError("Invalid amount");
       return;
     }
 
@@ -656,648 +501,865 @@ export default function Home() {
 
     try {
       if (preview.burnAmount > wxmrBalance) {
-        throw new Error('Insufficient XMR balance');
+        throw new Error("Insufficient XMR balance");
       }
 
-      const result = await requestWithdrawal(preview.requestAmount, destination, withdrawExactOut);
+      const result = await requestWithdrawal(
+        preview.requestAmount,
+        destination,
+        withdrawExactOut,
+      );
       if (result) {
-        setSuccess(`Solana to Monero bridge request created! TX: ${result.signature.slice(0, 20)}...`);
-        setWithdrawAmount('');
-        setXmrAddress('');
+        setSuccess(
+          `Solana to Monero bridge request created! TX: ${result.signature.slice(0, 20)}...`,
+        );
+        setWithdrawAmount("");
+        setXmrAddress("");
         await loadData();
       }
     } catch (err) {
-      setError(getErrorMessage(err, 'Failed to create Solana to Monero bridge request'));
+      setError(
+        getErrorMessage(
+          err,
+          "Failed to create Solana to Monero bridge request",
+        ),
+      );
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <main className="min-h-screen p-4 md:p-8 xmr-pattern">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <header className="flex flex-col md:flex-row justify-between items-center mb-6 gap-4">
-          <div className="flex items-center gap-4">
-            <MoneroLogo className="w-12 h-12" />
-            <div>
-              <h1 className="text-3xl font-bold text-[#ff6600]">
-                Monero Bridge
-              </h1>
-              <p className="text-[var(--muted)] mt-0.5">Monero token on Solana</p>
+    <BridgeShell>
+      <main id="main" className="bridge-main bridge-home">
+        <div className="page-intro">
+          <div>
+            <p className="eyebrow">
+              <span className="orange-dash" />
+              THE MONERO ↔ SOLANA BRIDGE
+            </p>
+            <h1>
+              Monero. <span>More possibilities.</span>
+            </h1>
+            <p>Move between native XMR and wXMR on Solana.</p>
+          </div>
+          <Link href="/docs" className="intro-help">
+            <Icon name="info" />
+            New to wXMR?
+            <Icon name="arrow" />
+          </Link>
+        </div>
+        <div className="bridge-workspace">
+          <section className="transfer-card" aria-labelledby="bridge-title">
+            <div className="card-heading">
+              <h2 id="bridge-title">Bridge</h2>
+              <span className="quiet-badge">
+                <Icon name="shield" />
+                0.1% each way
+              </span>
             </div>
-          </div>
-          <div className="flex flex-wrap items-center justify-center gap-3">
-            <SolanaRpcSettings disabled={loading} />
-            <WalletMultiButton />
-          </div>
-        </header>
-        <div className="mb-8 flex justify-center md:justify-start">
-          <OpenSourceLink />
-        </div>
-        {dataError && (
-          <p role="alert" className="mb-4 text-red-400">
-            Unable to refresh balances. {dataError}
-            <button className="ml-2 underline" onClick={() => void loadData()}>Retry</button>
-          </p>
-        )}
-
-        {/* Stats Cards — always visible */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-8">
-          <div className="xmr-card xmr-stat-card p-5">
-            <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Your Solana XMR Balance</p>
-            <p className="text-2xl font-bold mt-2 text-[#ff6600]">{formatXmr(wxmrBalance)}</p>
-            <p className="text-xs text-[var(--muted)] mt-1">XMR on Solana</p>
-          </div>
-          <div className="xmr-card xmr-stat-card p-5">
-            <p className="text-[var(--muted)] text-sm uppercase tracking-wide">Circulating Supply</p>
-            <p className="text-2xl font-bold mt-2">{formatXmr(circulatingSupply)}</p>
-            <p className="text-xs text-[var(--muted)] mt-1">XMR on Solana</p>
-          </div>
-        </div>
-
-        {/* Pending Tokens Alert — only when connected and pending > 0 */}
-        {isConnected && pendingBalance > BigInt(0) && (
-          <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 mb-6 flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <svg className="w-5 h-5 text-yellow-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
-              </svg>
-              <div>
-                <p className="text-sm text-yellow-400 font-medium">
-                  You have <span className="text-[#ff6600] font-bold">{formatXmr(pendingBalance)} XMR</span> pending
-                </p>
-                <p className="text-xs text-[var(--muted)] mt-0.5">
-                  These tokens were minted when you didn&apos;t have a token account. Click here to claim.
+            <div className="direction-selector" aria-label="Bridge direction">
+              <button
+                className={activeTab === "deposit" ? "selected" : ""}
+                aria-pressed={activeTab === "deposit"}
+                onClick={() => {
+                  setActiveTab("deposit");
+                  setError(null);
+                }}
+              >
+                <TokenIcon token="xmr" />
+                Monero
+                <Icon name="arrow" />
+                Solana
+              </button>
+              <button
+                className="direction-reverse"
+                aria-label="Reverse bridge direction"
+                onClick={() => {
+                  setActiveTab(
+                    activeTab === "deposit" ? "withdraw" : "deposit",
+                  );
+                  setError(null);
+                }}
+              >
+                <Icon name="switch" />
+              </button>
+              <button
+                className={activeTab === "withdraw" ? "selected" : ""}
+                aria-pressed={activeTab === "withdraw"}
+                onClick={() => {
+                  setActiveTab("withdraw");
+                  setError(null);
+                }}
+              >
+                <TokenIcon token="wxmr" />
+                Solana
+                <Icon name="arrow" />
+                Monero
+              </button>
+            </div>
+            {activeTab === "deposit" ? (
+              <div className="deposit-introduction">
+                <div className="deposit-route">
+                  <div>
+                    <TokenIcon token="xmr" />
+                    <strong>XMR</strong>
+                    <span>Monero</span>
+                  </div>
+                  <span className="route-line">
+                    <Icon name="arrow" />
+                  </span>
+                  <div>
+                    <TokenIcon token="wxmr" />
+                    <strong>wXMR</strong>
+                    <span>Solana</span>
+                  </div>
+                </div>
+                <h3>Your Monero. On Solana.</h3>
+                <p>
+                  Send native XMR to your reusable deposit address.
+                  <br />
+                  Receive wXMR in your connected Solana wallet.
                 </p>
               </div>
-            </div>
-            <button
-              onClick={handleClaimPending}
-              disabled={loading}
-              className="px-4 py-2 bg-yellow-500/20 hover:bg-yellow-500/30 border border-yellow-500/30 text-yellow-400 rounded-lg text-sm font-medium transition-colors flex-shrink-0"
-            >
-              {loading ? 'Claiming...' : 'Claim'}
-            </button>
-          </div>
-        )}
-
-        {/* Tab Navigation — always visible */}
-        <div className="flex flex-wrap gap-2 mb-6">
-          <button
-            onClick={() => setActiveTab('deposit')}
-            className={`xmr-tab min-h-[3.5rem] min-w-[10.5rem] px-5 py-2.5 rounded-lg font-semibold transition-all flex flex-col items-center justify-center gap-0.5 leading-tight ${
-              activeTab === 'deposit'
-                ? 'xmr-tab-active text-white'
-                : 'bg-[var(--card)] text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-white border border-[var(--border)]'
-            }`}
-          >
-            <span>Monero -&gt; Solana</span>
-            <span className={`text-xs font-medium ${activeTab === 'deposit' ? 'text-white/75' : 'text-[var(--muted)]'}`}>
-              Fee: {DEPOSIT_FEE_PERCENT}
-            </span>
-          </button>
-          <button
-            onClick={() => setActiveTab('withdraw')}
-            className={`xmr-tab min-h-[3.5rem] min-w-[10.5rem] px-5 py-2.5 rounded-lg font-semibold transition-all flex flex-col items-center justify-center gap-0.5 leading-tight ${
-              activeTab === 'withdraw'
-                ? 'xmr-tab-active text-white'
-                : 'bg-[var(--card)] text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-white border border-[var(--border)]'
-            }`}
-          >
-            <span>Solana -&gt; Monero</span>
-            <span className={`text-xs font-medium ${activeTab === 'withdraw' ? 'text-white/75' : 'text-[var(--muted)]'}`}>
-              Fee: {withdrawFeePercent}
-            </span>
-          </button>
-          <button
-            onClick={() => setShowSwapModal(true)}
-            className="xmr-tab min-h-[3.5rem] px-6 py-2.5 rounded-lg font-semibold transition-all bg-[var(--card)] text-[var(--muted)] hover:bg-[var(--card-hover)] hover:text-white border border-[var(--border)] flex items-center gap-2"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
-            </svg>
-            Swap
-          </button>
-        </div>
-
-        {/* Alerts */}
-        {error && (
-          <div className="bg-red-500/10 border border-red-500/30 text-red-400 p-4 rounded-lg mb-6 flex items-center gap-3">
-            <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.707 7.293a1 1 0 00-1.414 1.414L8.586 10l-1.293 1.293a1 1 0 101.414 1.414L10 11.414l1.293 1.293a1 1 0 001.414-1.414L11.414 10l1.293-1.293a1 1 0 00-1.414-1.414L10 8.586 8.707 7.293z" clipRule="evenodd" />
-            </svg>
-            <span>{error}</span>
-          </div>
-        )}
-        {success && (
-          <div className="bg-green-500/10 border border-green-500/30 text-green-400 p-4 rounded-lg mb-6 flex items-center gap-3">
-            <svg className="w-5 h-5 flex-shrink-0" fill="currentColor" viewBox="0 0 20 20">
-              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.707-9.293a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
-            </svg>
-            <span className="min-w-0 break-words">{success}</span>
-          </div>
-        )}
-
-        {/* Main Content */}
-        {activeTab === 'deposit' ? (
-          <div className="space-y-6">
-            {/* Deposit Section */}
-            <div className="xmr-card p-6 xmr-glow">
-              <h2 className="text-xl font-bold mb-2 flex items-center gap-2">
-                <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
-                </svg>
-                Bridge to Solana
-              </h2>
-              
-              {!isConnected ? (
-                // Not connected — prompt to connect
-                <div className="text-center py-10">
-                  <div className="flex justify-center mb-4">
-                    <div className="relative">
-                      <MoneroLogo className="w-16 h-16 xmr-pulse" />
-                      <div className="absolute inset-0 bg-[#ff6600]/20 blur-2xl rounded-full" />
-                    </div>
-                  </div>
-                  <p className="text-[var(--muted)] mb-6">Connect a Solana wallet to bridge native XMR onto Solana.</p>
-                  <div className="inline-block">
-                    <WalletMultiButton />
-                  </div>
-                </div>
-              ) : !depositAccount ? (
-                // No deposit account - show create button
-                <>
-                  <p className="text-[var(--muted)] mb-6">
-                    Create a bridge address to receive native XMR from Monero.
-                    Minimum deposit {MIN_DEPOSIT_XMR} XMR — smaller amounts are not minted.
-                    A {DEPOSIT_FEE_PERCENT} fee is taken in wXMR when the deposit is minted.
-                    Transfers under {DEPOSIT_DUST_XMR} XMR (per transfer and per input!) are ignored as dust.
-                    You can bridge into Solana any number of times.
-                  </p>
-                  <button
-                    onClick={handleCreateDepositAccount}
-                    disabled={loading}
-                    className="xmr-btn-primary text-white px-8 py-3 rounded-lg font-semibold"
+            ) : (
+              <>
+                <div className="amount-stack">
+                  <div
+                    className={`amount-field ${withdrawExactOut ? "computed-field" : "editable-field"}`}
                   >
-                    {loading ? (
-                      <span className="flex items-center gap-2">
-                        <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                        </svg>
-                        Processing...
+                    <div className="amount-caption">
+                      <label htmlFor="bridge-amount">You send</label>
+                      <span>
+                        {isConnected && dataReady ? (
+                          <>
+                            Balance: {formatXmr(wxmrBalance)}{" "}
+                            <button
+                              className="max-button"
+                              onClick={() =>
+                                setWithdrawAmount(
+                                  formatXmrAmount(maxWithdrawAmount),
+                                )
+                              }
+                            >
+                              MAX
+                            </button>
+                          </>
+                        ) : (
+                          "From your Solana wallet"
+                        )}
                       </span>
-                    ) : 'Create Bridge Address'}
-                  </button>
-                </>
-              ) : depositAccount.status === 'pending' ? (
-                // Deposit account pending - waiting for address assignment
-                <>
-                  <div className="flex items-center gap-2 mb-4">
-                    <StatusBadge status="pending" />
-                    <span className="text-sm text-[var(--muted)]">Created {formatTime(depositAccount.createdAt)}</span>
-                  </div>
-                  <p className="text-[var(--muted)] flex items-center gap-2">
-                    <svg className="animate-spin w-5 h-5 text-[#ff6600]" fill="none" viewBox="0 0 24 24">
-                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                    </svg>
-                    Waiting for XMR address assignment (usually takes a few seconds)...
-                  </p>
-                </>
-              ) : (
-                // Active deposit account - show address
-                <>
-                  <div className="flex items-center gap-2 mb-4">
-                    <StatusBadge status="active" />
-                    <span className="text-sm text-[var(--muted)]">
-                      Total XMR deposited: <span className="text-[#ff6600] font-medium">{formatXmr(depositAccount.totalDeposited)} XMR</span>
-                    </span>
-                  </div>
-                  
-                  <div className="bg-[var(--background)] rounded-xl p-4 border border-[var(--border)] mb-4">
-                    <p className="text-xs text-[var(--muted)] mb-2 uppercase tracking-wide">Your Native XMR Bridge Address</p>
-                    <div className="flex gap-2">
-                      <CopyAddress address={depositAccount.xmrDepositAddress} label="XMR bridge address" className="text-sm bg-[var(--card)] p-3 rounded-lg flex-1 break-all font-mono border border-[var(--border)] text-[#ff6600] w-full">
-                        {depositAccount.xmrDepositAddress}
-                      </CopyAddress>
-                      <CopyAddress
-                        address={depositAccount.xmrDepositAddress}
-                        label="XMR bridge address"
-                        className="p-3 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all flex-shrink-0"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
-                        </svg>
-                      </CopyAddress>
-                      <button
-                        onClick={() => setQrAddress(depositAccount.xmrDepositAddress)}
-                        className="p-3 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all flex-shrink-0"
-                        title="Show QR Code"
-                      >
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                        </svg>
-                      </button>
+                    </div>
+                    <div className="amount-entry">
+                      <input
+                        id="bridge-amount"
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder="0.00"
+                        aria-label="wXMR amount you send"
+                        value={
+                          withdrawExactOut
+                            ? withdrawPreview
+                              ? formatXmrAmount(withdrawPreview.burnAmount)
+                              : ""
+                            : withdrawAmount
+                        }
+                        readOnly={withdrawExactOut}
+                        onChange={(event) => {
+                          if (!withdrawExactOut)
+                            setWithdrawAmount(event.target.value);
+                        }}
+                      />
+                      <span className="asset-pill">
+                        <TokenIcon token="wxmr" />
+                        wXMR<small>Solana</small>
+                      </span>
                     </div>
                   </div>
-
-                  <div className="bg-green-500/10 border border-green-500/30 rounded-lg p-4 mb-4">
-                    <p className="text-sm text-green-400">
-                      <strong>Minimum deposit {MIN_DEPOSIT_XMR} XMR</strong> — smaller amounts are not minted,
-                      and transfers under {DEPOSIT_DUST_XMR} XMR are ignored as dust. Once confirmed (10 blocks),
-                      wXMR is minted automatically: {DEPOSIT_FEE_PERCENT} goes to the bridge fee treasury and the rest goes to you.
-                      You can bridge into Solana multiple times.
-                    </p>
+                  <div className="amount-connector">
+                    <Icon name="arrow" />
                   </div>
-
-                </>
-              )}
-            </div>
-          </div>
-        ) : (
-          <div className="space-y-6">
-            {/* Withdraw Section */}
-            <div className="xmr-card p-6 xmr-glow">
-              <h2 className="text-xl font-bold mb-2 flex items-center gap-2">
-                <svg className="w-5 h-5 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" />
-                </svg>
-                Bridge to Monero
-              </h2>
-
-              {!isConnected ? (
-                // Not connected — prompt to connect
-                <div className="text-center py-10">
-                  <div className="flex justify-center mb-4">
-                    <div className="relative">
-                      <MoneroLogo className="w-16 h-16 xmr-pulse" />
-                      <div className="absolute inset-0 bg-[#ff6600]/20 blur-2xl rounded-full" />
+                  <div
+                    className={`amount-field receive-field ${withdrawExactOut ? "editable-field" : "computed-field"}`}
+                  >
+                    <div className="amount-caption">
+                      <label htmlFor="bridge-receive-amount">You receive</label>
+                      <span>On Monero</span>
                     </div>
-                  </div>
-                  <p className="text-[var(--muted)] mb-6">Connect a Solana wallet to bridge XMR back to Monero.</p>
-                  <div className="inline-block">
-                    <WalletMultiButton />
+                    <div className="amount-entry">
+                      <input
+                        id="bridge-receive-amount"
+                        type="text"
+                        inputMode="decimal"
+                        autoComplete="off"
+                        spellCheck={false}
+                        placeholder="0.00"
+                        aria-label="XMR amount you receive"
+                        value={
+                          withdrawExactOut
+                            ? withdrawAmount
+                            : withdrawPreview
+                              ? formatXmrAmount(withdrawPreview.receiveAmount)
+                              : ""
+                        }
+                        readOnly={!withdrawExactOut}
+                        onChange={(event) => {
+                          if (withdrawExactOut)
+                            setWithdrawAmount(event.target.value);
+                        }}
+                      />
+                      <span className="asset-pill">
+                        <TokenIcon token="xmr" />
+                        XMR<small>Monero</small>
+                      </span>
+                    </div>
                   </div>
                 </div>
-              ) : (
-                <>
-                  <p className="text-[var(--muted)] mb-6">
-                    Send XMR from Solana and receive native XMR at your specified address. Solana -&gt; Monero fee: {withdrawFeePercent}. Minimum: {MIN_WITHDRAW_XMR} XMR.
+                <div className="amount-hint">
+                  <label className="exact-receive">
+                    <input
+                      type="checkbox"
+                      checked={withdrawExactOut}
+                      onChange={(event) => {
+                        const exact = event.target.checked;
+                        if (withdrawPreview)
+                          setWithdrawAmount(
+                            formatXmrAmount(
+                              exact
+                                ? withdrawPreview.receiveAmount
+                                : withdrawPreview.burnAmount,
+                            ),
+                          );
+                        setWithdrawExactOut(exact);
+                      }}
+                    />
+                    Set the exact XMR amount to receive
+                  </label>
+                </div>
+                {isWithdrawAmountBelowMinimum && (
+                  <p className="field-error">
+                    Minimum withdrawal {MIN_WITHDRAW_XMR} XMR.
                   </p>
-                  <div className="space-y-5">
+                )}
+                {withdrawAmount && parsedWithdrawAmount === null && (
+                  <p className="field-error">
+                    Enter a valid amount with up to 12 decimal places.
+                  </p>
+                )}
+                {isConnected && dataReady && isWithdrawAmountOverBalance && (
+                  <p className="field-error">
+                    The amount and fee exceed your available wXMR balance.
+                  </p>
+                )}
+              </>
+            )}
+            {activeTab === "withdraw" && (
+              <div className="destination-field">
+                <label className="field-label" htmlFor="xmr-destination">
+                  Monero destination
+                </label>
+                <div className="destination-input">
+                  <input
+                    id="xmr-destination"
+                    placeholder="Enter your Monero address"
+                    value={xmrAddress}
+                    onChange={(e) => setXmrAddress(e.target.value)}
+                    autoComplete="off"
+                    spellCheck={false}
+                  />
+                  <button
+                    onClick={() => setShowScanner(true)}
+                    aria-label="Scan a Monero destination QR code"
+                  >
+                    <Icon name="qr" />
+                  </button>
+                </div>
+                {xmrAddressValidation && (
+                  <p
+                    className={
+                      xmrAddressValidation.valid ? "field-valid" : "field-error"
+                    }
+                  >
+                    {xmrAddressValidation.valid
+                      ? "Valid Monero address"
+                      : `Invalid Monero address: ${xmrAddressValidation.reason}`}
+                  </p>
+                )}
+              </div>
+            )}
+            <dl className="fee-breakdown">
+              <div>
+                <dt>
+                  Bridge fee{" "}
+                  {activeTab === "withdraw" && (
+                    <span>({withdrawFeePercent})</span>
+                  )}
+                </dt>
+                <dd>
+                  {activeTab === "deposit"
+                    ? `${DEPOSIT_FEE_PERCENT} in wXMR`
+                    : `${withdrawPreview ? formatXmr(withdrawPreview.feeAmount) : "—"} wXMR`}
+                </dd>
+              </div>
+              {activeTab === "deposit" && (
+                <div>
+                  <dt>Minimum deposit</dt>
+                  <dd>{MIN_DEPOSIT_XMR} XMR</dd>
+                </div>
+              )}
+              <div>
+                <dt>
+                  {activeTab === "deposit"
+                    ? "Minting starts after"
+                    : "Minimum withdrawal"}
+                </dt>
+                <dd>
+                  {activeTab === "deposit"
+                    ? "10 Monero confirmations"
+                    : `${MIN_WITHDRAW_XMR} XMR`}
+                </dd>
+              </div>
+            </dl>
+            {dataError && (
+              <div className="notice error-notice" role="alert">
+                <Icon name="info" />
+                <p>Balance data unavailable. {dataError}</p>
+                <button className="text-button" onClick={() => void loadData()}>
+                  Retry
+                </button>
+              </div>
+            )}
+            {error && (
+              <div className="notice error-notice" role="alert">
+                <Icon name="info" />
+                <p>{error}</p>
+                <button
+                  onClick={() => setError(null)}
+                  aria-label="Dismiss error"
+                >
+                  <Icon name="close" />
+                </button>
+              </div>
+            )}
+            {success && (
+              <div className="notice success-notice" role="status">
+                <Icon name="check" />
+                <p>{success}</p>
+              </div>
+            )}
+            {!isConnected ? (
+              <div className="connect-action">
+                <WalletButton />
+                <p>Connect a Solana wallet to continue.</p>
+              </div>
+            ) : activeTab === "deposit" ? (
+              <>
+                {!dataReady ? (
+                  <button
+                    className="primary-button"
+                    disabled={!dataError}
+                    onClick={() => void loadData()}
+                  >
+                    {dataError
+                      ? "Retry loading your deposit address"
+                      : "Loading your deposit address…"}
+                  </button>
+                ) : !depositAccount ? (
+                  <>
+                    <button
+                      className="primary-button"
+                      disabled={loading}
+                      onClick={handleCreateDepositAccount}
+                    >
+                      {loading
+                        ? "Confirm in your wallet…"
+                        : "Create deposit address"}
+                      <Icon name="arrow" />
+                    </button>
+                    <p className="action-footnote">
+                      One address, reusable for future deposits. Solana network
+                      and account creation costs are shown in your wallet.
+                    </p>
+                  </>
+                ) : depositAccount.status === "pending" ? (
+                  <div className="address-pending">
+                    <span className="spinner" />
                     <div>
-                      <label className="block text-sm font-semibold mb-2 uppercase tracking-wide text-[var(--muted)]">
-                        Receive Amount (XMR)
-                      </label>
-                      <div className="flex gap-2">
-                        <input
-                          type="number"
-                          step="0.000000000001"
-                          min={MIN_WITHDRAW_XMR}
-                          value={withdrawAmount}
-                          onChange={(e) => setWithdrawAmount(e.target.value)}
-                          placeholder="0.0"
-                          className="xmr-input min-w-0 flex-1 px-4 py-3 text-white"
-                        />
-                        <button
-                          onClick={() => setWithdrawAmount(formatXmrAmount(maxWithdrawAmount))}
-                          className="px-5 py-3 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg text-sm font-semibold transition-all"
-                        >
-                          MAX
-                        </button>
-                      </div>
-                      <p className="text-xs text-[var(--muted)] mt-2">
-                        Available: <span className="text-[#ff6600] font-medium">{formatXmr(wxmrBalance)} XMR</span>
-                      </p>
-                      {isWithdrawAmountBelowMinimum && (
-                        <p className="text-xs text-red-400 mt-1">
-                          Minimum Solana to Monero transfer is {MIN_WITHDRAW_XMR} XMR.
-                        </p>
-                      )}
-                      {isWithdrawAmountOverBalance && withdrawPreview && (
-                        <p className="text-xs text-red-400 mt-1">
-                          Requires {formatXmr(withdrawPreview.burnAmount)} XMR including the {withdrawFeePercent} fee.
-                        </p>
-                      )}
-                    </div>
-                    <label className="flex items-center justify-between gap-4 rounded-lg border border-[var(--border)] bg-[var(--background)] px-4 py-3 cursor-pointer">
-                      <div>
-                        <p className="text-sm font-semibold text-white">Exact amount out</p>
-                        <p className="text-xs text-[var(--muted)] mt-1">
-                          {withdrawExactOut
-                            ? `The withdrawal uses exact-receive mode and adds the ${withdrawFeePercent} fee on top.`
-                            : `Exact amount out is disabled; the receive preview reflects the amount after the ${withdrawFeePercent} fee.`}
-                        </p>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={withdrawExactOut}
-                        onChange={(e) => setWithdrawExactOut(e.target.checked)}
-                        className="sr-only"
-                      />
-                      <span
-                        aria-hidden="true"
-                        className={`relative h-6 w-11 rounded-full border transition-colors ${
-                          withdrawExactOut
-                            ? 'border-[#ff6600] bg-[#ff6600]'
-                            : 'border-[var(--border)] bg-[var(--card)]'
-                        }`}
-                      >
-                        <span
-                          className={`absolute top-0.5 h-5 w-5 rounded-full bg-white transition-transform ${
-                            withdrawExactOut ? 'translate-x-5' : 'translate-x-0.5'
-                          }`}
-                        />
-                      </span>
-                    </label>
-                    <div className="space-y-2 border-y border-[var(--border)] py-3 text-sm">
-                      <div className="flex items-center justify-between gap-4">
-                        <span className="text-[var(--muted)]">Receive amount</span>
-                        <span className="font-semibold text-[#ff6600]">
-                          {withdrawPreview ? formatXmr(withdrawPreview.receiveAmount) : '0.0000'} XMR
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-4 text-xs">
-                        <span className="text-[var(--muted)]">{withdrawFeePercent} bridge fee</span>
-                        <span className="text-white">
-                          {withdrawPreview ? formatXmr(withdrawPreview.feeAmount) : '0.0000'} XMR
-                        </span>
-                      </div>
-                      <div className="flex items-center justify-between gap-4 text-xs">
-                        <span className="text-[var(--muted)]">Total Solana XMR required</span>
-                        <span className="text-white">
-                          {withdrawPreview ? formatXmr(withdrawPreview.burnAmount) : '0.0000'} XMR
-                        </span>
-                      </div>
-                    </div>
-                    <div>
-                      <label className="block text-sm font-semibold mb-2 uppercase tracking-wide text-[var(--muted)]">Monero Destination Address</label>
-                      <div className="flex gap-2">
-                        <input
-                          type="text"
-                          value={xmrAddress}
-                          onChange={(e) => setXmrAddress(e.target.value)}
-                          placeholder="4... or 8..."
-                          className="xmr-input flex-1 px-4 py-3 text-white font-mono text-sm"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setShowScanner(true)}
-                          className="px-4 py-3 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all flex-shrink-0"
-                          title="Scan QR Code"
-                        >
-                          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z" />
-                          </svg>
-                        </button>
-                      </div>
-                      {xmrAddressValidation && !xmrAddressValidation.valid && (
-                        <p className="text-xs text-red-400 mt-2">
-                          Invalid Monero address: {xmrAddressValidation.reason}.
-                        </p>
-                      )}
-                      {xmrAddressValidation?.valid && (
-                        <p className="text-xs text-green-400 mt-2">
-                          Valid Monero {xmrAddressValidation.kind === 'standard' ? 'address' : `${xmrAddressValidation.kind} address`}.
-                        </p>
-                      )}
+                      <strong>Getting your Monero address ready</strong>
+                      <p>This usually takes a few seconds. Refresh to check.</p>
                     </div>
                     <button
-                      onClick={handleWithdraw}
-                      disabled={!canRequestWithdrawal}
-                      className="xmr-btn-primary w-full text-white px-6 py-3.5 rounded-lg font-semibold"
+                      className="icon-button"
+                      onClick={() => void loadData()}
+                      aria-label="Refresh deposit address"
                     >
-                      {loading ? (
-                        <span className="flex items-center justify-center gap-2">
-                          <svg className="animate-spin w-5 h-5" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
-                          </svg>
-                          Processing...
-                        </span>
-                      ) : 'Bridge to Monero'}
+                      <Icon name="refresh" />
                     </button>
-                  </div>
-                </>
-              )}
-            </div>
-
-            {/* Pending Solana to Monero transfers — only when connected */}
-            {isConnected && (
-              <div className="xmr-card p-6">
-                <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-                  <svg className="w-5 h-5 text-[var(--muted)]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
-                  </svg>
-                  Pending Solana -&gt; Monero Transfers
-                </h2>
-                <p className="text-sm text-[var(--muted)] mb-3">
-                  Transfers requested here are remembered in this browser. Load wallet history to find earlier transfers or transfers from another device.
-                </p>
-                <div className="flex gap-4 mb-3 text-sm">
-                  <button className="underline" onClick={() => void loadData()}>Refresh status</button>
-                  {historyCursor !== null && (
-                    <button className="underline disabled:opacity-50" disabled={historyLoading} onClick={() => void loadOlderWithdrawals()}>
-                      {historyLoading ? 'Loading wallet history…' : historyCursor ? 'Load earlier activity' : 'Load wallet history'}
-                    </button>
-                  )}
-                </div>
-                {historyThrough && <p className="text-xs text-[var(--muted)] mb-3">Searched back to {formatTime(historyThrough)}.</p>}
-
-                {withdrawals.length === 0 ? (
-                  <div className="text-center py-8">
-                    <div className="text-4xl mb-3 opacity-30">📤</div>
-                    <p className="text-[var(--muted)]">No pending transfers among the records loaded.</p>
                   </div>
                 ) : (
-                  <div className="space-y-4">
-                    {withdrawals.map((withdrawal) => (
-                      <div
-                        key={withdrawal.withdrawalPda}
-                        className="bg-[var(--background)] rounded-lg p-4 border border-[var(--border)] hover:border-[#ff660033] transition-colors"
+                  <div className="deposit-address-box">
+                    <div className="section-label">
+                      <span className="status-dot" />
+                      Your reusable Monero address
+                    </div>
+                    <CopyAddress
+                      address={depositAccount.xmrDepositAddress}
+                      label="Monero deposit address"
+                      className="deposit-address"
+                    />
+                    <div className="address-actions">
+                      <CopyAddress
+                        address={depositAccount.xmrDepositAddress}
+                        label="Monero deposit address"
+                        className="secondary-button"
                       >
-                        <div className="flex justify-between items-start mb-3">
-                          <StatusBadge status={withdrawal.status} />
-                          <span className="text-xs text-[var(--muted)]">
-                            {formatTime(withdrawal.createdAt)}
-                          </span>
-                        </div>
-                        <p className="text-xl font-bold text-[#ff6600]">
-                          {formatXmr(withdrawal.amount)} <span className="text-sm font-normal text-[var(--muted)]">XMR</span>
-                        </p>
-                        <p className="text-xs text-[var(--muted)] mt-2 font-mono">
-                          To: <CopyAddress address={withdrawal.xmrAddress} label="withdrawal destination address">{truncateAddress(withdrawal.xmrAddress, 12)}</CopyAddress>
-                        </p>
-                        {withdrawal.status === 'pending' && withdrawal.user === publicKey?.toBase58() && (
-                          <CancelWithdrawalButton
-                            createdAt={withdrawal.createdAt}
-                            disabled={loading}
-                            canceling={cancelingWithdrawal === withdrawal.withdrawalPda}
-                            onCancel={() => void handleCancelWithdrawal(withdrawal)}
-                          />
-                        )}
-                      </div>
-                    ))}
+                        <Icon name="copy" />
+                        Copy address
+                      </CopyAddress>
+                      <button
+                        className="secondary-button"
+                        onClick={() =>
+                          setQrAddress(depositAccount.xmrDepositAddress)
+                        }
+                      >
+                        <Icon name="qr" />
+                        Show QR
+                      </button>
+                    </div>
+                    <p>
+                      Send native XMR to this address. Each eligible deposit
+                      mints automatically after 10 confirmations. Transfers
+                      under {DEPOSIT_DUST_XMR} XMR per transfer or input are
+                      ignored as dust.
+                    </p>
                   </div>
+                )}
+              </>
+            ) : (
+              <>
+                <button
+                  className="primary-button"
+                  disabled={!canRequestWithdrawal || !dataReady}
+                  onClick={() => setReviewOpen(true)}
+                >
+                  {loading ? "Confirming withdrawal…" : "Review withdrawal"}
+                  <Icon name="arrow" />
+                </button>
+                <p className="action-footnote">
+                  The bridge fee is paid in wXMR. Solana network costs are
+                  separate and shown in your wallet.
+                </p>
+              </>
+            )}
+            <div className="card-bottom-note">
+              <Icon name="shield" />
+              {activeTab === "deposit"
+                ? "0.1% minted to the fee treasury. 99.9% to you."
+                : "Review your destination before signing."}
+            </div>
+          </section>
+          <div className="workspace-sidebar">
+            <ReserveOverview supply={circulatingSupply} ready={dataReady} />
+            <div className="journey-panel">
+              <div className="section-label">A SIMPLE PATH ACROSS</div>
+              <ol>
+                <li>
+                  <span>01</span>
+                  <div>
+                    <strong>
+                      {activeTab === "deposit"
+                        ? "Connect & get an address"
+                        : "Choose your amount"}
+                    </strong>
+                    <p>
+                      {activeTab === "deposit"
+                        ? "Use your Solana wallet to create a reusable Monero deposit address."
+                        : "Enter the wXMR to send, or the exact XMR you want to receive."}
+                    </p>
+                  </div>
+                </li>
+                <li>
+                  <span>02</span>
+                  <div>
+                    <strong>
+                      {activeTab === "deposit"
+                        ? "Send native XMR"
+                        : "Review & sign"}
+                    </strong>
+                    <p>
+                      {activeTab === "deposit"
+                        ? "Deposit at least 0.1 XMR. Wait for 10 Monero confirmations."
+                        : "Confirm your Monero destination and approve the request in your Solana wallet."}
+                    </p>
+                  </div>
+                </li>
+                <li>
+                  <span>03</span>
+                  <div>
+                    <strong>
+                      {activeTab === "deposit"
+                        ? "Receive wXMR"
+                        : "Receive native XMR"}
+                    </strong>
+                    <p>
+                      {activeTab === "deposit"
+                        ? "wXMR is minted to your wallet, minus the 0.1% bridge fee."
+                        : "The bridge processes your withdrawal. Follow its status below."}
+                    </p>
+                  </div>
+                </li>
+              </ol>
+              <Link href="/docs" className="text-link">
+                Understand the bridge
+                <Icon name="arrow" />
+              </Link>
+            </div>
+          </div>
+        </div>
+        <BridgeStatus owner={publicKey?.toBase58()} />
+        <section
+          id="activity"
+          className="activity-section"
+          aria-labelledby="activity-title"
+        >
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">YOUR WALLET</p>
+              <h2 id="activity-title">Transfer activity</h2>
+            </div>
+            {isConnected && (
+              <div className="activity-actions">
+                <button
+                  className="text-button"
+                  disabled={refreshingData}
+                  onClick={() => void loadData()}
+                >
+                  <Icon name="refresh" />
+                  {refreshingData ? "Refreshing…" : "Refresh"}
+                </button>
+                {historyCursor !== null && (
+                  <button
+                    className="text-button"
+                    disabled={historyLoading}
+                    onClick={() => void loadOlderWithdrawals()}
+                  >
+                    {historyLoading
+                      ? "Loading…"
+                      : historyCursor
+                        ? "Load earlier activity"
+                        : "Find wallet withdrawals"}
+                    <Icon name="arrow" />
+                  </button>
                 )}
               </div>
             )}
           </div>
-        )}
-
-        {/* Footer Info — always visible */}
-        <div className="mt-10 pt-6 border-t border-[var(--border)]">
-          <div className="flex flex-col md:flex-row justify-between items-center gap-4 text-sm text-[var(--muted)]">
-            {isConnected ? (
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
-                <span>Connected: <CopyAddress address={publicKey?.toBase58()} label="connected wallet address" className="font-mono text-[var(--foreground)]">{truncateAddress(publicKey?.toBase58() || '', 8)}</CopyAddress></span>
+          {dataError && (
+            <div className="notice error-notice" role="alert">
+              <Icon name="info" />
+              <p>{dataError}</p>
+              <button className="text-button" onClick={() => void loadData()}>
+                Retry
+              </button>
+            </div>
+          )}
+          {pendingBalance > BigInt(0) && isConnected && (
+            <div className="claim-banner">
+              <Icon name="wallet" />
+              <div>
+                <strong>{formatXmr(pendingBalance)} wXMR ready to claim</strong>
+                <p>Your minted tokens are waiting in the deposit account.</p>
               </div>
-            ) : (
-              <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-gray-500" />
-                <span>Wallet not connected</span>
-              </div>
-            )}
-            {bridgeConfig && (
-              <p className="flex min-w-0 max-w-full items-baseline gap-1">
-                <span className="shrink-0">Bridge Authority:</span>
-                <CopyAddress address={bridgeConfig.authority} label="bridge authority address" className="font-mono text-[var(--foreground)]">
-                  <span className="block truncate">{bridgeConfig.authority}</span>
-                </CopyAddress>
-              </p>
-            )}
-          </div>
-        </div>
-
-        {/* QR Code Modal */}
-        {qrAddress && (
-          <QRCodeModal address={qrAddress} onClose={() => setQrAddress(null)} />
-        )}
-
-        {/* QR Scanner Modal */}
-        {showScanner && (
-          <QRScannerModal 
-            onScan={(address) => setXmrAddress(address)} 
-            onClose={() => setShowScanner(false)} 
-          />
-        )}
-
-        {/* Swap Modal */}
-        <SwapModal isOpen={showSwapModal} onClose={() => setShowSwapModal(false)} />
-
-        {/* Global Footer */}
-        <footer className="mt-16 pt-8 border-t border-[var(--border)]">
-          {/* Transparency Link */}
-          <div className="xmr-card p-6 mb-6 xmr-glow">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <svg className="w-6 h-6 text-[#ff6600]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-                </svg>
-                <div>
-                  <h3 className="font-semibold">Verify Our Reserves</h3>
-                  <p className="text-sm text-[var(--muted)]">View key, tx proofs, and on-chain data</p>
-                </div>
-              </div>
-              <Link
-                href="/transparency"
-                className="px-5 py-2.5 bg-[var(--background)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg text-sm font-medium transition-all flex items-center gap-2"
+              <button
+                className="secondary-button"
+                disabled={loading}
+                onClick={handleClaimPending}
               >
-                Transparency
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                </svg>
-              </Link>
+                {loading ? "Claiming…" : "Claim wXMR"}
+                <Icon name="arrow" />
+              </button>
             </div>
-          </div>
-
-          {/* XMR Token Info */}
-          <div className="xmr-card p-6 mb-6">
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted)] mb-4">XMR Token on Solana</h3>
-            <div className="space-y-3">
-              <div>
-                <p className="text-xs text-[var(--muted)] mb-1">Mint Address</p>
-                <div className="flex items-center gap-2">
-                  <CopyAddress address="WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp" label="mint address" className="text-sm font-mono text-[#ff6600] bg-[var(--background)] px-3 py-2 rounded-lg border border-[var(--border)] flex-1 break-all" />
-                  <a
-                    href="https://solscan.io/token/WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all"
-                    title="View on Solscan"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
-                  </a>
-                </div>
+          )}
+          {!isConnected ? (
+            <div className="activity-empty">
+              <div className="empty-icon">
+                <Icon name="activity" />
               </div>
-              <div>
-                <p className="text-xs text-[var(--muted)] mb-1">Bridge Program</p>
-                <div className="flex items-center gap-2">
-                  <CopyAddress address="EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8" label="bridge program address" className="text-sm font-mono text-[var(--foreground)] bg-[var(--background)] px-3 py-2 rounded-lg border border-[var(--border)] flex-1 break-all" />
-                  <a
-                    href="https://solscan.io/account/EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="p-2 bg-[var(--card)] hover:bg-[var(--card-hover)] border border-[var(--border)] hover:border-[#ff6600] rounded-lg transition-all"
-                    title="View on Solscan"
-                  >
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
-                    </svg>
-                  </a>
-                </div>
-              </div>
+              <h3>Your next transfer starts here.</h3>
+              <p>
+                Connect your wallet to see your deposit address
+                <br className="desktop-break" /> and track pending withdrawals.
+              </p>
+              <span className="private-note">
+                <Icon name="wallet" />
+                Only activity for your connected wallet
+              </span>
             </div>
-          </div>
-
-          {/* Links */}
-          <div className="flex flex-wrap items-center justify-center gap-6 mb-8">
-            <OpenSourceLink />
-            <Link
-              href="/transparency"
-              className="flex items-center gap-2 text-sm text-[var(--muted)] hover:text-[#ff6600] transition-colors"
+          ) : (
+            <>
+              {depositAccount?.status === "active" && (
+                <div className="deposit-activity-summary">
+                  <TokenIcon token="xmr" />
+                  <div>
+                    <strong>Monero deposits</strong>
+                    <p>Lifetime gross XMR deposited to your address</p>
+                  </div>
+                  <span>{formatXmr(depositAccount.totalDeposited)} XMR</span>
+                </div>
+              )}
+              {withdrawals.length === 0 ? (
+                <div className="activity-empty compact">
+                  <Icon name="clock" />
+                  <h3>No pending withdrawals in the records loaded.</h3>
+                  <p>
+                    Use “Find wallet withdrawals” to search earlier activity.
+                  </p>
+                </div>
+              ) : (
+                <div className="transfer-list">
+                  {withdrawals.map((withdrawal) => (
+                    <article
+                      className="transfer-row"
+                      key={withdrawal.withdrawalPda}
+                    >
+                      <div className="transfer-row-main">
+                        <span className="transfer-direction-icon">
+                          <Icon name="arrow" />
+                        </span>
+                        <div>
+                          <h3>Solana → Monero</h3>
+                          <p>{formatTime(withdrawal.createdAt)}</p>
+                        </div>
+                        <div className="transfer-row-amount">
+                          <strong>{formatXmr(withdrawal.amount)} XMR</strong>
+                          <span
+                            className={`transfer-status status-${withdrawal.status}`}
+                          >
+                            {withdrawal.status === "pending"
+                              ? "Queued"
+                              : withdrawal.status === "sending"
+                                ? "Sending XMR"
+                                : withdrawal.status === "reverted"
+                                  ? "Reverted"
+                                  : "Completed"}
+                          </span>
+                        </div>
+                      </div>
+                      <details className="transfer-details">
+                        <summary>
+                          Transfer details
+                          <Icon name="chevron" />
+                        </summary>
+                        <dl>
+                          <div>
+                            <dt>Monero destination</dt>
+                            <dd>
+                              <CopyAddress
+                                address={withdrawal.xmrAddress}
+                                label="withdrawal destination address"
+                                className="break-all"
+                              />
+                            </dd>
+                          </div>
+                          <div>
+                            <dt>Solana request</dt>
+                            <dd>
+                              <a
+                                href={`https://solscan.io/account/${withdrawal.withdrawalPda}`}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                              >
+                                {truncateAddress(withdrawal.withdrawalPda)}
+                                <Icon name="external" />
+                              </a>
+                            </dd>
+                          </div>
+                        </dl>
+                        <div className="transfer-progress">
+                          <span className="done">Requested</span>
+                          <span
+                            className={
+                              withdrawal.status === "sending" ||
+                              withdrawal.status === "completed"
+                                ? "done"
+                                : ""
+                            }
+                          >
+                            Processing
+                          </span>
+                          <span
+                            className={
+                              withdrawal.status === "completed" ? "done" : ""
+                            }
+                          >
+                            Completed
+                          </span>
+                        </div>
+                      </details>
+                      {withdrawal.status === "pending" &&
+                        withdrawal.user === publicKey?.toBase58() && (
+                          <CancelWithdrawalButton
+                            createdAt={withdrawal.createdAt}
+                            disabled={loading}
+                            canceling={
+                              cancelingWithdrawal === withdrawal.withdrawalPda
+                            }
+                            onCancel={() =>
+                              void handleCancelWithdrawal(withdrawal)
+                            }
+                          />
+                        )}
+                    </article>
+                  ))}
+                </div>
+              )}
+              <p className="activity-scope">
+                This view tracks requests saved in this browser and wallet
+                history you load. It is not a complete transaction statement.
+                {historyThrough
+                  ? ` Searched back to ${formatTime(historyThrough)}.`
+                  : ""}
+                {lastSynced
+                  ? ` Last refreshed ${lastSynced.toLocaleTimeString()}.`
+                  : ""}
+              </p>
+            </>
+          )}
+        </section>
+        <section className="bottom-information">
+          <div>
+            <Icon name="code" />
+            <h3>Open to inspection.</h3>
+            <p>
+              Read the source. Inspect the program.
+              <br />
+              Check the evidence for yourself.
+            </p>
+            <a
+              className="text-link"
+              href="https://github.com/sullystuff/wxmr-frontend"
+              target="_blank"
+              rel="noopener noreferrer"
             >
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
-              </svg>
-              Transparency
+              Explore the code
+              <Icon name="external" />
+            </a>
+          </div>
+          <div>
+            <Icon name="shield" />
+            <h3>Keep privacy in view.</h3>
+            <p>
+              wXMR lives on a public blockchain. Understand what Solana activity
+              and bridge records can reveal before you transfer.
+            </p>
+            <Link className="text-link" href="/docs#privacy">
+              Understand privacy
+              <Icon name="arrow" />
             </Link>
-            <a
-              href="https://getmonero.org"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 text-sm text-[var(--muted)] hover:text-[#ff6600] transition-colors"
-            >
-              <MoneroLogo className="w-4 h-4" />
-              Monero
-            </a>
-            <a
-              href="https://solana.com"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 text-sm text-[var(--muted)] hover:text-[#ff6600] transition-colors"
-            >
-              <svg className="w-4 h-4" viewBox="0 0 128 128" fill="currentColor">
-                <path d="M93.94 42.63H13.78l20.22-20.22h80.16L93.94 42.63zM93.94 105.59H13.78l20.22-20.22h80.16L93.94 105.59zM34 74.11h80.16L93.94 53.89H13.78L34 74.11z"/>
-              </svg>
-              Solana
-            </a>
           </div>
-
-          {/* Bottom */}
-          <div className="flex justify-center">
-            <div className="flex items-center gap-2 text-xs text-[var(--muted)]">
-              <MoneroLogo className="w-4 h-4 opacity-50" />
-              <span>Powered by Monero & Solana</span>
+          <details className="contract-details">
+            <summary>
+              <span>Official contracts</span>
+              <Icon name="chevron" />
+            </summary>
+            <div>
+              <p className="field-label">wXMR token mint</p>
+              <CopyAddress
+                address="WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp"
+                label="wXMR mint"
+                className="contract-address"
+              />
+              <p className="field-label">Bridge program</p>
+              <CopyAddress
+                address="EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8"
+                label="bridge program"
+                className="contract-address"
+              />
+              {bridgeConfig && (
+                <>
+                  <p className="field-label">Bridge authority</p>
+                  <CopyAddress
+                    address={bridgeConfig.authority}
+                    label="bridge authority"
+                    className="contract-address"
+                  />
+                </>
+              )}
             </div>
+          </details>
+        </section>
+      </main>
+      {qrAddress && (
+        <QRCodeModal address={qrAddress} onClose={() => setQrAddress(null)} />
+      )}
+      {showScanner && (
+        <MoneroQrScanner
+          onScan={({ address, amount }) => {
+            setXmrAddress(address);
+            if (amount !== null) {
+              setWithdrawAmount(amount);
+              setWithdrawExactOut(true);
+            }
+            setError(null);
+            setShowScanner(false);
+          }}
+          onClose={() => setShowScanner(false)}
+        />
+      )}
+      {reviewOpen && withdrawPreview && (
+        <BridgeDialog
+          labelledBy="review-title"
+          onClose={() => setReviewOpen(false)}
+        >
+          <div className="card-heading">
+            <h2 id="review-title">Review withdrawal</h2>
+            <button
+              className="icon-button"
+              onClick={() => setReviewOpen(false)}
+              aria-label="Close withdrawal review"
+            >
+              <Icon name="close" />
+            </button>
           </div>
-        </footer>
-      </div>
-    </main>
+          <p className="muted">
+            Check the destination carefully. Confirming opens your wallet to
+            approve the Solana transaction.
+          </p>
+          <dl className="review-amounts">
+            <div>
+              <dt>You pay</dt>
+              <dd>{formatXmr(withdrawPreview.burnAmount)} wXMR</dd>
+            </div>
+            <div>
+              <dt>Bridge fee (0.1%)</dt>
+              <dd>{formatXmr(withdrawPreview.feeAmount)} wXMR</dd>
+            </div>
+            <div>
+              <dt>You receive</dt>
+              <dd>{formatXmr(withdrawPreview.receiveAmount)} XMR</dd>
+            </div>
+          </dl>
+          <p className="field-label">To your Monero address</p>
+          <p className="review-destination">{trimmedXmrAddress}</p>
+          <p className="action-footnote">
+            Solana network costs are separate. Your wallet shows the final
+            transaction costs.
+          </p>
+          <button
+            className="primary-button"
+            disabled={loading || !canRequestWithdrawal}
+            onClick={() => {
+              setReviewOpen(false);
+              void handleWithdraw();
+            }}
+          >
+            Confirm in wallet
+            <Icon name="arrow" />
+          </button>
+        </BridgeDialog>
+      )}
+    </BridgeShell>
   );
 }
