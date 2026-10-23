@@ -76,9 +76,28 @@ svg {
   line-height: 1.7;
 }
 .site-shell {
-  max-width: 1184px;
+  max-width: 1460px;
   margin: 0 auto;
   padding: 0 48px;
+}
+.site-layout {
+  display: grid;
+  grid-template-columns: 220px minmax(0, 1fr);
+  align-items: start;
+  gap: 32px;
+}
+.site-main-content {
+  grid-column: 2;
+  grid-row: 1;
+  min-width: 0;
+}
+.donation-sidebar {
+  grid-column: 1;
+  grid-row: 1;
+  position: sticky;
+  top: 24px;
+  min-width: 0;
+  margin: 48px 0 36px;
 }
 .site-header {
   height: 106px;
@@ -879,11 +898,10 @@ svg {
 }
 .donation-section {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 370px);
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  gap: 32px;
-  margin-top: 28px;
-  padding: 24px;
+  gap: 20px;
+  padding: 20px;
   border: 1px solid #76513a;
   border-left: 3px solid var(--primary);
   border-radius: 10px;
@@ -894,7 +912,7 @@ svg {
   margin-bottom: 8px;
 }
 .donation-message h2 {
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.6px;
 }
@@ -911,7 +929,7 @@ svg {
 .donation-copy {
   display: block;
   width: 100%;
-  padding: 12px 18px;
+  padding: 12px 14px;
   border: 1px solid var(--primary);
   border-radius: 7px;
   background: var(--primary);
@@ -922,7 +940,7 @@ svg {
   align-items: center;
   justify-content: space-between;
   gap: 16px;
-  font-size: 23px;
+  font-size: 20px;
   font-weight: 600;
   letter-spacing: -0.5px;
 }
@@ -930,6 +948,7 @@ svg {
   display: block;
   margin-top: 3px;
   font-size: 11px;
+  line-height: 1.5;
 }
 .donation-copy > [role="status"] {
   color: var(--background);
@@ -955,12 +974,29 @@ svg {
   color: var(--primary);
   font-size: inherit;
 }
+@media (max-width: 1199px) {
+  .site-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+  }
+  .site-main-content {
+    width: 100%;
+  }
+  .donation-sidebar {
+    position: static;
+    width: 100%;
+    margin: 0 0 32px;
+  }
+  .donation-section {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 370px);
+    gap: 32px;
+  }
+}
 @media (max-width: 760px) {
   .donation-section {
     grid-template-columns: minmax(0, 1fr);
     gap: 18px;
-    margin-top: 22px;
-    padding: 20px;
   }
 }
 .site-footer {
@@ -1431,7 +1467,7 @@ svg {
 }
 @media (min-width: 1280px) {
   .site-shell {
-    max-width: 1200px;
+    max-width: 1460px;
     padding-left: 56px;
     padding-right: 56px;
   }

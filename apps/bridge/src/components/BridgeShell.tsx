@@ -84,8 +84,12 @@ export function BridgeShell({ children }: { children: ReactNode }) {
           <WalletButton />
         </div>
       </header>
-      <DonateSection />
-      {children}
+      <div className="site-layout">
+        <div className="site-main-content">{children}</div>
+        <aside className="donation-sidebar" aria-label="Support wXMR">
+          <DonateSection />
+        </aside>
+      </div>
       <footer className="site-footer">
         <div className="footer-brand">
           <span className="small-wordmark">wXMR.</span>
