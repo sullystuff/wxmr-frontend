@@ -8,6 +8,7 @@ export const RPC_INTERVAL_MS = 1_000;
 const CACHE_TTL: Record<string, number> = {
   getAccountInfo: 5_000,
   getMultipleAccounts: 5_000,
+  getTokenLargestAccounts: 5_000, // SNS uses this to resolve tokenized domain owners.
   getBalance: 5_000,
   getLatestBlockhash: 0,
   getBlockHeight: 3_000,

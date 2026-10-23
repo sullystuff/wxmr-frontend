@@ -6,6 +6,7 @@ import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
 import { SolanaRpcSettings } from "@wxmr/shared";
 import { Icon, TokenIcon } from "./BridgeIcons";
+import { DonateSection } from "./DonateSection";
 
 const AdapterWalletButton = dynamic(
   () =>
@@ -83,6 +84,7 @@ export function BridgeShell({ children }: { children: ReactNode }) {
           <WalletButton />
         </div>
       </header>
+      <DonateSection />
       {children}
       <footer className="site-footer">
         <div className="footer-brand">
