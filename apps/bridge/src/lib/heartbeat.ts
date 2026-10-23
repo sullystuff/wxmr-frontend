@@ -94,7 +94,7 @@ let pending: Promise<Heartbeat | null> | null = null;
 let checked = 0;
 export async function fetchHeartbeat(): Promise<Heartbeat | null> {
   if (pending) return pending;
-  if (Date.now() - checked < 20_000) return last;
+  if (Date.now() - checked < 5_000) return last;
   pending = (async () => {
     const result = await rpcResult<{ context: { slot: number }; value: AccountInfo | null }>("getAccountInfo", [HEARTBEAT_ACCOUNT.toBase58(), { encoding: "base64", commitment: "finalized" }]);
     if (!result.value) { last = null; checked = Date.now(); return null; }

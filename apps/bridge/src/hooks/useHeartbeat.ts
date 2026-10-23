@@ -14,7 +14,7 @@ export function useHeartbeat() {
         if (!cancelled) { setHeartbeat(next); setError(false); }
       } catch { if (!cancelled) setError(true); }
       finally {
-        if (!cancelled) { setLoading(false); timer = setTimeout(refresh, 30_000); }
+        if (!cancelled) { setLoading(false); timer = setTimeout(refresh, 10_000); }
       }
     }
     void refresh();
