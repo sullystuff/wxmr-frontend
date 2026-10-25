@@ -5,6 +5,10 @@ Self-hosted setup for the two apps in this monorepo:
 - `apps/bridge` -> `wxmr.io` (listens on `127.0.0.1:3000`)
 - `apps/swap` -> `swap.wxmr.io` (listens on `127.0.0.1:3001`)
 
+Bridge search visibility and privacy-preserving traffic reporting are documented
+in [SEO-ANALYTICS.md](SEO-ANALYTICS.md). Collection requires a verified no-request-logs
+setup and defaults to disabled.
+
 Each app is an independent Next.js server. The default runner here is PM2; Docker is
 provided as an alternative further down.
 

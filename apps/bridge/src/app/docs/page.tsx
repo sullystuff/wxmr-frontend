@@ -2,6 +2,13 @@ import Link from "next/link";
 import { XMR_DEPOSIT_DUST_PICONERO, formatXmrAmount } from "@wxmr/core";
 import { BridgeShell } from "@/components/BridgeShell";
 import { Icon } from "@/components/BridgeIcons";
+import { pageMetadata } from "@/lib/site-metadata";
+
+export const metadata = pageMetadata(
+  "/docs",
+  "How to Bridge XMR to Solana | wXMR Guide & Fees",
+  "Learn how to wrap XMR as wXMR on Solana, redeem native Monero, check 0.1% bridge fees, and verify public reserve proofs.",
+);
 
 export default function DocsPage() {
   return (
@@ -31,7 +38,7 @@ export default function DocsPage() {
           <div className="docs-content">
             <section id="overview">
               <span className="doc-number">01 / THE BASICS</span>
-              <h2>Native XMR. Wrapped on Solana.</h2>
+              <h2>What is wrapped Monero (wXMR)?</h2>
               <p>
                 XMR is Monero’s native currency. wXMR is its token representation
                 on Solana. Bridge XMR to Solana to receive wXMR, or bridge wXMR
@@ -200,6 +207,10 @@ export default function DocsPage() {
                 privacy protections. Information you share through the bridge,
                 public records, or with a recipient can still reveal details
                 about the entry and exit points.
+              </p>
+              <p>
+                Website traffic statistics are separate from bridge records.
+                Read our <Link className="text-link" href="/privacy">privacy and anonymous analytics policy</Link>.
               </p>
             </section>
             <div className="docs-back">

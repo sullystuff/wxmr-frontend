@@ -539,9 +539,9 @@ export default function Home() {
               THE MONERO ↔ SOLANA BRIDGE
             </p>
             <h1>
-              Monero. <span>More possibilities.</span>
+              Wrapped XMR. <span>Monero on Solana.</span>
             </h1>
-            <p>Move between native XMR and wXMR on Solana.</p>
+            <p>Bridge Monero (XMR) to wrapped Monero (wXMR) on Solana, or redeem wXMR for native XMR.</p>
           </div>
           <Link href="/docs" className="intro-help">
             <Icon name="info" />

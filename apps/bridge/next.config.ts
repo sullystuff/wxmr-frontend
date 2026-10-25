@@ -15,6 +15,14 @@ const nextConfig: NextConfig = {
   distDir: process.env.WXMR_PREVIEW_DIST || ".next",
   reactCompiler: true,
   transpilePackages: ["@wxmr/shared", "@wxmr/core"],
+  async redirects() {
+    return [{
+      source: "/:path*",
+      has: [{ type: "host", value: "www.wxmr.io" }],
+      destination: "https://wxmr.io/:path*",
+      permanent: true,
+    }];
+  },
   ...(standalone
     ? {
         output: "standalone",

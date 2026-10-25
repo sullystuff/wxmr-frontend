@@ -1021,6 +1021,7 @@ svg {
 }
 .footer-links {
   display: flex;
+  flex-wrap: wrap;
   gap: 23px;
   margin-left: auto;
 }
@@ -1038,6 +1039,42 @@ svg {
 }
 .footer-networks {
   font-size: 9px;
+}
+.information-content {
+  max-width: 780px;
+  padding-bottom: 48px;
+}
+.breakable-address { overflow-wrap: anywhere; }
+.analytics-preference { display: grid; gap: 12px; justify-items: start; }
+.analytics-preference button { min-height: 44px; padding: 10px 16px; }
+.insights-main { max-width: 1100px; padding: 36px 24px 80px; margin: 0 auto; }
+.insights-main .page-intro { margin-top: 30px; }
+.insights-form { display: flex; gap: 16px; flex-wrap: wrap; align-items: end; margin: 24px 0 12px; }
+.insights-form label { display: grid; gap: 8px; font-size: 13px; }
+.insights-form input, .insights-form select {
+  min-height: 44px; max-width: 100%; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--card); color: var(--foreground); padding: 10px 12px;
+}
+.insights-form input { width: 310px; }
+.insights-muted { font-size: 13px; line-height: 1.7; color: var(--muted); margin: 14px 0; }
+.insights-totals { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; margin: 24px 0; }
+.insights-totals section { display: grid; gap: 12px; }
+.insights-totals strong { font-size: 32px; }
+.insights-panel { border: 1px solid var(--border); background: var(--card); border-radius: 14px; padding: 22px; min-width: 0; }
+.insights-panel h2 { font-size: 17px; font-weight: 600; margin-bottom: 18px; }
+.insights-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 16px 0; }
+.insights-breakdown { list-style: none; display: grid; gap: 16px; padding: 0; }
+.insights-breakdown li > div:first-child { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; margin-bottom: 6px; }
+.insights-bar { height: 4px; background: var(--border); border-radius: 4px; overflow: hidden; }
+.insights-bar span { display: block; height: 100%; background: #ff6600; }
+.insights-table-scroll { max-height: 300px; overflow: auto; }
+.insights-table { width: 100%; text-align: left; font-size: 13px; border-collapse: collapse; }
+.insights-table th, .insights-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); }
+.insights-table tbody th { font-weight: 400; }
+@media (max-width: 640px) {
+  .insights-totals, .insights-grid { grid-template-columns: minmax(0, 1fr); }
+  .insights-form, .insights-form label { width: 100%; }
+  .insights-form input { width: 100%; }
 }
 .destination-field {
   padding-bottom: 19px;

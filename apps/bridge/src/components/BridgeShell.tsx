@@ -104,7 +104,8 @@ export function BridgeShell({ children }: { children: ReactNode }) {
             <Icon name="code" />
             Source code
           </a>
-          <Link href="/docs#privacy">Privacy</Link>
+          <Link href="/wrapped-xmr">Wrapped XMR</Link>
+          <Link href="/privacy">Privacy & analytics</Link>
           <div className="footer-rpc">
             <SolanaRpcSettings />
           </div>

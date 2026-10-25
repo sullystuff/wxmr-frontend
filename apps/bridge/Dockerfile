@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 # Build context must be the monorepo root: docker build -f apps/bridge/Dockerfile .
 
-FROM node:20-alpine AS base
+FROM node:24-alpine AS base
 RUN apk add --no-cache libc6-compat
 
 # 1) Prune the workspace down to just what @wxmr/bridge needs.
