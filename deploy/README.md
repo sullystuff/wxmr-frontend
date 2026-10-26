@@ -82,14 +82,16 @@ the quoted output still includes the fee, and a fixed 50-bps output protection
 is enforced. Quotes missing the fee or weakening the output minimum are rejected.
 Quotes expire after 30 seconds and each quote object builds at most once.
 Builds require the wallet fee payer and writable referral account to be present.
-Priority fees are capped at 100,000 lamports.
+Jupiter's requested priority fees are capped at 100,000 lamports; the wallet can apply its own settings.
 
-Wallet signing may refresh a blockhash, reorder static accounts, add a memo, or
-adjust compute settings within the priority cap. Compare all other instruction
-programs, bytes, account identities, signer flags and write privileges before
-submission. Snapshot the unsigned transaction before passing it to the wallet,
-which may mutate the transaction in place. If the wallet refreshes the blockhash,
-confirm by signature without reusing the old block-height expiry bound.
+Jupiter's unsigned transaction is checked before the wallet prompt. After signing,
+accept the connected wallet's returned transaction, including safety wrappers,
+memos, account reordering, sponsorship, and its own priority settings. Do not
+compare its instruction list to Jupiter's unsigned list. Require the connected
+wallet to be a signed required signer, then submit the returned signed bytes
+unchanged. Snapshot the original blockhash before handing the mutable transaction
+to the wallet. If the wallet refreshes it, confirm by signature without reusing
+the old block-height expiry bound.
 
 Wallets sign locally. Signed bytes and their signature are saved in browser
 storage before one submission through the visitor's selected Solana RPC.

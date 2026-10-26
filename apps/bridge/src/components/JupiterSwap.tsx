@@ -3,7 +3,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { utils } from "@coral-xyz/anchor";
-import { VersionedTransaction } from "@solana/web3.js";
 import { Icon } from "./BridgeIcons";
 import { SwapTokenIcon, SwapTokenSelector } from "./SwapTokenSelector";
 import { JupiterApiError, jupiterSwapClient } from "@/lib/jupiter-swap-client";
@@ -126,12 +125,12 @@ export function JupiterSwap({ onSwapConfirmed }: { onSwapConfirmed?: () => void 
         || !transaction.message.staticAccountKeys.some(key => key.toBase58() === SWAP_FEE_ACCOUNT)
         || !wallet.wallet?.adapter.publicKey?.equals(publicKey)) throw new Error("The wallet or swap changed. Get a fresh quote.");
       setMessage("Approve the swap in your wallet.");
-      const original = VersionedTransaction.deserialize(transaction.serialize());
+      const blockhashBeforeSigning = transaction.message.recentBlockhash;
       const signed = await wallet.signTransaction(transaction);
-      validateWalletSignedSwap(original, signed, publicKey);
+      validateWalletSignedSwap(signed, publicKey);
       const signedRecord = { wallet: publicKey.toBase58(), signature: utils.bytes.bs58.encode(signed.signatures[0]),
         signedTransaction: btoa(String.fromCharCode(...signed.serialize())), blockhash: signed.message.recentBlockhash,
-        lastValidBlockHeight: signed.message.recentBlockhash === original.message.recentBlockhash ? result.lastValidBlockHeight : undefined };
+        lastValidBlockHeight: signed.message.recentBlockhash === blockhashBeforeSigning ? result.lastValidBlockHeight : undefined };
       // Persist signed bytes and their identity BEFORE any network submission.
       localStorage.setItem(PENDING_KEY, JSON.stringify(signedRecord));
       record = signedRecord;
