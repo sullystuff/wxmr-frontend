@@ -93,6 +93,15 @@ unchanged. Snapshot the original blockhash before handing the mutable transactio
 to the wallet. If the wallet refreshes it, confirm by signature without reusing
 the old block-height expiry bound.
 
+Jupiter may return a serialized transaction alongside a failed compute-estimation
+simulation. If the transaction is present, decodes, and passes the unsigned
+wallet/referral checks, pass it unchanged to the wallet rather than vetoing it
+based on that simulation field. Log only the bounded error reason in the browser.
+Wallet simulation and RPC preflight remain active (`skipPreflight: false`). If
+Jupiter returns no usable transaction, surface its actual simulation error.
+An omitted or string-encoded expiry hint is supported; signature confirmation
+is used when the exact last-valid block height is unavailable.
+
 Wallets sign locally. Signed bytes and their signature are saved in browser
 storage before one submission through the visitor's selected Solana RPC.
 Timeouts retain the record and block another swap until status is reconciled;

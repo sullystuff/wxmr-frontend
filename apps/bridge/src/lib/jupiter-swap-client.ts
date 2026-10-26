@@ -6,8 +6,27 @@ export class JupiterApiError extends Error {
   constructor(message: string, public retryAfterMs = 10_000) { super(message); }
 }
 
+function errorDetail(value: unknown): string {
+  if (typeof value === "string") return value.replace(/[\x00-\x1f\x7f]/g, " ").slice(0, 300);
+  if (!value || typeof value !== "object") return "";
+  const data = value as Record<string, unknown>;
+  for (const key of ["error", "errorMessage", "message"]) {
+    const detail = errorDetail(data[key]);
+    if (detail) return detail;
+  }
+  if (Array.isArray(data.InstructionError)) return `Instruction ${data.InstructionError[0]} failed: ${JSON.stringify(data.InstructionError[1]).slice(0, 150)}`;
+  return typeof data.errorCode === "string" ? data.errorCode.slice(0, 100) : "";
+}
+
+export class JupiterSimulationError extends JupiterApiError {
+  constructor(error: unknown) {
+    const detail = errorDetail(error);
+    super(`Jupiter could not simulate this swap${detail ? `: ${detail}` : "."}`);
+  }
+}
+
 function validateRoute(route: JupiterRouteQuote, inputMint: string, outputMint: string, amount: string) {
-  if (route.inputMint !== inputMint || route.outputMint !== outputMint || route.inAmount !== amount
+  if (!route || route.inputMint !== inputMint || route.outputMint !== outputMint || route.inAmount !== amount
     || route.swapMode !== "ExactIn" || route.slippageBps !== SWAP_SLIPPAGE_BPS
     || route.platformFee?.feeBps !== SWAP_FEE_BPS || !/^[1-9]\d*$/.test(route.platformFee?.amount ?? "")
     || !/^[1-9]\d*$/.test(route.outAmount) || !/^[1-9]\d*$/.test(route.otherAmountThreshold)
@@ -51,7 +70,8 @@ export function createJupiterSwapClient(options: { fetchImpl?: typeof fetch; api
         nextRequestAt = now() + retryAfterMs;
         throw new JupiterApiError("Prices are busy. Trying again shortly.", retryAfterMs);
       }
-      throw new JupiterApiError("No route available right now. Trying again shortly.");
+      const detail = errorDetail(await response.json().catch(() => null));
+      throw new JupiterApiError(detail ? `Jupiter: ${detail}` : "No route available right now. Trying again shortly.");
     }
     return response.json();
   }
@@ -103,17 +123,35 @@ export function createJupiterSwapClient(options: { fetchImpl?: typeof fetch; api
         wrapAndUnwrapSol: true, dynamicComputeUnitLimit: true,
         prioritizationFeeLamports: { priorityLevelWithMaxLamports: { maxLamports: 100_000, priorityLevel: "high" } },
       }) });
-      if (result.simulationError || typeof result.swapTransaction !== "string"
-        || !Number.isSafeInteger(result.lastValidBlockHeight) || result.lastValidBlockHeight <= 0) {
-        throw new JupiterApiError("This swap could not be prepared. Please try again.");
+      if (!result || typeof result !== "object") throw new JupiterApiError("Jupiter returned an invalid swap response.");
+      if (typeof result.swapTransaction !== "string" || !result.swapTransaction) {
+        if (result.simulationError) throw new JupiterSimulationError(result.simulationError);
+        throw new JupiterApiError("Jupiter did not return a swap transaction.");
       }
-      const transaction = VersionedTransaction.deserialize(Uint8Array.from(atob(result.swapTransaction), c => c.charCodeAt(0)));
+      let transaction: VersionedTransaction;
+      try {
+        transaction = VersionedTransaction.deserialize(Uint8Array.from(atob(result.swapTransaction), c => c.charCodeAt(0)));
+      } catch {
+        if (result.simulationError) throw new JupiterSimulationError(result.simulationError);
+        throw new JupiterApiError("Jupiter returned an invalid swap transaction.");
+      }
       const feeIndex = transaction.message.staticAccountKeys.findIndex(key => key.toBase58() === feeAccount);
       if (!transaction.message.staticAccountKeys[0].equals(wallet) || transaction.message.header.numRequiredSignatures !== 1
         || feeIndex < 0 || !transaction.message.isAccountWritable(feeIndex)) {
         throw new JupiterApiError("This swap could not be verified. Please try again.");
       }
-      return { transaction, lastValidBlockHeight: result.lastValidBlockHeight };
+      if (result.simulationError) {
+        // Compute-estimation simulation is not the wallet's final simulation.
+        // Preserve the returned transaction; wallet review and RPC preflight
+        // (skipPreflight:false) still check it before broadcast.
+        console.warn("Jupiter build simulation:", errorDetail(result.simulationError));
+      }
+      // The transaction is sufficient for signature-based confirmation. Some API
+      // responses omit the optional expiry hint or encode it as a numeric string.
+      const height = typeof result.lastValidBlockHeight === "string" && /^\d+$/.test(result.lastValidBlockHeight)
+        ? Number(result.lastValidBlockHeight) : result.lastValidBlockHeight;
+      const lastValidBlockHeight = Number.isSafeInteger(height) && height > 0 ? height as number : undefined;
+      return { transaction, lastValidBlockHeight };
     },
   };
 }

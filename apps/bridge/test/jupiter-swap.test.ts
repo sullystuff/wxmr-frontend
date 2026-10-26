@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import { Keypair, PublicKey, TransactionInstruction, TransactionMessage, VersionedTransaction } from "@solana/web3.js";
-import { createJupiterSwapClient, JupiterApiError } from "../src/lib/jupiter-swap-client";
+import { createJupiterSwapClient, JupiterApiError, JupiterSimulationError } from "../src/lib/jupiter-swap-client";
 import { formatSwapAmount, parseSwapAmount, SWAP_FEE_ACCOUNT, SWAP_REFERRAL_ACCOUNT, SWAP_TOKENS } from "../src/lib/jupiter-swap";
 
 const fixture = () => ({ inputMint: SWAP_TOKENS.SOL.mint, outputMint: SWAP_TOKENS.wXMR.mint,
@@ -70,7 +70,7 @@ test("build pins the initialized wXMR referral account for both directions and b
   }
 });
 
-test("expired quotes and failed simulations cannot reach signing", async () => {
+test("expired quotes and simulation failures without a usable transaction cannot reach signing", async () => {
   let time = 1000;
   let builds = 0;
   const wallet = Keypair.generate().publicKey.toBase58();
@@ -81,7 +81,7 @@ test("expired quotes and failed simulations cannot reach signing", async () => {
   const old = await client.quote("buy", SWAP_TOKENS.SOL, "100000000"); time += 31000;
   await assert.rejects(client.build(old, wallet), /Updating/); assert.equal(builds, 0);
   const fresh = await client.quote("buy", SWAP_TOKENS.SOL, "100000000"); time += 2500;
-  await assert.rejects(client.build(fresh, wallet), /could not be prepared/); assert.equal(builds, 1);
+  await assert.rejects(client.build(fresh, wallet), /Jupiter could not simulate.*TRANSACTION_ERROR/); assert.equal(builds, 1);
 });
 
 test("429 responses preserve Jupiter's backoff and aborted quotes do not issue requests", async () => {
@@ -98,4 +98,50 @@ test("token search accepts supported mint metadata and excludes malformed entrie
     { id: "invalid", decimals: 6 }, { id: SWAP_TOKENS.SOL.mint, decimals: -1 },
   ]) });
   const result = await client.search("USDC"); assert.equal(result.length, 1); assert.equal(result[0].mint, SWAP_TOKENS.USDC.mint);
+});
+
+
+test("HTTP 200 simulation failures report Jupiter's actual reason instead of a generic preparation error", async () => {
+  let time = 1000;
+  const client = createJupiterSwapClient({ now: () => time, fetchImpl: async url => {
+    if (String(url).includes("/quote?")) return Response.json(fixture());
+    return Response.json({ swapTransaction: "present-but-never-used", lastValidBlockHeight: 100,
+      simulationError: { errorCode: "TRANSACTION_ERROR", error: "Error processing Instruction 2: custom program error: 0x1789" } });
+  } });
+  const quote = await client.quote("buy", SWAP_TOKENS.SOL, "100000000"); time += 2500;
+  await assert.rejects(client.build(quote, Keypair.generate().publicKey.toBase58()), error =>
+    error instanceof JupiterSimulationError && error.message.includes("Instruction 2") && error.message.includes("0x1789"));
+});
+
+test("a valid transaction can use signature confirmation when the expiry hint is absent or string encoded", async () => {
+  for (const expiry of [undefined, "100"]) {
+    let time = 1000;
+    const wallet = Keypair.generate().publicKey;
+    const instruction = new TransactionInstruction({ programId: new PublicKey("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4"),
+      keys: [{ pubkey: new PublicKey(SWAP_FEE_ACCOUNT), isSigner: false, isWritable: true }], data: Buffer.alloc(0) });
+    const tx = new VersionedTransaction(new TransactionMessage({ payerKey: wallet, recentBlockhash: PublicKey.default.toBase58(), instructions: [instruction] }).compileToV0Message());
+    const client = createJupiterSwapClient({ now: () => time, fetchImpl: async url => String(url).includes("/quote?") ? Response.json(fixture())
+      : Response.json({ swapTransaction: Buffer.from(tx.serialize()).toString("base64"), simulationError: null, lastValidBlockHeight: expiry }) });
+    const quote = await client.quote("buy", SWAP_TOKENS.SOL, "100000000"); time += 2500;
+    const result = await client.build(quote, wallet.toBase58());
+    assert.equal(result.lastValidBlockHeight, expiry ? 100 : undefined);
+  }
+});
+
+test("a valid transaction reaches wallet review despite compute-estimation simulation failure", async t => {
+  const warning = t.mock.method(console, "warn", () => {});
+  let time = 1000;
+  const wallet = Keypair.generate().publicKey;
+  const instruction = new TransactionInstruction({ programId: new PublicKey("JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4"),
+    keys: [{ pubkey: new PublicKey(SWAP_FEE_ACCOUNT), isSigner: false, isWritable: true }], data: Buffer.alloc(0) });
+  const tx = new VersionedTransaction(new TransactionMessage({ payerKey: wallet, recentBlockhash: PublicKey.default.toBase58(), instructions: [instruction] }).compileToV0Message());
+  const serialized = Buffer.from(tx.serialize()).toString("base64");
+  const client = createJupiterSwapClient({ now: () => time, fetchImpl: async url => String(url).includes("/quote?") ? Response.json(fixture())
+    : Response.json({ swapTransaction: serialized, lastValidBlockHeight: 100,
+      simulationError: { errorCode: "TRANSACTION_ERROR", error: "Error processing Instruction 2: custom program error: 0x1789" } }) });
+  const quote = await client.quote("buy", SWAP_TOKENS.SOL, "100000000"); time += 2500;
+  const result = await client.build(quote, wallet.toBase58());
+  assert.deepEqual(Buffer.from(result.transaction.serialize()).toString("base64"), serialized);
+  assert.equal(result.transaction.signatures.every(signature => signature.every(byte => byte === 0)), true);
+  assert.equal(warning.mock.callCount(), 1);
 });
