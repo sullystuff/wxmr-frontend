@@ -62,18 +62,34 @@ The main site supports buying/selling wXMR with SOL or USDC through Jupiter's
 Metis Swap API. The requested referral account is
 `36rUjmrYc16eBpCCGG2t6oeiEmi1GHjeLTDQ7i8JUxAW`, under Jupiter's Swap project.
 Jupiter Plugin/Ultra requires a different project and rejects this account.
-The bridge therefore uses `/api/jupiter` to call `/swap/v1/quote` and `/swap/v1/swap`
-with the existing server-side `JUPITER_API_KEY` (or its existing public-name alias).
+The bridge calls Jupiter's `/swap/v1/quote`, `/swap/v1/swap`, and token-search
+APIs directly from the visitor's browser. It uses keyless access by default;
+`NEXT_PUBLIC_JUPITER_BROWSER_API_KEY` optionally configures a deliberately
+browser-visible key. The existing server API key is not included in these requests.
 See [Jupiter's fee documentation](https://developers.jup.ag/docs/swap/v1/add-fees-to-swap).
 
-The fee is fixed at 50 bps (0.5%) and collected in the output token at the referral
-program's derived token account (wXMR: `BVQREgTvRZcQmv1rwfBTUkR4JhiAdUM3zHCFaPKJB6E7`,
-SOL: `5AJbu8Zc8XSXATGAdcZ7mpZiodivpvHQ9JWvCMBibdn2`,
-USDC: `GEiPqFwCBHoc3MmCBBgHJf97bP92Lt12QNcTKK13MoTV`). Quotes missing
-the fee are rejected. The server saves quotes for 30 seconds and builds each
-at most once; clients cannot override fee accounts or submit arbitrary routes.
+Token search supports any Jupiter-listed mint with supported metadata, with
+wXMR fixed on one side. Quotes debounce edits by 450 ms, refresh every 10 seconds,
+and pause while the page is hidden, token search is open, or a swap is active.
+Obsolete requests are aborted; 429 responses honor backoff. Per-browser request
+spacing is 2.2 seconds without a key, or 1.1 seconds with a browser key.
+
+The fee remains fixed at 50 bps (0.5%) and always uses the initialized wXMR
+referral token account `BVQREgTvRZcQmv1rwfBTUkR4JhiAdUM3zHCFaPKJB6E7`.
+ExactIn swaps allow collecting in either input or output mint, so unrelated token
+fee accounts do not need to be created. The UI omits fee and slippage controls;
+the quoted output still includes the fee, and a fixed 50-bps output protection
+is enforced. Quotes missing the fee or weakening the output minimum are rejected.
+Quotes expire after 30 seconds and each quote object builds at most once.
 Builds require the wallet fee payer and writable referral account to be present.
-Priority fees are capped at 100,000 lamports, with fixed user-selected slippage.
+Priority fees are capped at 100,000 lamports.
+
+Wallet signing may refresh a blockhash, reorder static accounts, add a memo, or
+adjust compute settings within the priority cap. Compare all other instruction
+programs, bytes, account identities, signer flags and write privileges before
+submission. Snapshot the unsigned transaction before passing it to the wallet,
+which may mutate the transaction in place. If the wallet refreshes the blockhash,
+confirm by signature without reusing the old block-height expiry bound.
 
 Wallets sign locally. Signed bytes and their signature are saved in browser
 storage before one submission through the visitor's selected Solana RPC.

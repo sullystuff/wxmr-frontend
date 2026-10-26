@@ -2627,17 +2627,47 @@ svg {
 .jupiter-swap-copy h2 { font-size: 32px; letter-spacing: -1px; margin: 12px 0; }
 .jupiter-swap-copy > p { line-height: 1.8; }
 .jupiter-swap-note { color: var(--muted); font-size: 12px; line-height: 1.8; margin-top: 16px; }
-.jupiter-swap-card { min-width: 0; padding: 22px; border: 1px solid var(--border); border-radius: 12px; background: var(--background); }
+.jupiter-swap-card { min-width: 0; padding: 18px; border: 1px solid var(--border); border-radius: 20px; background: var(--background); }
 .jupiter-swap-card fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
-.swap-field { display: grid; gap: 8px; font-size: 12px; color: var(--muted); margin: 16px 0; }
-.swap-field input, .swap-field select { width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: 7px; background: var(--card); color: var(--foreground); padding: 12px; font-size: 15px; }
-.swap-field input:focus, .swap-field select:focus { outline: 2px solid var(--primary); outline-offset: 2px; }
-.swap-action, .swap-wallet .wallet-adapter-button { width: 100%; justify-content: center; margin-top: 12px; }
-.swap-quote { padding: 15px 0; border-top: 1px solid var(--border); line-height: 1.7; }
-.swap-quote > span, .swap-quote > p { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
-.swap-quote strong { display: block; font-size: 19px; margin: 6px 0; overflow-wrap: anywhere; }
+.swap-card-heading { display: flex; align-items: center; justify-content: space-between; padding: 3px 3px 17px; }
+.swap-card-heading h3 { font-size: 16px; font-weight: 550; }
+.swap-card-heading > span { font-size: 10px; color: var(--muted); }
+.swap-amount-block { background: var(--surface); border: 1px solid transparent; border-radius: 14px; padding: 17px; }
+.swap-amount-block:focus-within { border-color: var(--border-hover); }
+.swap-amount-block > label, .swap-amount-label { display: block; font-size: 11px; color: var(--muted); margin-bottom: 12px; }
+.swap-amount-row { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.swap-amount-row input, .swap-output-amount { flex: 1; min-width: 0; width: 0; font-size: 27px; line-height: 1.4; font-weight: 500; letter-spacing: -1px; color: var(--foreground); border: 0; background: transparent; padding: 0; outline: none; }
+.swap-amount-row input::placeholder, .swap-output-amount.is-empty { color: #73776a; }
+.swap-output-amount { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.swap-token-pill { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 7px; padding: 8px 10px; border-radius: 999px; background: var(--card); border: 1px solid var(--border); font-size: 13px; font-weight: 550; max-width: 55%; }
+.swap-token-pill > span:not(.token-icon):not(.swap-coin) { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+button.swap-token-pill:hover { border-color: var(--border-hover); background: var(--card-hover); }
+.swap-token-pill > svg { width: 12px; height: 12px; color: var(--muted); }
+.swap-token-pill .token-icon, .swap-coin { width: 23px; height: 23px; flex: 0 0 23px; }
+.swap-coin { display: inline-flex; align-items: center; justify-content: center; border-radius: 50%; object-fit: contain; font-size: 17px; }
+.swap-coin-sol { background: #13171d; color: #a4e1c2; }.swap-coin-sol svg { width: 21px; height: 21px; }
+.swap-coin-usdc { background: #2775ca; color: white; }.swap-coin-other { background: var(--border); color: var(--foreground); }
+.swap-token-name { display: block; margin-top: 12px; font-size: 10px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.swap-reverse-row { position: relative; height: 7px; z-index: 1; display: flex; justify-content: center; align-items: center; }
+.swap-reverse { display: flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 4px solid var(--background); border-radius: 11px; background: #30332b; color: var(--foreground); transition: background .15s; }
+.swap-reverse:hover { background: #454a3b; }.swap-reverse svg { width: 16px; height: 16px; transform: rotate(90deg); }
+.swap-action, .swap-wallet, .swap-wallet .wallet-adapter-dropdown, .swap-wallet .wallet-adapter-button { width: 100%; }
+.swap-wallet .wallet-adapter-button { display: flex; justify-content: center; border-radius: 12px; background: var(--primary); color: #171b11; font-weight: 600; }
+.jupiter-swap-card .swap-action { justify-content: center; margin-top: 0; border-radius: 12px; min-height: 48px; }
+.swap-price-status { min-height: 47px; display: flex; align-items: center; justify-content: center; gap: 7px; font-size: 10px; color: var(--muted); }
+.swap-price-status svg { width: 12px; height: 12px; color: #adbd92; }
+.swap-loading-dot { width: 9px; height: 9px; border: 1px solid var(--border-hover); border-top-color: var(--primary); border-radius: 50%; animation: swap-spin 1s linear infinite; }
+@keyframes swap-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .swap-loading-dot { animation: none; } }
+.swap-powered { font-size: 10px; color: var(--muted); text-align: center; padding-top: 15px; }.swap-powered a { color: var(--foreground); }
 .swap-error { color: #ffb29b; font-size: 12px; line-height: 1.7; margin-top: 16px; }
 .swap-transaction { display: inline-flex; margin-top: 12px; }
+.swap-token-heading { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; gap: 16px; }
+.swap-token-heading h2 { font-size: 18px; }.swap-token-heading button { font-size: 24px; width: 32px; height: 32px; color: var(--muted); }
+.swap-token-search { width: 100%; border: 1px solid var(--border); border-radius: 10px; padding: 13px; font-size: 12px; background: var(--background); outline-color: var(--primary); }
+.swap-token-results { max-height: 360px; overflow: auto; margin-top: 16px; }.swap-token-results > p { font-size: 12px; color: var(--muted); padding: 20px 0; }
+.swap-token-result { display: flex; align-items: center; gap: 12px; width: 100%; text-align: left; padding: 12px 6px; border-radius: 8px; }.swap-token-result:hover { background: var(--surface); }
+.swap-token-result > span:not(.swap-coin) { display: grid; gap: 4px; min-width: 0; }.swap-token-result strong { font-size: 13px; }.swap-token-result small { font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }.swap-token-result code { margin-left: auto; font-size: 9px; color: var(--muted); }
 @media (max-width: 760px) {
   .jupiter-swap-panel { grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 22px 18px; }
   .jupiter-swap-card { width: 100%; max-width: 400px; justify-self: center; }

@@ -4,25 +4,26 @@ import { useEffect, useRef, useState } from "react";
 import { useConnection, useWallet } from "@solana/wallet-adapter-react";
 import { utils } from "@coral-xyz/anchor";
 import { VersionedTransaction } from "@solana/web3.js";
+import { Icon } from "./BridgeIcons";
+import { SwapTokenIcon, SwapTokenSelector } from "./SwapTokenSelector";
+import { JupiterApiError, jupiterSwapClient } from "@/lib/jupiter-swap-client";
+import { validateWalletSignedSwap } from "@/lib/swap-wallet-validation";
 import { WalletButton } from "./BridgeShell";
-import { SWAP_TOKENS, SWAP_FEE_BPS, getSwapFeeAccount, parseSwapAmount, formatSwapAmount,
-  type SwapQuote, type PendingSwap } from "@/lib/jupiter-swap";
+import { SWAP_TOKENS, SWAP_FEE_ACCOUNT, parseSwapAmount, formatSwapAmount,
+  type SwapQuote, type PendingSwap, type SwapToken } from "@/lib/jupiter-swap";
 
 const PENDING_KEY = "wxmr:jupiter-pending:v1";
-
-async function readResponse(response: Response) {
-  const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "Unable to load this swap.");
-  return data;
-}
 
 export function JupiterSwap({ onSwapConfirmed }: { onSwapConfirmed?: () => void }) {
   const { connection } = useConnection();
   const wallet = useWallet();
   const [side, setSide] = useState<"buy" | "sell">("buy");
-  const [token, setToken] = useState<"SOL" | "USDC">("SOL");
+  const [token, setToken] = useState<SwapToken>(SWAP_TOKENS.SOL);
+  const [selectingToken, setSelectingToken] = useState(false);
+  const [pageVisible, setPageVisible] = useState(true);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState("");
   const [amount, setAmount] = useState("");
-  const [slippage, setSlippage] = useState(50);
   const [quote, setQuote] = useState<SwapQuote | null>(null);
   const [clock, setClock] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -31,11 +32,10 @@ export function JupiterSwap({ onSwapConfirmed }: { onSwapConfirmed?: () => void 
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [signature, setSignature] = useState("");
-  const requestId = useRef(0);
   const actionInProgress = useRef(false);
-  const inputSymbol = side === "buy" ? token : "wXMR";
-  const outputSymbol = side === "buy" ? "wXMR" : token;
-  const units = parseSwapAmount(amount, SWAP_TOKENS[inputSymbol].decimals);
+  const inputToken = side === "buy" ? token : SWAP_TOKENS.wXMR;
+  const outputToken = side === "buy" ? SWAP_TOKENS.wXMR : token;
+  const units = parseSwapAmount(amount, inputToken.decimals);
 
   useEffect(() => {
     // Recover the exact signed intent after a reload, without sending it again.
@@ -55,36 +55,51 @@ export function JupiterSwap({ onSwapConfirmed }: { onSwapConfirmed?: () => void 
   }, []);
 
   useEffect(() => {
-    if (!quote) return;
+    const update = () => { setPageVisible(!document.hidden); setClock(Date.now()); };
+    update();
+    document.addEventListener("visibilitychange", update);
+    return () => document.removeEventListener("visibilitychange", update);
+  }, []);
+
+  useEffect(() => {
+    if (!quote || !pageVisible) return;
     const timer = window.setInterval(() => setClock(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [quote]);
+  }, [quote, pageVisible]);
 
-  const invalidateQuote = () => {
-    requestId.current++;
-    setQuote(null);
-    setError("");
-    setMessage("");
-  };
+  useEffect(() => {
+    if (!units || busy || pending || recoveryBlocked || !pageVisible || selectingToken) {
+      setQuoteLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    let timer: number;
+    const refresh = async () => {
+      setQuoteLoading(true);
+      let nextRefresh = 10_000;
+      try {
+        const result = await jupiterSwapClient.quote(side, token, units, controller.signal);
+        if (controller.signal.aborted) return;
+        setQuote(result);
+        setQuoteError("");
+        setClock(Date.now());
+      } catch (err) {
+        if (controller.signal.aborted) return;
+        setQuote(null);
+        setQuoteError(err instanceof Error ? err.message : "Unable to update this price.");
+        if (err instanceof JupiterApiError) nextRefresh = Math.max(10_000, err.retryAfterMs);
+      } finally {
+        if (!controller.signal.aborted) {
+          setQuoteLoading(false);
+          timer = window.setTimeout(refresh, nextRefresh);
+        }
+      }
+    };
+    timer = window.setTimeout(refresh, 450);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [units, side, token, busy, pending, recoveryBlocked, pageVisible, selectingToken]);
 
-  const getQuote = async () => {
-    if (!units || actionInProgress.current || pending || recoveryBlocked) return;
-    actionInProgress.current = true;
-    const id = ++requestId.current;
-    setBusy(true);
-    setQuote(null);
-    setError("");
-    setMessage("");
-    try {
-      const params = new URLSearchParams({ side, token, amount: units, slippageBps: String(slippage) });
-      const result: SwapQuote = await readResponse(await fetch(`/api/jupiter?${params}`, { cache: "no-store" }));
-      if (requestId.current !== id) return;
-      setClock(Date.now());
-      setQuote(result);
-    } catch (err) {
-      if (requestId.current === id) setError(err instanceof Error ? err.message : "Unable to get a quote.");
-    } finally { actionInProgress.current = false; setBusy(false); }
-  };
+  const invalidateQuote = () => { setQuote(null); setQuoteError(""); setError(""); setMessage(""); };
 
   const finish = (record: PendingSwap, failed: boolean) => {
     localStorage.removeItem(PENDING_KEY);
@@ -105,19 +120,18 @@ export function JupiterSwap({ onSwapConfirmed }: { onSwapConfirmed?: () => void 
     let record: PendingSwap | undefined;
     try {
       const publicKey = wallet.publicKey;
-      const result = await readResponse(await fetch("/api/jupiter", { method: "POST",
-        headers: { "Content-Type": "application/json" }, body: JSON.stringify({ quoteId: quote.id, wallet: publicKey.toBase58() }) }));
-      const transaction = VersionedTransaction.deserialize(Uint8Array.from(atob(result.swapTransaction), c => c.charCodeAt(0)));
+      const result = await jupiterSwapClient.build(quote, publicKey.toBase58());
+      const transaction = result.transaction;
       if (!transaction.message.staticAccountKeys[0].equals(publicKey)
-        || !transaction.message.staticAccountKeys.some(key => key.toBase58() === getSwapFeeAccount(quote.outputMint))
+        || !transaction.message.staticAccountKeys.some(key => key.toBase58() === SWAP_FEE_ACCOUNT)
         || !wallet.wallet?.adapter.publicKey?.equals(publicKey)) throw new Error("The wallet or swap changed. Get a fresh quote.");
       setMessage("Approve the swap in your wallet.");
-      const originalMessage = transaction.message.serialize();
+      const original = VersionedTransaction.deserialize(transaction.serialize());
       const signed = await wallet.signTransaction(transaction);
-      if (!Buffer.from(signed.message.serialize()).equals(Buffer.from(originalMessage))) throw new Error("The wallet changed the swap transaction.");
+      validateWalletSignedSwap(original, signed, publicKey);
       const signedRecord = { wallet: publicKey.toBase58(), signature: utils.bytes.bs58.encode(signed.signatures[0]),
         signedTransaction: btoa(String.fromCharCode(...signed.serialize())), blockhash: signed.message.recentBlockhash,
-        lastValidBlockHeight: result.lastValidBlockHeight };
+        lastValidBlockHeight: signed.message.recentBlockhash === original.message.recentBlockhash ? result.lastValidBlockHeight : undefined };
       // Persist signed bytes and their identity BEFORE any network submission.
       localStorage.setItem(PENDING_KEY, JSON.stringify(signedRecord));
       record = signedRecord;
@@ -126,8 +140,9 @@ export function JupiterSwap({ onSwapConfirmed }: { onSwapConfirmed?: () => void 
       setMessage("Swap submitted. Waiting for confirmation…");
       const sent = await connection.sendRawTransaction(signed.serialize(), { maxRetries: 0, skipPreflight: false });
       if (sent !== record.signature) throw new Error("Unexpected transaction signature.");
-      const confirmation = await connection.confirmTransaction({ signature: record.signature,
-        blockhash: record.blockhash, lastValidBlockHeight: record.lastValidBlockHeight }, "confirmed");
+      const confirmation = record.lastValidBlockHeight
+        ? await connection.confirmTransaction({ signature: record.signature, blockhash: record.blockhash, lastValidBlockHeight: record.lastValidBlockHeight }, "confirmed")
+        : await connection.confirmTransaction(record.signature, "confirmed");
       finish(record, Boolean(confirmation.value.err));
     } catch (err) {
       setMessage("");
@@ -153,57 +168,62 @@ export function JupiterSwap({ onSwapConfirmed }: { onSwapConfirmed?: () => void 
   };
 
   const expired = quote !== null && clock >= quote.expiresAt;
+  const shownQuote = quote && quote.inAmount === units && quote.inputMint === inputToken.mint && quote.outputMint === outputToken.mint ? quote : null;
+  const received = shownQuote ? formatSwapAmount(shownQuote.outAmount, outputToken.decimals) : "0.00";
+  const locked = busy || Boolean(pending) || recoveryBlocked;
+  const tokenPill = (selected: SwapToken, label: string) => selected.mint === SWAP_TOKENS.wXMR.mint
+    ? <span className="swap-token-pill"><SwapTokenIcon token={selected} /><span>wXMR</span></span>
+    : <button type="button" className="swap-token-pill" aria-label={label} disabled={locked} onClick={() => setSelectingToken(true)}>
+        <SwapTokenIcon token={selected} /><span>{selected.symbol}</span><Icon name="chevron" />
+      </button>;
+
   return (
     <section id="swap" className="jupiter-swap-panel" aria-labelledby="swap-title">
       <div className="jupiter-swap-copy">
         <p className="eyebrow">TRADE ON SOLANA</p>
         <h2 id="swap-title">Swap wXMR.</h2>
-        <p>Buy or sell wrapped Monero with SOL or USDC, right here.</p>
-        <p className="jupiter-swap-note">Powered by Jupiter. {SWAP_FEE_BPS / 100}% referral fee included in your quote. Network fees and token account rent are additional.</p>
-        <p className="jupiter-swap-note">To move native XMR to or from Monero, use the bridge above.</p>
+        <p>Swap between wrapped Monero and Solana tokens, right here.</p>
+        <p className="jupiter-swap-note">Moving native XMR? Use the bridge above.</p>
       </div>
       <div className="jupiter-swap-card">
-        <fieldset disabled={busy || Boolean(pending) || recoveryBlocked}>
-          <div className="direction-selector" aria-label="Swap direction">
-            <button type="button" className={side === "buy" ? "selected" : ""} aria-pressed={side === "buy"}
-              onClick={() => { setSide("buy"); setAmount(""); invalidateQuote(); }}>Buy wXMR</button>
-            <button type="button" className={side === "sell" ? "selected" : ""} aria-pressed={side === "sell"}
-              onClick={() => { setSide("sell"); setAmount(""); invalidateQuote(); }}>Sell wXMR</button>
+        <div className="swap-card-heading"><h3>Swap</h3><span>Solana</span></div>
+        <fieldset disabled={locked}>
+          <div className="swap-amount-block">
+            <label htmlFor="swap-pay-amount">You pay</label>
+            <div className="swap-amount-row">
+              <input id="swap-pay-amount" aria-label="Amount to swap" inputMode="decimal" autoComplete="off" placeholder="0.00" maxLength={40} value={amount}
+                onChange={event => { setAmount(event.target.value); invalidateQuote(); }} />
+              {tokenPill(inputToken, "Select token to pay")}
+            </div>
+            <span className="swap-token-name">{inputToken.name}</span>
           </div>
-          <label className="swap-field">{side === "buy" ? "Pay with" : "Receive"}
-            <select aria-label={side === "buy" ? "Pay with" : "Receive"} value={token} onChange={event => { setToken(event.target.value as "SOL" | "USDC"); setAmount(""); invalidateQuote(); }}>
-              <option value="SOL">SOL</option><option value="USDC">USDC</option>
-            </select>
-          </label>
-          <label className="swap-field">You pay ({inputSymbol})
-            <input inputMode="decimal" autoComplete="off" placeholder="0.00" maxLength={40} value={amount}
-              onChange={event => { setAmount(event.target.value); invalidateQuote(); }} />
-          </label>
-          <label className="swap-field">Slippage tolerance
-            <select aria-label="Slippage tolerance" value={slippage} onChange={event => { setSlippage(Number(event.target.value)); invalidateQuote(); }}>
-              <option value="10">0.1%</option><option value="50">0.5%</option><option value="100">1%</option>
-            </select>
-          </label>
-          {quote && <div className="swap-quote" aria-live="polite">
-            <span>You receive approximately</span>
-            <strong>{formatSwapAmount(quote.outAmount, SWAP_TOKENS[outputSymbol].decimals)} {outputSymbol}</strong>
-            <p>Minimum received: {formatSwapAmount(quote.minimumReceived, SWAP_TOKENS[outputSymbol].decimals)} {outputSymbol}</p>
-            <p>Price impact: {quote.priceImpactPct}% · Fee: {quote.feeBps / 100}% included</p>
-            <p>{expired ? "Quote expired. Refresh to continue." : "Quote valid for 30 seconds."}</p>
-          </div>}
-          <button type="button" className="secondary-button swap-action" disabled={!units} onClick={getQuote}>
-            {busy ? "Please wait…" : quote ? "Refresh quote" : "Get quote"}
-          </button>
+          <div className="swap-reverse-row"><button type="button" className="swap-reverse" aria-label="Reverse swap direction" onClick={() => {
+            const nextAmount = shownQuote ? formatSwapAmount(shownQuote.outAmount, outputToken.decimals) : "";
+            setSide(side === "buy" ? "sell" : "buy"); setAmount(nextAmount); invalidateQuote();
+          }}><Icon name="arrow" /></button></div>
+          <div className="swap-amount-block swap-receive-block">
+            <span className="swap-amount-label">You receive</span>
+            <div className="swap-amount-row">
+              <output className={shownQuote ? "swap-output-amount" : "swap-output-amount is-empty"} aria-label="Estimated amount received" aria-live="polite" title={received}>{received}</output>
+              {tokenPill(outputToken, "Select token to receive")}
+            </div>
+            <span className="swap-token-name">{outputToken.name}</span>
+          </div>
         </fieldset>
-        {!wallet.connected ? <div className="swap-wallet"><WalletButton /></div> : !pending &&
-          <button type="button" className="primary-button swap-action" disabled={busy || recoveryBlocked || !quote || expired || !wallet.signTransaction} onClick={swap}>
-            {busy ? "Please wait…" : "Review & swap"}
-          </button>}
-        {pending && <button type="button" className="secondary-button swap-action" disabled={busy} onClick={checkStatus}>Check swap status</button>}
+        <div className="swap-price-status" role="status">
+          {quoteLoading ? <><span className="swap-loading-dot" />Finding the best price…</> : shownQuote && !expired ? <><Icon name="check" />Price updates automatically</> : units ? "Updating price…" : "Enter an amount to get started"}
+        </div>
+        {pending ? <button type="button" className="primary-button swap-action" disabled={busy} onClick={checkStatus}>Check swap status</button>
+          : !wallet.connected ? <div className="swap-wallet"><WalletButton /></div>
+          : <button type="button" className="primary-button swap-action" disabled={locked || !shownQuote || quoteLoading || expired || !wallet.signTransaction} onClick={swap}>
+              {busy ? "Please wait…" : !units ? "Enter an amount" : quoteLoading ? "Finding the best price…" : "Swap"}
+            </button>}
+        <p className="swap-powered">Powered by <a href="https://jup.ag" target="_blank" rel="noopener noreferrer">Jupiter ↗</a></p>
         {message && <p className="jupiter-swap-note" role="status">{message}</p>}
-        {error && <p className="swap-error" role="alert">{error}</p>}
+        {(error || quoteError) && <p className="swap-error" role="alert">{error || quoteError}</p>}
         {signature && <a className="text-link swap-transaction" href={`https://solscan.io/tx/${signature}`} target="_blank" rel="noopener noreferrer">View swap transaction ↗</a>}
       </div>
+      {selectingToken && <SwapTokenSelector selected={token} onClose={() => setSelectingToken(false)} onSelect={selected => { setToken(selected); setAmount(""); invalidateQuote(); }} />}
     </section>
   );
 }

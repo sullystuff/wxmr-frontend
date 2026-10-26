@@ -2,11 +2,14 @@ import { PublicKey } from "@solana/web3.js";
 
 export const SWAP_REFERRAL_ACCOUNT = "36rUjmrYc16eBpCCGG2t6oeiEmi1GHjeLTDQ7i8JUxAW";
 export const SWAP_FEE_BPS = 50;
+export const SWAP_SLIPPAGE_BPS = 50;
 export const SWAP_TOKENS = {
-  SOL: { mint: "So11111111111111111111111111111111111111112", decimals: 9 },
-  USDC: { mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", decimals: 6 },
-  wXMR: { mint: "WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp", decimals: 12 },
+  SOL: { mint: "So11111111111111111111111111111111111111112", decimals: 9, symbol: "SOL", name: "Solana" },
+  USDC: { mint: "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", decimals: 6, symbol: "USDC", name: "USD Coin" },
+  wXMR: { mint: "WXMRyRZhsa19ety5erZhHg4N3xj3EVN92u94422teJp", decimals: 12, symbol: "wXMR", name: "Wrapped Monero" },
 } as const;
+
+export interface SwapToken { mint: string; decimals: number; symbol: string; name: string; icon?: string }
 
 // Existing token accounts under the requested Jupiter Swap referral account.
 export function getSwapFeeAccount(mint: string): string {
@@ -27,13 +30,13 @@ export function parseSwapAmount(text: string, decimals: number): string | null {
 }
 
 export function formatSwapAmount(amount: string, decimals: number): string {
+  if (decimals === 0) return amount;
   const text = amount.padStart(decimals + 1, "0");
   const fraction = text.slice(-decimals).replace(/0+$/, "");
   return `${text.slice(0, -decimals)}${fraction ? `.${fraction}` : ""}`;
 }
 
 export interface SwapQuote {
-  id: string;
   inputMint: string;
   outputMint: string;
   inAmount: string;
@@ -45,6 +48,20 @@ export interface SwapQuote {
   feeAccount: string;
   referralAccount: string;
   expiresAt: number;
+  route: JupiterRouteQuote;
+}
+
+export interface JupiterRouteQuote {
+  inputMint: string;
+  outputMint: string;
+  inAmount: string;
+  outAmount: string;
+  otherAmountThreshold: string;
+  swapMode: string;
+  slippageBps: number;
+  priceImpactPct: string;
+  platformFee: { feeBps: number; amount: string };
+  routePlan: unknown[];
 }
 
 export interface PendingSwap {
@@ -52,5 +69,5 @@ export interface PendingSwap {
   signature: string;
   signedTransaction: string;
   blockhash: string;
-  lastValidBlockHeight: number;
+  lastValidBlockHeight?: number;
 }
