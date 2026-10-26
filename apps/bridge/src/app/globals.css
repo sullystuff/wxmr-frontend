@@ -2613,6 +2613,38 @@ svg {
 }
 
 /* On-chain heartbeat and pending deposits */
+.jupiter-swap-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 400px);
+  align-items: center;
+  gap: 40px;
+  margin-top: 40px;
+  padding: 30px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: var(--card);
+}
+.jupiter-swap-copy h2 { font-size: 32px; letter-spacing: -1px; margin: 12px 0; }
+.jupiter-swap-copy > p { line-height: 1.8; }
+.jupiter-swap-note { color: var(--muted); font-size: 12px; line-height: 1.8; margin-top: 16px; }
+.jupiter-swap-card { min-width: 0; padding: 22px; border: 1px solid var(--border); border-radius: 12px; background: var(--background); }
+.jupiter-swap-card fieldset { min-width: 0; border: 0; padding: 0; margin: 0; }
+.swap-field { display: grid; gap: 8px; font-size: 12px; color: var(--muted); margin: 16px 0; }
+.swap-field input, .swap-field select { width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: 7px; background: var(--card); color: var(--foreground); padding: 12px; font-size: 15px; }
+.swap-field input:focus, .swap-field select:focus { outline: 2px solid var(--primary); outline-offset: 2px; }
+.swap-action, .swap-wallet .wallet-adapter-button { width: 100%; justify-content: center; margin-top: 12px; }
+.swap-quote { padding: 15px 0; border-top: 1px solid var(--border); line-height: 1.7; }
+.swap-quote > span, .swap-quote > p { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
+.swap-quote strong { display: block; font-size: 19px; margin: 6px 0; overflow-wrap: anywhere; }
+.swap-error { color: #ffb29b; font-size: 12px; line-height: 1.7; margin-top: 16px; }
+.swap-transaction { display: inline-flex; margin-top: 12px; }
+@media (max-width: 760px) {
+  .jupiter-swap-panel { grid-template-columns: minmax(0, 1fr); gap: 24px; padding: 22px 18px; }
+  .jupiter-swap-card { width: 100%; max-width: 400px; justify-self: center; }
+}
+@media (max-width: 700px) {
+  .bridge-home .jupiter-swap-panel { order: 2; margin-bottom: 30px; }
+}
 .bridge-status-panel{margin-top:40px;padding:30px;border:1px solid var(--border);border-radius:18px;background:var(--card)}
 .bridge-health{display:inline-flex;align-items:center;gap:8px;padding:9px 12px;border:1px solid var(--border);border-radius:999px;font-size:12px;white-space:nowrap;color:var(--muted)}
 .bridge-health.is-online{color:#b9d7ba}.bridge-health.is-online .status-dot{background:#a4c7a5}

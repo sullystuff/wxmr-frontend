@@ -61,6 +61,7 @@ export function BridgeShell({ children }: { children: ReactNode }) {
           >
             Bridge
           </Link>
+          <Link href="/#swap">Swap</Link>
           <Link
             href="/transparency"
             aria-current={pathname === "/transparency" ? "page" : undefined}

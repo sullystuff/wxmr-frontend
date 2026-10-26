@@ -17,6 +17,7 @@ import { MoneroQrScanner } from "@/components/MoneroQrScanner";
 import { BridgeDialog } from "@/components/BridgeDialog";
 import { BridgeStatus } from "@/components/BridgeStatus";
 import { ReserveOverview } from "@/components/ReserveOverview";
+import { JupiterSwap } from "@/components/JupiterSwap";
 import {
   PICONERO_PER_XMR,
   MIN_XMR_DEPOSIT_PICONERO,
@@ -1018,6 +1019,7 @@ export default function Home() {
             </div>
           </div>
         </div>
+        <JupiterSwap onSwapConfirmed={loadData} />
         <BridgeStatus owner={publicKey?.toBase58()} />
         <section
           id="activity"

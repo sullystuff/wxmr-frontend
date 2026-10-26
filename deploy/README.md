@@ -56,6 +56,34 @@ Run `npm --workspace @wxmr/bridge run test:rpc` and `npm run build:bridge` befor
 deploying with `scripts/redeploy-bridge-remote.sh`. The script ships only the
 bridge build and core package and verifies the service restart and build ID.
 
+### Homepage Jupiter swap
+
+The main site supports buying/selling wXMR with SOL or USDC through Jupiter's
+Metis Swap API. The requested referral account is
+`36rUjmrYc16eBpCCGG2t6oeiEmi1GHjeLTDQ7i8JUxAW`, under Jupiter's Swap project.
+Jupiter Plugin/Ultra requires a different project and rejects this account.
+The bridge therefore uses `/api/jupiter` to call `/swap/v1/quote` and `/swap/v1/swap`
+with the existing server-side `JUPITER_API_KEY` (or its existing public-name alias).
+See [Jupiter's fee documentation](https://developers.jup.ag/docs/swap/v1/add-fees-to-swap).
+
+The fee is fixed at 50 bps (0.5%) and collected in the output token at the referral
+program's derived token account (wXMR: `BVQREgTvRZcQmv1rwfBTUkR4JhiAdUM3zHCFaPKJB6E7`,
+SOL: `5AJbu8Zc8XSXATGAdcZ7mpZiodivpvHQ9JWvCMBibdn2`,
+USDC: `GEiPqFwCBHoc3MmCBBgHJf97bP92Lt12QNcTKK13MoTV`). Quotes missing
+the fee are rejected. The server saves quotes for 30 seconds and builds each
+at most once; clients cannot override fee accounts or submit arbitrary routes.
+Builds require the wallet fee payer and writable referral account to be present.
+Priority fees are capped at 100,000 lamports, with fixed user-selected slippage.
+
+Wallets sign locally. Signed bytes and their signature are saved in browser
+storage before one submission through the visitor's selected Solana RPC.
+Timeouts retain the record and block another swap until status is reconciled;
+**Check swap status** only reads chain status and never resends or signs again.
+No backend wallet or bridge funds participate. Deployment does not create
+accounts, sign swaps, or claim fees. Verify existing referral account ownership,
+fee-account mint and initialization, all four quotes, unsigned build simulation,
+and browser behavior before release.
+
 ## 1. Build and run with PM2
 
 The PM2 config lives at the repo root (`ecosystem.config.js`). From the repo root:
