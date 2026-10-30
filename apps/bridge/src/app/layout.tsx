@@ -22,6 +22,27 @@ export const metadata: Metadata = {
     shortcut: "/favicon.svg",
     apple: "/favicon.svg",
   },
+  openGraph: {
+    title: 'Monero Bridge',
+    description: 'Bridge Monero to Solana and back',
+    url: 'https://wxmr.io',
+    siteName: 'wXMR',
+    type: 'website',
+    images: [
+      {
+        url: '/og-image.png',
+        width: 1200,
+        height: 630,
+        alt: 'Bridge Monero to Solana and back',
+      },
+    ],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Monero Bridge',
+    description: 'Bridge Monero to Solana and back',
+    images: ['/og-image.png'],
+  },
 };
 
 export default function RootLayout({
