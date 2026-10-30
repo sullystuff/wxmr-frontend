@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { usePathname } from "next/navigation";
-import { SolanaRpcSettings } from "@wxmr/shared";
+import { OpenSourceLink, SolanaRpcSettings } from "@wxmr/shared";
 import { Icon, TokenIcon } from "./BridgeIcons";
 import { DonateSection } from "./DonateSection";
 
@@ -39,7 +39,11 @@ export function WalletButton() {
   );
 }
 
-export function BridgeShell({ children }: { children: ReactNode }) {
+export function BridgeShell({ children, activeView = "bridge", onViewChange }: {
+  children: ReactNode;
+  activeView?: "bridge" | "swap";
+  onViewChange?: (view: "bridge" | "swap") => void;
+}) {
   const pathname = usePathname();
   return (
     <div className="site-shell">
@@ -49,19 +53,39 @@ export function BridgeShell({ children }: { children: ReactNode }) {
       <header className="site-header">
         <Link href="/" className="wordmark" aria-label="wXMR home">
           <TokenIcon token="xmr" />
-          <span>
-            wXMR<span className="wordmark-dot">.</span>
+          <span className="brand-copy">
+            <strong>Monero Bridge</strong>
+            <span>Wrapped Monero on Solana</span>
           </span>
         </Link>
         <nav className="site-nav" aria-label="Main navigation">
           <Link
             href="/"
-            aria-current={pathname === "/" ? "page" : undefined}
-            className={pathname === "/" ? "active" : ""}
+            aria-current={pathname === "/" && activeView === "bridge" ? "page" : undefined}
+            className={pathname === "/" && activeView === "bridge" ? "active" : ""}
+            onClick={(event) => {
+              if (onViewChange) {
+                event.preventDefault();
+                onViewChange("bridge");
+              }
+            }}
           >
             Bridge
           </Link>
-          <Link href="/#swap">Swap</Link>
+          <Link
+            href="/#swap"
+            scroll={false}
+            aria-current={pathname === "/" && activeView === "swap" ? "page" : undefined}
+            className={pathname === "/" && activeView === "swap" ? "active" : ""}
+            onClick={(event) => {
+              if (onViewChange) {
+                event.preventDefault();
+                onViewChange("swap");
+              }
+            }}
+          >
+            Swap
+          </Link>
           <Link
             href="/transparency"
             aria-current={pathname === "/transparency" ? "page" : undefined}
@@ -85,6 +109,9 @@ export function BridgeShell({ children }: { children: ReactNode }) {
           <WalletButton />
         </div>
       </header>
+      <div className="source-banner">
+        <OpenSourceLink />
+      </div>
       <div className="site-layout">
         <div className="site-main-content">{children}</div>
         <aside className="donation-sidebar" aria-label="Support wXMR">

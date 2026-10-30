@@ -16,7 +16,7 @@ import { Icon, TokenIcon } from "@/components/BridgeIcons";
 import { MoneroQrScanner } from "@/components/MoneroQrScanner";
 import { BridgeDialog } from "@/components/BridgeDialog";
 import { BridgeStatus } from "@/components/BridgeStatus";
-import { ReserveOverview } from "@/components/ReserveOverview";
+import { compactXmr, ReserveOverview } from "@/components/ReserveOverview";
 import { JupiterSwap } from "@/components/JupiterSwap";
 import {
   PICONERO_PER_XMR,
@@ -30,6 +30,8 @@ import {
 const BASIS_POINTS = BigInt(10000);
 const DEPOSIT_FEE_BPS = 10;
 const WITHDRAW_FEE_BPS = 10;
+const TRANSFER_TABS = ["deposit", "withdraw", "swap"] as const;
+type TransferTab = (typeof TRANSFER_TABS)[number];
 const MIN_WITHDRAW_XMR = formatXmrAmount(MIN_XMR_WITHDRAWAL_PICONERO);
 const MIN_DEPOSIT_XMR = formatXmrAmount(MIN_XMR_DEPOSIT_PICONERO);
 const DEPOSIT_DUST_XMR = formatXmrAmount(XMR_DEPOSIT_DUST_PICONERO);
@@ -250,7 +252,7 @@ export default function Home() {
     claimPendingMint,
   } = useWxmrBridge();
 
-  const [activeTab, setActiveTab] = useState<"deposit" | "withdraw">("deposit");
+  const [activeTab, setActiveTab] = useState<TransferTab>("deposit");
   const [depositAccount, setDepositAccount] =
     useState<DepositAccountInfo | null>(null);
   const [withdrawals, setWithdrawals] = useState<WithdrawalInfo[]>([]);
@@ -264,6 +266,27 @@ export default function Home() {
   );
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+
+  const selectTab = (tab: TransferTab) => {
+    setActiveTab(tab);
+    setError(null);
+    const hash = tab === "deposit" ? "" : `#${tab}`;
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${window.location.pathname}${window.location.search}${hash}`,
+    );
+  };
+
+  useEffect(() => {
+    const readTab = () => {
+      const hash = window.location.hash;
+      setActiveTab(hash === "#swap" ? "swap" : hash === "#withdraw" ? "withdraw" : "deposit");
+    };
+    readTab();
+    window.addEventListener("hashchange", readTab);
+    return () => window.removeEventListener("hashchange", readTab);
+  }, []);
 
   // Withdrawal form state
   const [withdrawAmount, setWithdrawAmount] = useState("");
@@ -531,96 +554,148 @@ export default function Home() {
   };
 
   return (
-    <BridgeShell>
+    <BridgeShell
+      activeView={activeTab === "swap" ? "swap" : "bridge"}
+      onViewChange={(view) => selectTab(view === "swap" ? "swap" : "deposit")}
+    >
       <main id="main" className="bridge-main bridge-home">
-        <div className="page-intro">
-          <div>
-            <p className="eyebrow">
-              <span className="orange-dash" />
-              THE MONERO ↔ SOLANA BRIDGE
-            </p>
-            <h1>
-              Wrapped XMR. <span>Monero on Solana.</span>
-            </h1>
-            <p>Bridge Monero (XMR) to wrapped Monero (wXMR) on Solana, or redeem wXMR for native XMR.</p>
-          </div>
-          <Link href="/docs" className="intro-help">
-            <Icon name="info" />
-            New to wXMR?
-            <Icon name="arrow" />
-          </Link>
+        <h1 className="sr-only">Bridge Monero and wrapped XMR on Solana</h1>
+        <div className="balance-cards">
+          <section
+            className="xmr-card xmr-stat-card balance-card"
+            aria-label="Your wXMR balance"
+          >
+            <p>YOUR SOLANA XMR BALANCE</p>
+            <strong
+              className="wallet-balance"
+              title={isConnected && dataReady ? `${formatXmr(wxmrBalance)} wXMR` : undefined}
+            >
+              {isConnected ? dataReady ? compactXmr(wxmrBalance) : "—" : "0.0000"}
+            </strong>
+            <span>wXMR on Solana</span>
+          </section>
+          <section
+            className="xmr-card xmr-stat-card balance-card"
+            aria-label="Circulating supply"
+          >
+            <p>CIRCULATING SUPPLY</p>
+            <strong title={dataReady ? `${formatXmr(circulatingSupply)} wXMR` : undefined}>
+              {dataReady ? compactXmr(circulatingSupply) : "—"}
+            </strong>
+            <span>wXMR on Solana</span>
+          </section>
         </div>
-        <div className="bridge-workspace">
-          <section className="transfer-card" aria-labelledby="bridge-title">
+        <div
+          className="direction-selector"
+          role="tablist"
+          aria-label="Transfer type"
+          onKeyDown={(event) => {
+            const index = TRANSFER_TABS.indexOf(activeTab);
+            const next = event.key === "ArrowRight"
+              ? TRANSFER_TABS[(index + 1) % TRANSFER_TABS.length]
+              : event.key === "ArrowLeft"
+                ? TRANSFER_TABS[(index + TRANSFER_TABS.length - 1) % TRANSFER_TABS.length]
+                : event.key === "Home"
+                  ? "deposit"
+                  : event.key === "End" ? "swap" : null;
+            if (next) {
+              event.preventDefault();
+              selectTab(next);
+              document.getElementById(`tab-${next}`)?.focus();
+            }
+          }}
+        >
+          <button
+            id="tab-deposit"
+            type="button"
+            role="tab"
+            className={activeTab === "deposit" ? "selected" : ""}
+            aria-selected={activeTab === "deposit"}
+            aria-controls="bridge-panel"
+            tabIndex={activeTab === "deposit" ? 0 : -1}
+            onClick={() => selectTab("deposit")}
+          >
+            <span>Monero → Solana</span>
+            <small>Fee: {DEPOSIT_FEE_PERCENT}</small>
+          </button>
+          <button
+            id="tab-withdraw"
+            type="button"
+            role="tab"
+            className={activeTab === "withdraw" ? "selected" : ""}
+            aria-selected={activeTab === "withdraw"}
+            aria-controls="bridge-panel"
+            tabIndex={activeTab === "withdraw" ? 0 : -1}
+            onClick={() => selectTab("withdraw")}
+          >
+            <span>Solana → Monero</span>
+            <small>Fee: {withdrawFeePercent}</small>
+          </button>
+          <button
+            id="tab-swap"
+            type="button"
+            role="tab"
+            className={`swap-tab ${activeTab === "swap" ? "selected" : ""}`}
+            aria-selected={activeTab === "swap"}
+            aria-controls="swap-panel"
+            tabIndex={activeTab === "swap" ? 0 : -1}
+            onClick={() => selectTab("swap")}
+          >
+            <Icon name="switch" />
+            Swap
+          </button>
+        </div>
+        <div
+          id="bridge-panel"
+          className="bridge-workspace"
+          role="tabpanel"
+          aria-labelledby={activeTab === "withdraw" ? "tab-withdraw" : "tab-deposit"}
+          hidden={activeTab === "swap"}
+        >
+          <section
+            className={`transfer-card ${!isConnected ? "wallet-disconnected" : ""} ${activeTab === "deposit" ? "deposit-card" : "withdraw-card"}`}
+            aria-labelledby="bridge-title"
+          >
             <div className="card-heading">
-              <h2 id="bridge-title">Bridge</h2>
-              <span className="quiet-badge">
-                <Icon name="shield" />
-                0.1% each way
-              </span>
-            </div>
-            <div className="direction-selector" aria-label="Bridge direction">
-              <button
-                className={activeTab === "deposit" ? "selected" : ""}
-                aria-pressed={activeTab === "deposit"}
-                onClick={() => {
-                  setActiveTab("deposit");
-                  setError(null);
-                }}
-              >
-                <TokenIcon token="xmr" />
-                Monero
+              <h2 id="bridge-title">
                 <Icon name="arrow" />
-                Solana
-              </button>
-              <button
-                className="direction-reverse"
-                aria-label="Reverse bridge direction"
-                onClick={() => {
-                  setActiveTab(
-                    activeTab === "deposit" ? "withdraw" : "deposit",
-                  );
-                  setError(null);
-                }}
-              >
-                <Icon name="switch" />
-              </button>
-              <button
-                className={activeTab === "withdraw" ? "selected" : ""}
-                aria-pressed={activeTab === "withdraw"}
-                onClick={() => {
-                  setActiveTab("withdraw");
-                  setError(null);
-                }}
-              >
-                <TokenIcon token="wxmr" />
-                Solana
-                <Icon name="arrow" />
-                Monero
-              </button>
+                {activeTab === "deposit" ? "Bridge to Solana" : "Bridge to Monero"}
+              </h2>
             </div>
             {activeTab === "deposit" ? (
               <div className="deposit-introduction">
-                <div className="deposit-route">
-                  <div>
-                    <TokenIcon token="xmr" />
-                    <strong>XMR</strong>
-                    <span>Monero</span>
-                  </div>
-                  <span className="route-line">
-                    <Icon name="arrow" />
-                  </span>
-                  <div>
-                    <TokenIcon token="wxmr" />
-                    <strong>wXMR</strong>
-                    <span>Solana</span>
-                  </div>
-                </div>
-                <h3>Your Monero. On Solana.</h3>
+                {!isConnected ? (
+                  <TokenIcon token="xmr" className="deposit-connect-logo" />
+                ) : (
+                  <>
+                    <div className="deposit-route">
+                      <div>
+                        <TokenIcon token="xmr" />
+                        <strong>XMR</strong>
+                        <span>Monero</span>
+                      </div>
+                      <span className="route-line">
+                        <Icon name="arrow" />
+                      </span>
+                      <div>
+                        <TokenIcon token="wxmr" />
+                        <strong>wXMR</strong>
+                        <span>Solana</span>
+                      </div>
+                    </div>
+                    <h3>Your Monero. On Solana.</h3>
+                  </>
+                )}
                 <p>
-                  Send native XMR to your reusable deposit address.
-                  <br />
-                  Receive wXMR in your connected Solana wallet.
+                  {!isConnected ? (
+                    "Connect a Solana wallet to bridge native XMR onto Solana."
+                  ) : (
+                    <>
+                      Send native XMR to your reusable deposit address.
+                      <br />
+                      Receive wXMR in your connected Solana wallet.
+                    </>
+                  )}
                 </p>
               </div>
             ) : (
@@ -961,66 +1036,74 @@ export default function Home() {
                 : "Review your destination before signing."}
             </div>
           </section>
-          <div className="workspace-sidebar">
-            <ReserveOverview supply={circulatingSupply} ready={dataReady} />
-            <div className="journey-panel">
-              <div className="section-label">A SIMPLE PATH ACROSS</div>
-              <ol>
-                <li>
-                  <span>01</span>
-                  <div>
-                    <strong>
-                      {activeTab === "deposit"
-                        ? "Connect & get an address"
-                        : "Choose your amount"}
-                    </strong>
-                    <p>
-                      {activeTab === "deposit"
-                        ? "Use your Solana wallet to create a reusable Monero deposit address."
-                        : "Enter the wXMR to send, or the exact XMR you want to receive."}
-                    </p>
-                  </div>
-                </li>
-                <li>
-                  <span>02</span>
-                  <div>
-                    <strong>
-                      {activeTab === "deposit"
-                        ? "Send native XMR"
-                        : "Review & sign"}
-                    </strong>
-                    <p>
-                      {activeTab === "deposit"
-                        ? "Deposit at least 0.1 XMR. Wait for 10 Monero confirmations."
-                        : "Confirm your Monero destination and approve the request in your Solana wallet."}
-                    </p>
-                  </div>
-                </li>
-                <li>
-                  <span>03</span>
-                  <div>
-                    <strong>
-                      {activeTab === "deposit"
-                        ? "Receive wXMR"
-                        : "Receive native XMR"}
-                    </strong>
-                    <p>
-                      {activeTab === "deposit"
-                        ? "wXMR is minted to your wallet, minus the 0.1% bridge fee."
-                        : "The bridge processes your withdrawal. Follow its status below."}
-                    </p>
-                  </div>
-                </li>
-              </ol>
-              <Link href="/docs" className="text-link">
-                Understand the bridge
-                <Icon name="arrow" />
-              </Link>
-            </div>
-          </div>
         </div>
-        <JupiterSwap onSwapConfirmed={loadData} />
+        <div
+          id="swap-panel"
+          className="swap-workspace"
+          role="tabpanel"
+          aria-labelledby="tab-swap"
+          hidden={activeTab !== "swap"}
+        >
+          <JupiterSwap active={activeTab === "swap"} onSwapConfirmed={loadData} />
+        </div>
         <BridgeStatus owner={publicKey?.toBase58()} />
+        <div className={`workspace-sidebar ${activeTab === "swap" ? "swap-view" : ""}`}>
+          <ReserveOverview supply={circulatingSupply} ready={dataReady} />
+          {activeTab !== "swap" && <div className="journey-panel">
+            <div className="section-label">A SIMPLE PATH ACROSS</div>
+            <ol>
+              <li>
+                <span>01</span>
+                <div>
+                  <strong>
+                    {activeTab === "deposit"
+                      ? "Connect & get an address"
+                      : "Choose your amount"}
+                  </strong>
+                  <p>
+                    {activeTab === "deposit"
+                      ? "Use your Solana wallet to create a reusable Monero deposit address."
+                      : "Enter the wXMR to send, or the exact XMR you want to receive."}
+                  </p>
+                </div>
+              </li>
+              <li>
+                <span>02</span>
+                <div>
+                  <strong>
+                    {activeTab === "deposit"
+                      ? "Send native XMR"
+                      : "Review & sign"}
+                  </strong>
+                  <p>
+                    {activeTab === "deposit"
+                      ? "Deposit at least 0.1 XMR. Wait for 10 Monero confirmations."
+                      : "Confirm your Monero destination and approve the request in your Solana wallet."}
+                  </p>
+                </div>
+              </li>
+              <li>
+                <span>03</span>
+                <div>
+                  <strong>
+                    {activeTab === "deposit"
+                      ? "Receive wXMR"
+                      : "Receive native XMR"}
+                  </strong>
+                  <p>
+                    {activeTab === "deposit"
+                      ? "wXMR is minted to your wallet, minus the 0.1% bridge fee."
+                      : "The bridge processes your withdrawal. Follow its status below."}
+                  </p>
+                </div>
+              </li>
+            </ol>
+            <Link href="/docs" className="text-link">
+              Understand the bridge
+              <Icon name="arrow" />
+            </Link>
+          </div>}
+        </div>
         <section
           id="activity"
           className="activity-section"

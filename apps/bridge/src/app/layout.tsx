@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
+import "./classic.css";
 import { Providers } from "./providers";
 import { AnonymousAnalytics } from "@/components/AnonymousAnalytics";
 import { SITE_URL, SITE_TITLE, SITE_DESCRIPTION, pageMetadata } from "@/lib/site-metadata";

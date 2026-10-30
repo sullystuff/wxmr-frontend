@@ -1,0 +1,460 @@
+/* Original Monero Bridge presentation, with the current bridge components. */
+:root {
+  --dim: #888888;
+}
+body {
+  background-image:
+    url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cpath d='M30 0L30 60M0 30L60 30' stroke='%23ff6600' stroke-opacity='0.03' stroke-width='1'/%3E%3C/svg%3E"),
+    radial-gradient(ellipse at top, rgba(255, 102, 0, 0.03), transparent 50%);
+}
+
+.site-shell {
+  max-width: 960px;
+  padding: 32px;
+}
+.site-header {
+  height: auto;
+  min-height: 64px;
+  flex-wrap: wrap;
+  gap: 20px;
+  border: 0;
+}
+.wordmark {
+  gap: 16px;
+  letter-spacing: normal;
+}
+.wordmark .token-icon {
+  width: 48px;
+  height: 48px;
+}
+.brand-copy {
+  display: grid;
+  gap: 4px;
+}
+.brand-copy strong {
+  color: var(--primary);
+  font-size: 30px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.brand-copy > span {
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 400;
+}
+.header-actions {
+  gap: 12px;
+}
+.network-label {
+  display: none;
+}
+.site-nav {
+  order: 3;
+  width: 100%;
+  height: 34px;
+  gap: 24px;
+  font-size: 13px;
+}
+.site-nav a.active {
+  color: var(--primary);
+}
+.site-nav a.active::after {
+  display: none;
+}
+.source-banner {
+  margin-top: 18px;
+}
+.site-layout {
+  display: block;
+}
+.site-main-content {
+  width: 100%;
+}
+.bridge-main {
+  padding-top: 32px;
+}
+.bridge-home {
+  display: block;
+}
+.balance-cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 32px;
+}
+.balance-card {
+  min-width: 0;
+  padding: 20px;
+}
+.balance-card p {
+  color: var(--muted);
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+.balance-card strong {
+  display: block;
+  font-size: 24px;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+  font-variant-numeric: tabular-nums;
+}
+.balance-card .wallet-balance {
+  color: var(--primary);
+}
+.balance-card > span {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+.bridge-workspace {
+  display: block;
+}
+.direction-selector {
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  margin-bottom: 24px;
+}
+.direction-selector button {
+  flex: 0 1 auto;
+  min-height: 60px;
+  padding: 10px 20px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--card);
+  color: var(--muted);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+.direction-selector button {
+  flex-direction: column;
+  gap: 3px;
+}
+.direction-selector small {
+  font-size: 12px;
+  font-weight: 400;
+}
+.direction-selector .swap-tab {
+  flex-direction: row;
+  gap: 8px;
+}
+.direction-selector button.selected {
+  border-color: var(--primary);
+  background: linear-gradient(135deg, var(--xmr-orange), var(--xmr-orange-dark));
+  color: white;
+  box-shadow: 0 4px 14px rgba(255, 102, 0, 0.25);
+}
+.direction-selector button.selected small {
+  color: rgba(255, 255, 255, 0.8);
+}
+.bridge-home [role="tabpanel"][hidden] {
+  display: none;
+}
+.swap-workspace .jupiter-swap-panel {
+  margin: 0;
+  box-shadow: 0 0 40px var(--primary-glow);
+}
+.xmr-card,
+.transfer-card,
+.bridge-status-panel,
+.jupiter-swap-panel,
+.reserve-panel,
+.journey-panel,
+.donation-section {
+  background: linear-gradient(135deg, var(--card), #1a1a1a);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.transfer-card {
+  padding: 24px;
+  box-shadow: 0 0 40px var(--primary-glow);
+}
+.xmr-card:hover {
+  border-color: var(--border-hover);
+  box-shadow: 0 0 30px var(--primary-glow);
+}
+.card-heading h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: normal;
+}
+.card-heading h2 > svg {
+  width: 18px;
+  height: 18px;
+  color: var(--primary);
+  transform: rotate(90deg);
+}
+.deposit-introduction {
+  padding: 22px 0 30px;
+}
+.deposit-introduction p {
+  font-size: 14px;
+}
+.wallet-disconnected.deposit-card .deposit-introduction {
+  padding-top: 26px;
+  padding-bottom: 24px;
+}
+.deposit-connect-logo {
+  width: 64px;
+  height: 64px;
+  margin: 0 auto 16px;
+}
+.wallet-disconnected.deposit-card .fee-breakdown,
+.wallet-disconnected.deposit-card .card-bottom-note,
+.wallet-disconnected.deposit-card .connect-action > p {
+  display: none;
+}
+.wallet-disconnected.deposit-card .connect-action {
+  text-align: center;
+  padding-bottom: 40px;
+}
+.wallet-disconnected.deposit-card .connect-action .wallet-adapter-dropdown {
+  width: auto;
+}
+.wallet-adapter-button,
+.wallet-placeholder,
+.connect-action .wallet-adapter-button,
+.connect-action .wallet-placeholder,
+.primary-button {
+  background: linear-gradient(135deg, var(--xmr-orange), var(--xmr-orange-dark)) !important;
+  border: 1px solid var(--xmr-orange) !important;
+  border-radius: 8px !important;
+  color: white !important;
+  font-size: 15px !important;
+  font-weight: 600 !important;
+  min-height: 48px;
+  height: auto !important;
+  padding: 12px 24px !important;
+  box-shadow: 0 4px 14px rgba(255, 102, 0, 0.25) !important;
+}
+.wallet-adapter-button:hover,
+.primary-button:hover:not(:disabled) {
+  background: linear-gradient(135deg, var(--xmr-orange-light), var(--xmr-orange)) !important;
+  border-color: var(--xmr-orange-light) !important;
+}
+.amount-field,
+.destination-input,
+.receive-field {
+  background: var(--background);
+  border-color: var(--border);
+}
+.amount-field:focus-within,
+.destination-input:focus-within {
+  border-color: var(--primary);
+}
+.receive-field input,
+.review-amounts > div:last-child dd {
+  color: var(--primary);
+}
+.fee-breakdown {
+  font-size: 13px;
+}
+.fee-breakdown dd {
+  color: var(--foreground);
+}
+.bridge-status-panel {
+  margin-top: 32px;
+  padding: 24px;
+}
+.section-heading h2,
+.bridge-status-panel h2,
+.reserve-panel h2,
+.jupiter-swap-copy h2 {
+  font-size: 20px;
+  font-weight: 700;
+  letter-spacing: normal;
+}
+.eyebrow {
+  letter-spacing: 0.8px;
+}
+.bridge-health {
+  border-radius: 6px;
+}
+.bridge-health.is-online {
+  color: #4ade80;
+}
+.bridge-health.is-online .status-dot {
+  background: #22c55e;
+}
+.bridge-live-grid {
+  gap: 24px;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.2fr);
+}
+.liquidity-number {
+  color: var(--primary);
+  font-size: 26px;
+}
+.workspace-sidebar {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  padding: 0;
+  margin-top: 32px;
+}
+.workspace-sidebar.swap-view {
+  grid-template-columns: minmax(0, 1fr);
+}
+.reserve-panel,
+.journey-panel {
+  padding: 24px;
+}
+.reserve-panel h2 {
+  margin-top: 14px;
+}
+.reserve-number > div {
+  font-size: 24px;
+  color: var(--foreground);
+}
+.journey-panel p {
+  max-width: none;
+  font-size: 12px;
+}
+.journey-panel strong,
+.journey-panel .text-link {
+  font-size: 13px;
+}
+.jupiter-swap-panel {
+  margin: 32px 0 0;
+  padding: 24px;
+  gap: 24px;
+}
+.jupiter-swap-copy > p {
+  font-size: 14px;
+}
+.jupiter-swap-card,
+.swap-amount-block {
+  border-radius: 8px;
+}
+.swap-amount-row input::placeholder,
+.swap-output-amount.is-empty {
+  color: var(--muted);
+}
+.swap-reverse {
+  background: var(--surface);
+}
+.swap-reverse:hover {
+  background: var(--border);
+}
+.activity-section {
+  margin-top: 32px;
+}
+.activity-empty {
+  min-height: 160px;
+}
+.empty-icon {
+  background: var(--card);
+  color: var(--primary);
+}
+.bottom-information {
+  margin-top: 32px;
+}
+.donation-sidebar {
+  position: static;
+  width: 100%;
+  margin: 0 0 32px;
+}
+.donation-section {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 340px);
+  padding: 24px;
+  gap: 24px;
+}
+.donation-copy {
+  background: linear-gradient(135deg, var(--xmr-orange), var(--xmr-orange-dark));
+  color: white;
+}
+.site-footer {
+  flex-wrap: wrap;
+  font-size: 12px;
+}
+.footer-links {
+  gap: 16px;
+}
+
+@media (max-width: 700px) {
+  .site-shell {
+    padding: 20px 16px;
+  }
+  .site-header {
+    padding: 0;
+    gap: 18px;
+  }
+  .brand-copy strong {
+    font-size: 23px;
+  }
+  .brand-copy > span {
+    font-size: 12px;
+  }
+  .wordmark {
+    gap: 10px;
+  }
+  .wordmark .token-icon {
+    width: 38px;
+    height: 38px;
+  }
+  .header-actions {
+    margin-left: auto;
+  }
+  .header-actions .wallet-adapter-button,
+  .header-actions .wallet-placeholder {
+    padding: 10px 14px !important;
+    font-size: 13px !important;
+  }
+  .bridge-main {
+    padding-top: 24px;
+  }
+  .balance-card {
+    padding: 16px;
+  }
+  .balance-card p {
+    font-size: 11px;
+  }
+  .balance-card strong {
+    font-size: 21px;
+  }
+  .direction-selector button {
+    padding: 10px 14px;
+    font-size: 14px;
+  }
+  .transfer-card,
+  .bridge-status-panel,
+  .reserve-panel,
+  .journey-panel,
+  .jupiter-swap-panel,
+  .donation-section {
+    padding: 20px;
+  }
+  .bridge-live-grid,
+  .workspace-sidebar,
+  .donation-section,
+  .jupiter-swap-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .bridge-home .jupiter-swap-panel {
+    margin-bottom: 0;
+  }
+  .footer-links {
+    width: 100%;
+    margin: 0;
+  }
+}
+@media (max-width: 420px) {
+  .site-header {
+    justify-content: center;
+  }
+  .header-actions {
+    margin-left: 0;
+  }
+  .site-nav {
+    justify-content: center;
+    gap: 18px;
+  }
+  .direction-selector button {
+    flex: 1 1 auto;
+  }
+}

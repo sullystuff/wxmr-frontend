@@ -13,7 +13,10 @@ import { SWAP_TOKENS, SWAP_FEE_ACCOUNT, parseSwapAmount, formatSwapAmount,
 
 const PENDING_KEY = "wxmr:jupiter-pending:v1";
 
-export function JupiterSwap({ onSwapConfirmed }: { onSwapConfirmed?: () => void }) {
+export function JupiterSwap({ active = true, onSwapConfirmed }: {
+  active?: boolean;
+  onSwapConfirmed?: () => void;
+}) {
   const { connection } = useConnection();
   const wallet = useWallet();
   const [side, setSide] = useState<"buy" | "sell">("buy");
@@ -61,13 +64,13 @@ export function JupiterSwap({ onSwapConfirmed }: { onSwapConfirmed?: () => void 
   }, []);
 
   useEffect(() => {
-    if (!quote || !pageVisible) return;
+    if (!quote || !pageVisible || !active) return;
     const timer = window.setInterval(() => setClock(Date.now()), 1000);
     return () => window.clearInterval(timer);
-  }, [quote, pageVisible]);
+  }, [quote, pageVisible, active]);
 
   useEffect(() => {
-    if (!units || busy || pending || recoveryBlocked || !pageVisible || selectingToken) {
+    if (!units || busy || pending || recoveryBlocked || !pageVisible || !active || selectingToken) {
       setQuoteLoading(false);
       return;
     }
@@ -96,7 +99,7 @@ export function JupiterSwap({ onSwapConfirmed }: { onSwapConfirmed?: () => void 
     };
     timer = window.setTimeout(refresh, 450);
     return () => { clearTimeout(timer); controller.abort(); };
-  }, [units, side, token, busy, pending, recoveryBlocked, pageVisible, selectingToken]);
+  }, [units, side, token, busy, pending, recoveryBlocked, pageVisible, active, selectingToken]);
 
   const invalidateQuote = () => { setQuote(null); setQuoteError(""); setError(""); setMessage(""); };
 
@@ -182,7 +185,7 @@ export function JupiterSwap({ onSwapConfirmed }: { onSwapConfirmed?: () => void 
         <p className="eyebrow">TRADE ON SOLANA</p>
         <h2 id="swap-title">Swap wXMR.</h2>
         <p>Swap between wrapped Monero and Solana tokens, right here.</p>
-        <p className="jupiter-swap-note">Moving native XMR? Use the bridge above.</p>
+        <p className="jupiter-swap-note">Moving native XMR? Choose a bridge tab above.</p>
       </div>
       <div className="jupiter-swap-card">
         <div className="swap-card-heading"><h3>Swap</h3><span>Solana</span></div>

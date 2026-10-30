@@ -11,7 +11,7 @@ export function BridgeStatus({ owner }: { owner?: string }) {
   const target = h?.unlocks.find(u => BigInt(u.availableAtomic) >= BigInt(h.targetAtomic));
   return <section className="bridge-status-panel" aria-labelledby="bridge-status-title">
     <div className="section-heading">
-      <div><p className="eyebrow">LIVE BRIDGE ACTIVITY</p><h2 id="bridge-status-title">A clear view of the queue.</h2></div>
+      <div><p className="eyebrow">LIVE BRIDGE ACTIVITY</p><h2 id="bridge-status-title">Bridge heartbeat</h2></div>
       <span className={`bridge-health ${online ? "is-online" : "is-offline"}`}>
         <span className={`status-dot ${online ? "" : "muted-dot"}`} />
         {loading ? "Checking bridge…" : !h || error ? "Status unavailable" : online ? "Bridge online" : "Bridge offline"}

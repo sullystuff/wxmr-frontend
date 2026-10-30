@@ -4,20 +4,10 @@
 /* Tailwind v4 skips node_modules, so scan the shared package source for utility classes. */
 @source "../../../../packages/shared/src";
 
-/* Main bridge application. These tokens are local to this app; the swap app
-   continues to use the shared design system. */
+/* Keep the original shared Monero palette across the bridge application. */
 :root {
-  --background: #111210;
-  --foreground: #f0f0e9;
-  --card: #191a17;
-  --card-hover: #22231f;
-  --border: #30312b;
-  --border-hover: #595b4f;
-  --muted: #a0a295;
-  --primary: #fb8b50;
-  --xmr-orange: #f47a3b;
-  --surface: #20211d;
-  --dim: #75786c;
+  --surface: #1f1f1f;
+  --dim: #888888;
   --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
   color-scheme: dark;
 }
@@ -26,12 +16,7 @@ html {
   scroll-padding-top: 24px;
 }
 body {
-  background: var(--background);
-  background-image: none;
   -webkit-font-smoothing: antialiased;
-}
-body::before {
-  display: none;
 }
 button,
 a,
