@@ -384,6 +384,9 @@
   border-color: var(--border-hover);
   color: var(--primary);
 }
+.xswap-route-idle {
+  margin-bottom: 14px;
+}
 .xswap-route-idle p {
   color: var(--muted);
   font-size: 13px;

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { BridgeDialog } from "../BridgeDialog";
 import { Icon } from "../BridgeIcons";
 import { AssetIcon, ChainGlyph } from "./AssetIcon";
@@ -37,6 +37,13 @@ export function AssetPicker({
   const selectedChain = assets.find((asset) => asset.id === selected)?.chain;
   const [chain, setChain] = useState(selectedChain ?? chains[0]?.[0] ?? "");
   const [query, setQuery] = useState("");
+  const search = useRef<HTMLInputElement>(null);
+
+  // After the dialog has recorded what to return focus to. autoFocus would run before it.
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => search.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, []);
 
   const needle = query.trim().toLowerCase();
   const shown = usable.filter((asset) =>
@@ -57,17 +64,16 @@ export function AssetPicker({
         placeholder="Search by symbol or name"
         value={query}
         maxLength={40}
-        autoFocus
+        ref={search}
         onChange={(event) => setQuery(event.target.value)}
       />
       <div className="xswap-picker">
-        <div className="xswap-picker-chains" role="tablist" aria-label="Chains" aria-orientation="vertical">
+        <div className="xswap-picker-chains" role="group" aria-label="Chains">
           {chains.map(([id, name]) => (
             <button
               key={id}
               type="button"
-              role="tab"
-              aria-selected={!needle && chain === id}
+              aria-pressed={!needle && chain === id}
               className={!needle && chain === id ? "selected" : ""}
               onClick={() => {
                 setChain(id);

@@ -12,9 +12,12 @@ import { Icon } from "./BridgeIcons";
 type Mode = "camera" | "image" | "paste";
 
 export function MoneroQrScanner({
+  addressOnly = false,
   onScan,
   onClose,
 }: {
+  /** For forms with no use for a requested amount: then the scanner must not promise one. */
+  addressOnly?: boolean;
   onScan: (request: MoneroPaymentRequest) => void;
   onClose: () => void;
 }) {
@@ -231,8 +234,9 @@ export function MoneroQrScanner({
         </button>
       </div>
       <p className="scanner-description">
-        Scan a receive QR code. If it includes an amount, we’ll use it as the
-        exact XMR amount to receive.
+        {addressOnly
+          ? "Scan a receive QR code. Only its address is used here."
+          : "Scan a receive QR code. If it includes an amount, we’ll use it as the exact XMR amount to receive."}
       </p>
       <div className="scanner-tabs" aria-label="QR input method">
         {(["camera", "image", "paste"] as const).map((item) => (
@@ -317,7 +321,7 @@ export function MoneroQrScanner({
                 MONERO REQUEST FOUND
               </span>
               <p>{decoded.address}</p>
-              {decoded.amount && (
+              {decoded.amount && !addressOnly && (
                 <strong>Exact receive: {decoded.amount} XMR</strong>
               )}
               <button

@@ -3,6 +3,7 @@
 export const SWAP_API_URL = (process.env.NEXT_PUBLIC_SWAP_API_URL || "https://swap-api.wxmr.io").replace(/\/$/, "");
 
 export const XMR_ASSET_ID = "XMR.Monero";
+export const USDC_SOL_ASSET_ID = "USDC.Solana";
 
 export interface SwapAsset {
   id: string;
@@ -107,12 +108,22 @@ export interface TimelineStep {
   detail?: string;
 }
 
+export interface OrderAsset {
+  id: string;
+  symbol: string;
+  decimals: number;
+  chain: string;
+  chainName: string;
+}
+
 export interface SwapOrder {
   id: string;
   status: SwapStatus;
   kind: SwapQuote["kind"];
   from: string;
   to: string;
+  fromAsset: OrderAsset;
+  toAsset: OrderAsset;
   amountIn: string;
   estimatedOut: string;
   minOut: string;
@@ -126,11 +137,12 @@ export interface SwapOrder {
     requiredConfirmations: number | null;
     tx: string | null;
     network: string;
+    acceptsMore: boolean;
   };
   reservePath: "fast" | "slow" | null;
   reserveHeldUntil: number | null;
   payout: { amount: string | null; tx: string | null; txKey: string | null };
-  refund: { amount: string | null; asset: string | null; tx: string | null; txKey: string | null; reason: string | null };
+  refund: { amount: string | null; asset: OrderAsset | null; tx: string | null; txKey: string | null; reason: string | null };
   timeline: TimelineStep[];
   events: { at: number; status: string; message: string }[];
   createdAt: number;
@@ -158,10 +170,18 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     if (error instanceof DOMException && error.name === "AbortError") throw error;
     throw new SwapApiError("The swap service cannot be reached right now.", "unreachable", 0);
   }
-  const body = (await response.json().catch(() => ({}))) as Record<string, string> & T;
-  if (!response.ok) {
-    throw new SwapApiError(body.message || "The swap service returned an error.", body.error || "error", response.status, body);
+  // Reading can still abort. That has to surface as an abort, not look like an empty success.
+  const text = await response.text();
+  let body: (Record<string, string> & T) | null = null;
+  try {
+    body = JSON.parse(text) as Record<string, string> & T;
+  } catch {
+    body = null;
   }
+  if (!response.ok) {
+    throw new SwapApiError(body?.message || "The swap service returned an error.", body?.error || "error", response.status, body ?? {});
+  }
+  if (!body) throw new SwapApiError("The swap service sent an unreadable response.", "bad_response", response.status);
   return body;
 }
 
@@ -209,7 +229,7 @@ export function unitsToInput(value: bigint | string, decimals: number): string {
 }
 
 /** For display: grouped, trimmed, keeping `significant` digits of anything under 1. */
-export function formatUnits(value: bigint | string, decimals: number, maxFraction = 6): string {
+export function formatUnits(value: bigint | string, decimals: number, maxFraction = 8): string {
   const amount = BigInt(value);
   const scale = BigInt(10) ** BigInt(decimals);
   const whole = amount / scale;
@@ -288,7 +308,19 @@ export function rememberSwap(swap: RecentSwap): void {
   }
 }
 
-/** The address format to ask for, in the placeholder of an address field. */
-export function addressHint(chainName: string): string {
-  return `${chainName} address`;
+/** USDC on Solana is where every other route meets, so against XMR there is nothing for Chainflip to do. */
+export function routeUsesChainflip(from: string, to: string): boolean {
+  const pair = [from, to];
+  return !(pair.includes(XMR_ASSET_ID) && pair.includes(USDC_SOL_ASSET_ID));
+}
+
+/** What happens if the swap is rejected, in the terms that are true for this route. */
+export function refundNotice(from: string, to: string): string {
+  if (!routeUsesChainflip(from, to)) {
+    return "This route runs on Jupiter and the wXMR bridge, without Chainflip. If it cannot finish, your funds go back to your refund address, less network and bridge fees.";
+  }
+  if (from === XMR_ASSET_ID) {
+    return "Powered by Chainflip. If Chainflip's AML check rejects this swap, your funds come back to your refund address as XMR. The amount depends on the market price at that time, less network and bridge fees.";
+  }
+  return "Powered by Chainflip. A deposit that fails Chainflip's AML check is not swapped: it is refunded to your refund address.";
 }

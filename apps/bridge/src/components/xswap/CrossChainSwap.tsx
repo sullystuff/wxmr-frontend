@@ -17,7 +17,9 @@ import {
   formatUsd,
   parseUnits,
   readRecentSwaps,
+  refundNotice,
   rememberSwap,
+  routeUsesChainflip,
   swapApi,
   unitsToInput,
   type RecentSwap,
@@ -128,11 +130,6 @@ function AddressField({
   );
 }
 
-/** Enough of an address to recognize at a glance, in prose. */
-function shortAddress(address: string): string {
-  return address.length > 22 ? `${address.slice(0, 10)}…${address.slice(-10)}` : address;
-}
-
 export function CrossChainSwap({ active }: { active: boolean }) {
   const wallet = useWallet();
   const [assets, setAssets] = useState<SwapAsset[]>([]);
@@ -148,6 +145,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
   const [boost, setBoost] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [quote, setQuote] = useState<SwapQuote | null>(null);
+  const [quotedKey, setQuotedKey] = useState<string | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<{ message: string; minAmount?: string } | null>(null);
   const [clock, setClock] = useState(0);
@@ -207,9 +205,9 @@ export function CrossChainSwap({ active }: { active: boolean }) {
     return () => window.clearInterval(timer);
   }, [quote, pageVisible, active]);
 
-  // Reserves matter on any XMR route's page, including before an amount is entered.
+  // Reserves matter out of XMR, including before an amount is entered. Bridge health matters both ways.
   useEffect(() => {
-    if (!active || !pageVisible || !fromIsXmr || swapId) return;
+    if (!active || !pageVisible || !(fromIsXmr || toIsXmr) || swapId) return;
     const controller = new AbortController();
     const load = () => swapApi.reserves(controller.signal).then(setReserves).catch(() => undefined);
     void load();
@@ -218,9 +216,11 @@ export function CrossChainSwap({ active }: { active: boolean }) {
       clearInterval(timer);
       controller.abort();
     };
-  }, [active, pageVisible, fromIsXmr, swapId]);
+  }, [active, pageVisible, fromIsXmr, toIsXmr, swapId]);
 
   const amountKey = units?.toString() ?? null;
+  // Everything that changes the price. A quote only counts for the exact inputs it was made for.
+  const quoteKey = `${from}|${to}|${amountKey}|${slippageBps ?? "auto"}|${boost}`;
   useEffect(() => {
     setQuoteError(null);
     if (!amountKey || amountKey === "0" || !active || !pageVisible || picking || swapId || reviewOpen) {
@@ -237,6 +237,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
         const result = await swapApi.quote({ from, to, amount: amountKey, slippageBps: slippageBps ?? undefined, boost }, controller.signal);
         if (controller.signal.aborted) return;
         setQuote(result);
+        setQuotedKey(quoteKey);
         setQuoteError(null);
         setClock(Date.now());
       } catch (error) {
@@ -260,29 +261,11 @@ export function CrossChainSwap({ active }: { active: boolean }) {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [amountKey, from, to, slippageBps, boost, active, pageVisible, picking, swapId, reviewOpen]);
+  }, [quoteKey, amountKey, from, to, slippageBps, boost, active, pageVisible, picking, swapId, reviewOpen]);
 
   const secondsLeft = quote ? Math.max(0, Math.ceil((quote.expiresAt - clock) / 1000)) : null;
-  const shownQuote = quote && quote.from === from && quote.to === to && quote.amountIn === amountKey ? quote : null;
+  const shownQuote = quote && quotedKey === quoteKey ? quote : null;
   const outText = shownQuote && toAsset ? formatUnits(shownQuote.estimatedOut, toAsset.decimals) : "0";
-
-  const selectAsset = (side: "deposit" | "receive", id: string) => {
-    // Choosing what is already on the other side flips the swap, rather than dead-ending.
-    if (id === (side === "deposit" ? to : from)) {
-      setFrom(to);
-      setTo(from);
-      setRefund(destination);
-      setDestination(refund);
-    } else if (side === "deposit") {
-      if (id !== from) setRefund("");
-      setFrom(id);
-    } else {
-      if (id !== to) setDestination("");
-      setTo(id);
-    }
-    setQuote(null);
-    setQuoteError(null);
-  };
 
   const reverse = () => {
     const nextAmount = shownQuote && toAsset ? unitsToInput(shownQuote.estimatedOut, toAsset.decimals) : "";
@@ -295,6 +278,27 @@ export function CrossChainSwap({ active }: { active: boolean }) {
     setQuoteError(null);
   };
 
+  const selectAsset = (side: "deposit" | "receive", id: string) => {
+    // Choosing what is already on the other side flips the swap, rather than dead-ending.
+    if (id === (side === "deposit" ? to : from)) {
+      reverse();
+      return;
+    }
+    if (side === "deposit") {
+      if (id !== from) {
+        setRefund("");
+        // "0.5" means something else entirely in the new asset.
+        setAmount("");
+      }
+      setFrom(id);
+    } else {
+      if (id !== to) setDestination("");
+      setTo(id);
+    }
+    setQuote(null);
+    setQuoteError(null);
+  };
+
   const canReview =
     Boolean(shownQuote) &&
     !quoteLoading &&
@@ -303,8 +307,11 @@ export function CrossChainSwap({ active }: { active: boolean }) {
     refund.trim().length > 0 &&
     destination.trim().length > 0;
 
+  const amountInvalid = amount.trim().length > 0 && units === null;
   const actionLabel = !units
-    ? "Enter an amount"
+    ? amountInvalid
+      ? "Check the amount"
+      : "Enter an amount"
     : quoteError
       ? "Change the amount"
       : !shownQuote
@@ -327,7 +334,8 @@ export function CrossChainSwap({ active }: { active: boolean }) {
         quote.expiresAt - Date.now() > 5_000
           ? quote
           : await swapApi.quote({ from: quote.from, to: quote.to, amount: quote.amountIn, slippageBps: slippageBps ?? undefined, boost });
-      if (BigInt(fresh.minOut) < BigInt(quote.minOut) && fresh !== quote) {
+      if (fresh !== quote && (BigInt(fresh.minOut) < BigInt(quote.minOut) || BigInt(fresh.estimatedOut) < BigInt(quote.estimatedOut))) {
+        // What they confirmed is no longer on offer. They get to see the new numbers first.
         setQuote(fresh);
         setCreateError("The price moved. Check the new amounts and confirm again.");
         return;
@@ -349,6 +357,11 @@ export function CrossChainSwap({ active }: { active: boolean }) {
     }
   }, [quote, destination, refund, slippageBps, boost]);
 
+  // Once a request is on its way, a corrected address could not reach it. So the dialog stays.
+  const closeReview = () => {
+    if (!creatingRef.current) setReviewOpen(false);
+  };
+
   const leaveSwap = () => {
     setSwapId(null);
     setAmount("");
@@ -367,7 +380,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
   };
 
   if (swapId) {
-    return <SwapProgress id={swapId} assets={assets} active={active} onStartAnother={leaveSwap} />;
+    return <SwapProgress id={swapId} active={active} onStartAnother={leaveSwap} />;
   }
 
   const walletAddress = wallet.publicKey?.toBase58();
@@ -381,10 +394,12 @@ export function CrossChainSwap({ active }: { active: boolean }) {
         <div className="xswap-card">
           <div className="xswap-card-heading">
             <h2 id="xswap-title">Swap</h2>
-            <a className="xswap-powered" href="https://chainflip.io" target="_blank" rel="noopener noreferrer">
-              Powered by <b>Chainflip</b>
-              <Icon name="external" />
-            </a>
+            {routeUsesChainflip(from, to) && (
+              <a className="xswap-powered" href="https://chainflip.io" target="_blank" rel="noopener noreferrer">
+                Powered by <b>Chainflip</b>
+                <Icon name="external" />
+              </a>
+            )}
           </div>
 
           {assetsError && (
@@ -410,7 +425,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
                 />
                 <small>{formatUsd(shownQuote?.usdIn) ?? " "}</small>
               </div>
-              <button type="button" className="xswap-asset-button" aria-label={`Deposit asset: ${fromAsset?.symbol ?? ""}`} onClick={() => setPicking("deposit")}>
+              <button type="button" className="xswap-asset-button" aria-label={`Deposit asset: ${fromAsset ? `${fromAsset.symbol} on ${fromAsset.chainName}` : from}`} onClick={() => setPicking("deposit")}>
                 {fromAsset && <AssetIcon symbol={fromAsset.symbol} chain={fromAsset.chain} />}
                 <span>
                   <strong>{fromAsset?.symbol ?? from.split(".")[0]}</strong>
@@ -434,7 +449,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
                 </output>
                 <small>{formatUsd(shownQuote?.usdOut) ?? " "}</small>
               </div>
-              <button type="button" className="xswap-asset-button" aria-label={`Receive asset: ${toAsset?.symbol ?? ""}`} onClick={() => setPicking("receive")}>
+              <button type="button" className="xswap-asset-button" aria-label={`Receive asset: ${toAsset ? `${toAsset.symbol} on ${toAsset.chainName}` : to}`} onClick={() => setPicking("receive")}>
                 {toAsset && <AssetIcon symbol={toAsset.symbol} chain={toAsset.chain} />}
                 <span>
                   <strong>{toAsset?.symbol ?? to.split(".")[0]}</strong>
@@ -444,6 +459,11 @@ export function CrossChainSwap({ active }: { active: boolean }) {
               </button>
             </div>
 
+            {amountInvalid && fromAsset && (
+              <p className="field-error xswap-quote-error" role="alert">
+                Use digits and a dot, with up to {fromAsset.decimals} decimal places.
+              </p>
+            )}
             {quoteError && (
               <p className="field-error xswap-quote-error" role="alert">
                 {quoteError.message}
@@ -459,7 +479,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
               <AddressField
                 id="xswap-refund"
                 label="Refund address"
-                help={`Your ${fromAsset?.symbol ?? "deposit"} comes back here if the swap cannot finish, including a failed AML check.`}
+                help={`Your funds come back here as ${fromAsset?.symbol ?? "your deposit"} if the swap cannot finish${routeUsesChainflip(from, to) ? ", including a failed AML check" : ""}.`}
                 chain={fromAsset?.chain}
                 chainName={fromAsset?.chainName}
                 value={refund}
@@ -491,9 +511,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
           </button>
           <p className="xswap-aml">
             <Icon name="shield" />
-            <span>
-              Swaps are powered by Chainflip. A deposit that fails an AML check is not swapped: it is refunded to your refund address.
-            </span>
+            <span>{refundNotice(from, to)}</span>
           </p>
         </div>
 
@@ -553,15 +571,15 @@ export function CrossChainSwap({ active }: { active: boolean }) {
             </button>
           </div>
           <p className="muted small">
-            How far below the estimate Chainflip may fill your swap. If it cannot, your deposit is refunded rather than swapped at a worse price. Auto uses Chainflip&apos;s
+            How far below the estimate your swap may fill. If it cannot, your funds are refunded rather than swapped at a worse price. Auto uses Chainflip&apos;s
             recommendation for this pair and size.
           </p>
-          <div className="xswap-slippage" role="radiogroup" aria-label="Price protection">
-            <button type="button" role="radio" aria-checked={slippageBps === null} className={slippageBps === null ? "selected" : ""} onClick={() => setSlippageBps(null)}>
+          <div className="xswap-slippage" role="group" aria-label="Price protection">
+            <button type="button" aria-pressed={slippageBps === null} className={slippageBps === null ? "selected" : ""} onClick={() => setSlippageBps(null)}>
               Auto
             </button>
             {SLIPPAGE_CHOICES.map((choice) => (
-              <button key={choice} type="button" role="radio" aria-checked={slippageBps === choice} className={slippageBps === choice ? "selected" : ""} onClick={() => setSlippageBps(choice)}>
+              <button key={choice} type="button" aria-pressed={slippageBps === choice} className={slippageBps === choice ? "selected" : ""} onClick={() => setSlippageBps(choice)}>
                 {choice / 100}%
               </button>
             ))}
@@ -573,10 +591,10 @@ export function CrossChainSwap({ active }: { active: boolean }) {
       )}
 
       {reviewOpen && shownQuote && fromAsset && toAsset && (
-        <BridgeDialog labelledBy="xswap-review-title" onClose={() => setReviewOpen(false)}>
+        <BridgeDialog labelledBy="xswap-review-title" onClose={closeReview}>
           <div className="card-heading">
             <h2 id="xswap-review-title">Review swap</h2>
-            <button className="icon-button" onClick={() => setReviewOpen(false)} aria-label="Close swap review">
+            <button className="icon-button" disabled={creating} onClick={closeReview} aria-label="Close swap review">
               <Icon name="close" />
             </button>
           </div>
@@ -584,7 +602,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
             <div>
               <dt>You send</dt>
               <dd>
-                {formatUnits(shownQuote.amountIn, fromAsset.decimals)} {fromAsset.symbol} on {fromAsset.chainName}
+                {formatUnits(shownQuote.amountIn, fromAsset.decimals, fromAsset.decimals)} {fromAsset.symbol} on {fromAsset.chainName}
               </dd>
             </div>
             <div>
@@ -615,10 +633,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
           {shownQuote.reserve && <ReserveNotice reserves={reserves} quote={shownQuote} />}
           <p className="xswap-aml">
             <Icon name="shield" />
-            <span>
-              Powered by Chainflip. If this swap fails an AML check, your funds are refunded to <b>{shortAddress(refund.trim())}</b>
-              {fromIsXmr ? " as XMR, minus network and bridge fees." : "."} Addresses cannot be changed after this.
-            </span>
+            <span>{refundNotice(from, to)} Addresses cannot be changed after this.</span>
           </p>
           {createError && (
             <p className="field-error" role="alert">
@@ -634,6 +649,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
 
       {scanning && (
         <MoneroQrScanner
+          addressOnly
           onScan={({ address }) => {
             if (scanning === "refund") setRefund(address);
             else setDestination(address);

@@ -8,11 +8,13 @@ import { AssetIcon } from "./AssetIcon";
 import {
   SwapApiError,
   XMR_ASSET_ID,
+  USDC_SOL_ASSET_ID,
   explorerTxUrl,
   formatUnits,
+  refundNotice,
+  routeUsesChainflip,
   swapApi,
   unitsToInput,
-  type SwapAsset,
   type SwapOrder,
   type SwapStatus,
 } from "@/lib/swap-api";
@@ -51,14 +53,18 @@ function timeLeft(expiresAt: number, now: number): string {
   return `${minutes}m ${(seconds % 60).toString().padStart(2, "0")}s`;
 }
 
+/** Whether this swap can still change. Only an address we keep watching can revive after expiring. */
+function isFinal(swap: SwapOrder): boolean {
+  if (TERMINAL.includes(swap.status)) return true;
+  return swap.status === "expired" && swap.from !== XMR_ASSET_ID && swap.from !== USDC_SOL_ASSET_ID;
+}
+
 export function SwapProgress({
   id,
-  assets,
   active,
   onStartAnother,
 }: {
   id: string;
-  assets: SwapAsset[];
   active: boolean;
   onStartAnother: () => void;
 }) {
@@ -72,12 +78,17 @@ export function SwapProgress({
     let timer: number | undefined;
     let stopped = false;
     const load = async () => {
+      if (document.hidden) {
+        // Nobody is looking. Check again soon, and fetch the moment they are back.
+        timer = window.setTimeout(load, POLL_MS);
+        return;
+      }
       try {
         const next = await swapApi.order(id, controller.signal);
         if (stopped) return;
         setSwap(next);
         setError("");
-        if (!TERMINAL.includes(next.status)) timer = window.setTimeout(load, POLL_MS);
+        if (!isFinal(next)) timer = window.setTimeout(load, POLL_MS);
       } catch (err) {
         if (stopped || controller.signal.aborted) return;
         if (err instanceof SwapApiError && err.status === 404) {
@@ -130,18 +141,19 @@ export function SwapProgress({
     );
   }
 
-  const from = assets.find((asset) => asset.id === swap.from);
-  const to = assets.find((asset) => asset.id === swap.to);
-  const fromDecimals = from?.decimals ?? 12;
-  const toDecimals = to?.decimals ?? 12;
-  const fromSymbol = from?.symbol ?? swap.from.split(".")[0];
-  const toSymbol = to?.symbol ?? swap.to.split(".")[0];
+  const fromDecimals = swap.fromAsset.decimals;
+  const toDecimals = swap.toAsset.decimals;
+  const fromSymbol = swap.fromAsset.symbol;
+  const toSymbol = swap.toAsset.symbol;
   const fromIsXmr = swap.from === XMR_ASSET_ID;
-  const refundDecimals = assets.find((asset) => asset.id === swap.refund.asset)?.decimals ?? fromDecimals;
-  const refundSymbol = assets.find((asset) => asset.id === swap.refund.asset)?.symbol ?? fromSymbol;
+  const refundDecimals = swap.refund.asset?.decimals ?? fromDecimals;
+  const refundSymbol = swap.refund.asset?.symbol ?? fromSymbol;
   const awaiting = swap.status === "awaiting_deposit";
-  // Once a deposit is seen the address stays up only while the swap could still take more of it.
-  const showAddress = swap.deposit.address && (awaiting || (swap.status === "confirming" && swap.deposit.received !== null && BigInt(swap.deposit.received) < BigInt(swap.amountIn)));
+  const received = BigInt(swap.deposit.received ?? 0);
+  const amountIn = BigInt(swap.amountIn);
+  // The backend knows when more is still part of this swap: after that, more is lost or sent back.
+  const showAddress = Boolean(swap.deposit.address) && swap.deposit.acceptsMore;
+  const stillToSend = received > BigInt(0) && received < amountIn ? amountIn - received : amountIn;
   const required = swap.deposit.requiredConfirmations;
   const confirmations = swap.deposit.confirmations ?? 0;
   const expiresAt = swap.deposit.expiresAt;
@@ -153,16 +165,18 @@ export function SwapProgress({
         <div className="xswap-card-heading">
           <div>
             <p className="eyebrow">
-              {formatUnits(swap.amountIn, fromDecimals)} {fromSymbol} → {toSymbol}
+              {formatUnits(swap.amountIn, fromDecimals, fromDecimals)} {fromSymbol} → {toSymbol}
             </p>
             <h2 id="xswap-status-title" aria-live="polite">
               {STATUS_HEADINGS[swap.status]}
             </h2>
           </div>
-          <a className="xswap-powered" href="https://chainflip.io" target="_blank" rel="noopener noreferrer">
-            Powered by <b>Chainflip</b>
-            <Icon name="external" />
-          </a>
+          {routeUsesChainflip(swap.from, swap.to) && (
+            <a className="xswap-powered" href="https://chainflip.io" target="_blank" rel="noopener noreferrer">
+              Powered by <b>Chainflip</b>
+              <Icon name="external" />
+            </a>
+          )}
         </div>
 
         {error && (
@@ -177,12 +191,12 @@ export function SwapProgress({
             {showAddress && (
               <div className="xswap-deposit">
                 <div className="xswap-deposit-amount">
-                  {from && <AssetIcon symbol={from.symbol} chain={from.chain} />}
+                  <AssetIcon symbol={fromSymbol} chain={swap.fromAsset.chain} />
                   <div>
-                    <span className="field-label">Send exactly</span>
+                    <span className="field-label">{received > BigInt(0) ? `${formatUnits(received, fromDecimals, fromDecimals)} ${fromSymbol} received. Send the remaining` : "Send exactly"}</span>
                     <strong>
-                      <CopyAddress address={unitsToInput(swap.amountIn, fromDecimals)} label={`${fromSymbol} amount`} className="xswap-copy-amount">
-                        {formatUnits(swap.amountIn, fromDecimals, fromDecimals)} {fromSymbol}
+                      <CopyAddress address={unitsToInput(stillToSend, fromDecimals)} label={`${fromSymbol} amount`} className="xswap-copy-amount">
+                        {formatUnits(stillToSend, fromDecimals, fromDecimals)} {fromSymbol}
                       </CopyAddress>
                     </strong>
                     <small>on {swap.deposit.network}. Only {fromSymbol} on {swap.deposit.network}: anything else sent here is lost.</small>
@@ -263,6 +277,12 @@ export function SwapProgress({
                       Transaction key, to prove this payment: <code className="xswap-tx">{swap.payout.txKey}</code>
                     </p>
                   )}
+                  {swap.refund.amount && (
+                    <p className="small">
+                      Part of this swap could not fill: {formatUnits(swap.refund.amount, refundDecimals, refundDecimals)} {refundSymbol} went back to your refund address.{" "}
+                      {swap.refund.tx && <TxLink asset={swap.refund.asset?.id ?? swap.from} tx={swap.refund.tx} label="View refund transaction" />}
+                    </p>
+                  )}
                 </div>
               </div>
             )}
@@ -277,7 +297,7 @@ export function SwapProgress({
                       : "Your funds are on their way back to your refund address"}
                   </strong>
                   {swap.refund.reason && <p className="small">{swap.refund.reason}</p>}
-                  {swap.refund.tx && <TxLink asset={swap.refund.asset ?? swap.from} tx={swap.refund.tx} label="View refund transaction" />}
+                  {swap.refund.tx && <TxLink asset={swap.refund.asset?.id ?? swap.from} tx={swap.refund.tx} label="View refund transaction" />}
                   {swap.refund.txKey && (
                     <p className="small muted">
                       Transaction key: <code className="xswap-tx">{swap.refund.txKey}</code>
@@ -292,7 +312,7 @@ export function SwapProgress({
                 <Icon name="clock" />
                 <div>
                   <strong>No deposit arrived in time</strong>
-                  <p className="small">Nothing was taken. {fromIsXmr ? "If XMR arrives at this address later, it is swapped at the live price, or returned." : "Start a new swap for a new address."}</p>
+                  <p className="small">Nothing was taken. {fromIsXmr ? "If XMR arrives at this address later, it is swapped at the live price, or returned to your refund address if that is below your minimum." : "Start a new swap for a new address."}</p>
                 </div>
               </div>
             )}
@@ -363,7 +383,7 @@ export function SwapProgress({
                 <div>
                   <dt>Received</dt>
                   <dd>
-                    {formatUnits(swap.deposit.received, fromDecimals)} {fromSymbol}
+                    {formatUnits(swap.deposit.received, fromDecimals, fromDecimals)} {fromSymbol}
                     {swap.deposit.tx && (
                       <>
                         {" "}
@@ -413,10 +433,10 @@ export function SwapProgress({
 
         <p className="xswap-aml">
           <Icon name="shield" />
-          <span>A deposit that fails an AML check is not swapped: it is refunded to your refund address.</span>
+          <span>{refundNotice(swap.from, swap.to)}</span>
         </p>
         <button type="button" className="text-button xswap-another" onClick={onStartAnother}>
-          {TERMINAL.includes(swap.status) || swap.status === "expired" ? "Start a new swap" : "Back to the swap form"}
+          {isFinal(swap) || swap.status === "expired" ? "Start a new swap" : "Back to the swap form"}
           <Icon name="arrow" />
         </button>
       </div>

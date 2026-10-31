@@ -182,7 +182,7 @@ export function RoutePanel({
           </p>
           <ul>
             <li>
-              <Icon name="check" /> Native assets, not wrapped
+              <Icon name="check" /> Assets on their own chains
             </li>
             <li>
               <Icon name="check" /> A refund address on every swap
@@ -233,6 +233,11 @@ export function RoutePanel({
         </>
       )}
 
+      {reserves?.bridgeOnline === false && (fromAsset?.id === XMR_ASSET_ID || toAsset?.id === XMR_ASSET_ID) && (
+        <p className="xswap-warning" role="status">
+          The wXMR bridge is offline right now, so a swap that has to go through it will take longer than shown here. Funds stay safe and it resumes when the bridge is back.
+        </p>
+      )}
       {fromAsset?.id === XMR_ASSET_ID && <ReserveNotice reserves={reserves} quote={quote} />}
       {toAsset?.id === XMR_ASSET_ID && quote && (
         <p className="xswap-route-note muted small">

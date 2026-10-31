@@ -281,7 +281,9 @@ export default function Home() {
   useEffect(() => {
     const readTab = () => {
       const hash = window.location.hash;
-      setActiveTab(hash === "#swap" ? "swap" : hash === "#withdraw" ? "withdraw" : "deposit");
+      // A swap link has to land on its swap, even if the fragment was lost along the way.
+      const swapLink = !hash && new URLSearchParams(window.location.search).has("swap");
+      setActiveTab(hash === "#swap" || swapLink ? "swap" : hash === "#withdraw" ? "withdraw" : "deposit");
     };
     readTab();
     window.addEventListener("hashchange", readTab);

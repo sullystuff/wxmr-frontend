@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { explorerTxUrl, formatDuration, formatUnits, formatUsd, parseUnits, unitsToInput } from "../src/lib/swap-api";
+import { explorerTxUrl, formatDuration, formatUnits, formatUsd, parseUnits, refundNotice, routeUsesChainflip, unitsToInput } from "../src/lib/swap-api";
 
 test("parseUnits accepts what people type and refuses what cannot be exact", () => {
   assert.equal(parseUnits("0.05", 8), BigInt(5_000_000));
@@ -56,4 +56,26 @@ test("explorerTxUrl knows every chain, and nothing else", () => {
   assert.equal(explorerTxUrl("XMR.Monero", "abc"), "https://xmrchain.net/tx/abc");
   assert.equal(explorerTxUrl("TRX.Tron", "abc"), "https://tronscan.org/#/transaction/abc");
   assert.equal(explorerTxUrl("NOPE.Nowhere", "abc"), null);
+});
+
+test("only USDC on Solana against XMR skips Chainflip", () => {
+  assert.equal(routeUsesChainflip("BTC.Bitcoin", "USDC.Ethereum"), true);
+  assert.equal(routeUsesChainflip("BTC.Bitcoin", "XMR.Monero"), true);
+  assert.equal(routeUsesChainflip("XMR.Monero", "BTC.Bitcoin"), true);
+  assert.equal(routeUsesChainflip("XMR.Monero", "USDC.Solana"), false);
+  assert.equal(routeUsesChainflip("USDC.Solana", "XMR.Monero"), false);
+  assert.equal(routeUsesChainflip("USDC.Solana", "BTC.Bitcoin"), true);
+});
+
+test("the refund notice only promises what is true for the route", () => {
+  assert.match(refundNotice("BTC.Bitcoin", "XMR.Monero"), /Powered by Chainflip.*not swapped.*refunded to your refund address/);
+  assert.match(refundNotice("BTC.Bitcoin", "USDC.Ethereum"), /AML check/);
+  // Out of XMR the deposit is sold before Chainflip ever screens anything.
+  const fromXmr = refundNotice("XMR.Monero", "BTC.Bitcoin");
+  assert.match(fromXmr, /Powered by Chainflip/);
+  assert.match(fromXmr, /as XMR/);
+  assert.match(fromXmr, /market price/);
+  assert.doesNotMatch(fromXmr, /not swapped/);
+  const noChainflip = refundNotice("USDC.Solana", "XMR.Monero");
+  assert.doesNotMatch(noChainflip, /AML|Powered by/);
 });
