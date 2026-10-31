@@ -53,10 +53,14 @@ function timeLeft(expiresAt: number, now: number): string {
   return `${minutes}m ${(seconds % 60).toString().padStart(2, "0")}s`;
 }
 
+/** A deposit made just before a Chainflip channel expires can be witnessed for a while after. */
+const LATE_DEPOSIT_WINDOW_MS = 3 * 3_600_000;
+
 /** Whether this swap can still change. Only an address we keep watching can revive after expiring. */
 function isFinal(swap: SwapOrder): boolean {
   if (TERMINAL.includes(swap.status)) return true;
-  return swap.status === "expired" && swap.from !== XMR_ASSET_ID && swap.from !== USDC_SOL_ASSET_ID;
+  if (swap.status !== "expired" || swap.from === XMR_ASSET_ID || swap.from === USDC_SOL_ASSET_ID) return false;
+  return Date.now() > (swap.deposit.expiresAt ?? 0) + LATE_DEPOSIT_WINDOW_MS;
 }
 
 export function SwapProgress({
@@ -359,8 +363,8 @@ export function SwapProgress({
                 <p className="small muted">
                   {swap.reservePath === "fast"
                     ? heldUntil && now < heldUntil
-                      ? `Reserves are held for this swap until ${new Date(heldUntil).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}. Deposit by then to start after ${required} confirmation${required === 1 ? "" : "s"}.`
-                      : `Starts after ${required} confirmation${required === 1 ? "" : "s"}, as long as reserves still cover it when your deposit arrives.`
+                      ? `Reserves are set aside for this swap. It starts after ${required} confirmation${required === 1 ? "" : "s"}.`
+                      : `Starts after ${required} confirmation${required === 1 ? "" : "s"}, as long as reserves still cover it when your deposit is seen.`
                     : `Larger than our reserves: your XMR moves through the bridge first.`}
                 </p>
               </div>
@@ -436,7 +440,7 @@ export function SwapProgress({
           <span>{refundNotice(swap.from, swap.to)}</span>
         </p>
         <button type="button" className="text-button xswap-another" onClick={onStartAnother}>
-          {isFinal(swap) || swap.status === "expired" ? "Start a new swap" : "Back to the swap form"}
+          {TERMINAL.includes(swap.status) || swap.status === "expired" ? "Start a new swap" : "Back to the swap form"}
           <Icon name="arrow" />
         </button>
       </div>
