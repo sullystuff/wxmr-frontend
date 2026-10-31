@@ -111,6 +111,18 @@ accounts, sign swaps, or claim fees. Verify existing referral account ownership,
 fee-account mint and initialization, all four quotes, unsigned build simulation,
 and browser behavior before release.
 
+### Cross-chain swap
+
+The **Any chain** mode of the Swap tab is served by `wxmr-swap-backend-2`, a separate service on its own machine. Set its URL at build time:
+
+```bash
+NEXT_PUBLIC_SWAP_API_URL=https://swap-api.wxmr.io
+```
+
+Allow the site's origins on that service with `CORS_ORIGINS`, including the onion origin if there is one. If the service is
+down, only the Any chain mode is affected: the bridge tabs and the Jupiter swap keep working. The **wXMR on Solana**
+mode is the Jupiter swap described above, unchanged.
+
 ## 1. Build and run with PM2
 
 The PM2 config lives at the repo root (`ecosystem.config.js`). From the repo root:

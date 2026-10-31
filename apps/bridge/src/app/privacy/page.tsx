@@ -41,6 +41,11 @@ export default function PrivacyPage() {
             <p>Country data is provided by <a className="text-link" href="https://db-ip.com" rel="noreferrer">IP Geolocation by DB-IP</a> under the <a className="text-link" href="https://creativecommons.org/licenses/by/4.0/" rel="noreferrer">Creative Commons Attribution 4.0 license</a>. Only the downloaded country database is used; DB-IP receives no visitor lookup requests from us.</p>
           </section>
           <section>
+            <h2>Swapping between chains</h2>
+            <p>The Swap tab connects your browser to our swap server. To run a swap, it stores the amounts, the destination and refund addresses you enter, and the transaction records of that swap, and removes your addresses from its records 30 days after the swap ends. It keeps no record of your network address.</p>
+            <p>Addresses and amounts also reach the services a swap runs through. Chainflip receives what it needs to open and screen your swap. Swaps into or out of XMR also pass through Jupiter and the bridge on Solana, where a Monero address given to the bridge is public on-chain, so a swap can link it to the Solana activity around it. To keep the swap from being linked to your wallet, you can send from and receive at fresh addresses.</p>
+          </section>
+          <section>
             <h2>Bridge records are separate</h2>
             <p>Solana balances, token transfers, and bridge records are public. Records can associate a Solana wallet with Monero addresses, transfer amounts, and timing. These are operational blockchain records, separate from anonymous website statistics. Read the <Link className="text-link" href="/docs#privacy">bridge privacy explanation</Link> before transferring.</p>
             <p>The bridge can save wallet-related preferences and pending withdrawal information in your browser for its functionality. Those records are not sent to analytics. The statistics opt-out stores only a yes/no preference.</p>

@@ -31,6 +31,7 @@ export default function DocsPage() {
             <a href="#overview">What is wXMR?</a>
             <a href="#deposit">Monero → Solana</a>
             <a href="#withdraw">Solana → Monero</a>
+            <a href="#swap">Swap between chains</a>
             <a href="#fees">Fees & minimums</a>
             <a href="#verification">Verify the reserves</a>
             <a href="#privacy">Privacy across networks</a>
@@ -118,8 +119,52 @@ export default function DocsPage() {
                 wXMR amount; the original bridge fee is retained.
               </p>
             </section>
+            <section id="swap">
+              <span className="doc-number">04 / ANY CHAIN</span>
+              <h2>Swap between chains.</h2>
+              <p>
+                The Swap tab moves value between native assets on every chain{" "}
+                <a className="text-link" href="https://chainflip.io" target="_blank" rel="noopener noreferrer">Chainflip</a>{" "}
+                supports, plus native Monero. There is no wallet to connect: you
+                send from wherever your funds are, to a deposit address made for
+                that swap.
+              </p>
+              <ol className="doc-steps">
+                <li>
+                  <strong>Between other chains,</strong> such as BTC to USDC on
+                  Ethereum, Chainflip does the whole swap. We never hold your funds.
+                </li>
+                <li>
+                  <strong>Into XMR,</strong> Chainflip swaps your deposit to USDC
+                  on Solana. We buy wXMR with it through Jupiter, and the bridge
+                  unwraps it to your Monero address.
+                </li>
+                <li>
+                  <strong>Out of XMR,</strong> we run our own Monero wallet to give
+                  you a deposit address. We sell wXMR from our reserves on Solana
+                  through Jupiter, and Chainflip swaps the USDC to what you asked for.
+                </li>
+              </ol>
+              <h3>How long XMR takes</h3>
+              <p>
+                If our reserves cover your swap, it starts after 1 Monero
+                confirmation. If it is larger, your XMR has to move through the
+                bridge first: Monero does not let it be spent for 10 confirmations,
+                and the bridge then has to credit it. The Swap tab shows what we
+                hold right now and how long your swap will take, before you send
+                anything.
+              </p>
+              <h3>Refunds and AML checks</h3>
+              <p>
+                Chainflip screens deposits. A deposit that fails an AML check is
+                not swapped: it is refunded to the refund address you gave. The same
+                goes for a swap that cannot fill at or above its minimum. On a swap
+                out of XMR, a refund comes back as XMR, and the amount depends on
+                the price at that time, less network and bridge fees.
+              </p>
+            </section>
             <section id="fees">
-              <span className="doc-number">04 / THE NUMBERS</span>
+              <span className="doc-number">05 / THE NUMBERS</span>
               <h2>Clear fees. Both directions.</h2>
               <div className="doc-fee-table">
                 <div>
@@ -152,7 +197,7 @@ export default function DocsPage() {
               </p>
             </section>
             <section id="verification">
-              <span className="doc-number">05 / CHECK THE EVIDENCE</span>
+              <span className="doc-number">06 / CHECK THE EVIDENCE</span>
               <h2>Verify using your own tools.</h2>
               <p>
                 Native reserve proofs publish daily and include confirmed locked
@@ -181,7 +226,7 @@ export default function DocsPage() {
               </Link>
             </section>
             <section id="privacy">
-              <span className="doc-number">06 / PRIVACY ACROSS NETWORKS</span>
+              <span className="doc-number">07 / PRIVACY ACROSS NETWORKS</span>
               <h2>Know what becomes public.</h2>
               <p>
                 <strong>On Solana.</strong> wXMR balances and token transfers

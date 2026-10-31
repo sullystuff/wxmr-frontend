@@ -17,7 +17,7 @@ import { MoneroQrScanner } from "@/components/MoneroQrScanner";
 import { BridgeDialog } from "@/components/BridgeDialog";
 import { BridgeStatus } from "@/components/BridgeStatus";
 import { compactXmr, ReserveOverview } from "@/components/ReserveOverview";
-import { JupiterSwap } from "@/components/JupiterSwap";
+import { SwapPanel } from "@/components/SwapPanel";
 import {
   PICONERO_PER_XMR,
   MIN_XMR_DEPOSIT_PICONERO,
@@ -1044,7 +1044,7 @@ export default function Home() {
           aria-labelledby="tab-swap"
           hidden={activeTab !== "swap"}
         >
-          <JupiterSwap active={activeTab === "swap"} onSwapConfirmed={loadData} />
+          <SwapPanel active={activeTab === "swap"} onSwapConfirmed={loadData} />
         </div>
         <BridgeStatus owner={publicKey?.toBase58()} />
         <div className={`workspace-sidebar ${activeTab === "swap" ? "swap-view" : ""}`}>
