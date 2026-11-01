@@ -375,7 +375,7 @@ export function SwapProgress({
                 <progress value={Math.min(confirmations, required)} max={required} />
                 <p className="small muted">
                   {startsAnywayAt
-                    ? "Confirmations count once the whole amount has arrived, or when the swap starts with what has."
+                    ? "It starts once the whole amount has arrived and confirmed, or with what has arrived when that time is up."
                     : swap.reservePath === "fast"
                       ? heldUntil && now < heldUntil
                         ? `Reserves are held for this swap unless an older swap reaches its turn first. It starts after ${required} confirmation${required === 1 ? "" : "s"}.`
