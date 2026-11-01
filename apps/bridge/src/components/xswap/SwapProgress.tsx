@@ -224,10 +224,10 @@ export function SwapProgress({
                   <p className="muted small">
                     {now < startsAnywayAt ? (
                       <>
-                        Send the rest within <b>{timeLeft(startsAnywayAt, now)}</b>. After that the swap starts with what has arrived, and anything sent later is returned to your refund address, less a network fee.
+                        Send the rest within <b>{timeLeft(startsAnywayAt, now)}</b>. After that, what has arrived goes ahead on its own, or is returned if it is under the minimum. Anything sent later is returned to your refund address, less a network fee. Amounts under 0.001 XMR are not returned.
                       </>
                     ) : (
-                      "The swap is about to start with what has arrived. Do not send more: it would be returned to your refund address, less a network fee."
+                      "What has arrived is about to go ahead on its own. Do not send more: it would be returned to your refund address, less a network fee."
                     )}
                   </p>
                 ) : expiresAt && (
@@ -343,7 +343,7 @@ export function SwapProgress({
               </div>
             )}
 
-            {swap.needsAttention && swap.status !== "failed" && (
+            {swap.needsAttention && !["failed", "completed", "refunded"].includes(swap.status) && (
               <div className="notice" role="status">
                 <Icon name="info" />
                 <p>This swap is taking longer than it should, and has been flagged for an operator. Your funds are accounted for. Your swap ID is <code className="xswap-tx">{swap.id}</code>.</p>
@@ -375,7 +375,7 @@ export function SwapProgress({
                 <progress value={Math.min(confirmations, required)} max={required} />
                 <p className="small muted">
                   {startsAnywayAt
-                    ? "It starts once the whole amount has arrived and confirmed, or with what has arrived when that time is up."
+                    ? "It starts once the whole amount has arrived and confirmed, or goes ahead with what has arrived when that time is up. On the slow path that part still has to move through the bridge first."
                     : swap.reservePath === "fast"
                       ? heldUntil && now < heldUntil
                         ? `Reserves are held for this swap unless an older swap reaches its turn first. It starts after ${required} confirmation${required === 1 ? "" : "s"}.`

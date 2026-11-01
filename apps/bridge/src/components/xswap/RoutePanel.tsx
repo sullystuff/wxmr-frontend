@@ -85,8 +85,8 @@ export function ReserveNotice({ reserves, quote }: { reserves: SwapReserves | nu
         <p>
           <Icon name="check" />
           <span>
-            <b>Your swap starts after {plural(decision.confirmations, "Monero confirmation")}</b>, {formatDuration(decision.etaSeconds)}. We already hold enough wXMR to
-            cover it, and set it aside for you as soon as your deposit is seen on the network.
+            <b>Your swap starts after {plural(decision.confirmations, "Monero confirmation")}</b>, {formatDuration(decision.etaSeconds)}. We hold enough wXMR to
+            cover it right now, and hold it for you once your deposit is seen on the network, unless an older swap reaches its turn first.
           </span>
         </p>
       ) : (

@@ -157,6 +157,8 @@ export function CrossChainSwap({ active }: { active: boolean }) {
   const [recent, setRecent] = useState<RecentSwap[]>([]);
   const [scanning, setScanning] = useState<"refund" | "destination" | null>(null);
   const creatingRef = useRef(false);
+  /** A quote opens one swap. After a lost answer the same quote finds that swap, but after these it has nothing more to give. */
+  const usedQuotesRef = useRef(new Set<string>());
 
   const fromAsset = useMemo(() => assets.find((asset) => asset.id === from), [assets, from]);
   const toAsset = useMemo(() => assets.find((asset) => asset.id === to), [assets, to]);
@@ -327,11 +329,12 @@ export function CrossChainSwap({ active }: { active: boolean }) {
     creatingRef.current = true;
     setCreating(true);
     setCreateError("");
+    let tried = quote.id;
     try {
       // A quote about to lapse would come back as an error. Refresh it instead, and let
       // the user see the new number only if they have to confirm again.
       const fresh =
-        quote.expiresAt - Date.now() > 5_000
+        quote.expiresAt - Date.now() > 5_000 && !usedQuotesRef.current.has(quote.id)
           ? quote
           : await swapApi.quote({ from: quote.from, to: quote.to, amount: quote.amountIn, slippageBps: slippageBps ?? undefined, boost });
       if (fresh !== quote && (BigInt(fresh.minOut) < BigInt(quote.minOut) || BigInt(fresh.estimatedOut) < BigInt(quote.estimatedOut))) {
@@ -340,6 +343,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
         setCreateError("The price moved. Check the new amounts and confirm again.");
         return;
       }
+      tried = fresh.id;
       const swap = await swapApi.create({ quoteId: fresh.id, destinationAddress: destination.trim(), refundAddress: refund.trim() });
       const entry = { id: swap.id, from: swap.from, to: swap.to, amountIn: swap.amountIn, createdAt: swap.createdAt };
       rememberSwap(entry);
@@ -350,6 +354,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
       url.searchParams.set("swap", swap.id);
       window.history.replaceState(window.history.state, "", url);
     } catch (error) {
+      if (error instanceof SwapApiError && ["deposit_unavailable", "quote_not_found", "quote_expired"].includes(error.code)) usedQuotesRef.current.add(tried);
       setCreateError(error instanceof Error ? error.message : "Could not create this swap. No funds have moved.");
     } finally {
       creatingRef.current = false;
