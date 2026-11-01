@@ -43,6 +43,10 @@ export interface ReserveDecision {
   fastConfirmations: number;
   slowConfirmations: number;
   bridgeExempt: boolean;
+  /** The largest deposit that may start early, however much is held, in piconero. "0" means no limit. */
+  fastPathMax: string;
+  /** Whether that limit is why this swap does not start early. */
+  overFastPathMax: boolean;
 }
 
 export interface SwapQuote {
@@ -77,6 +81,7 @@ export interface SwapReserves {
   incomingFromTopups: string;
   minTopup: string;
   fastPathConfirmations: number;
+  fastPathMax: string;
   slowPathConfirmations: number;
   bridgeExempt: boolean;
   walletUnlockConfirmations: number;

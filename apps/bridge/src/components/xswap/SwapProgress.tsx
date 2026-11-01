@@ -365,7 +365,7 @@ export function SwapProgress({
                     ? heldUntil && now < heldUntil
                       ? `Reserves are set aside for this swap. It starts after ${required} confirmation${required === 1 ? "" : "s"}.`
                       : `Starts after ${required} confirmation${required === 1 ? "" : "s"}, as long as reserves still cover it when your deposit is seen.`
-                    : `Larger than our reserves: your XMR moves through the bridge first.`}
+                    : `Your XMR moves through the bridge first.`}
                 </p>
               </div>
             )}

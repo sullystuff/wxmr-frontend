@@ -147,8 +147,8 @@ export default function DocsPage() {
               </ol>
               <h3>How long XMR takes</h3>
               <p>
-                If our reserves cover your swap, it starts after 1 Monero
-                confirmation. If it is larger, your XMR has to move through the
+                If our reserves cover your swap and it is within the limit shown in the
+                form, it starts after 1 Monero confirmation. Otherwise your XMR has to move through the
                 bridge first: Monero does not let it be spent for 10 confirmations,
                 and the bridge then has to credit it. The Swap tab shows what we
                 hold right now and how long your swap will take, before you send

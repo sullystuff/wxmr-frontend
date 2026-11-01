@@ -40,6 +40,11 @@ export function ReserveNotice({ reserves, quote }: { reserves: SwapReserves | nu
   const unlock = reserves?.walletUnlockConfirmations ?? 10;
   const bridge = slow - unlock;
   const blockSeconds = reserves?.moneroBlockSeconds ?? 120;
+  const limit = BigInt(decision?.fastPathMax ?? reserves?.fastPathMax ?? "0");
+  const limitText = `${formatUnits(limit.toString(), 12)} XMR`;
+  const limitBelowReserves = limit > BigInt(0) && limit < BigInt(decision?.available ?? reserves?.availableForSwaps ?? "0");
+  // The limit only explains the wait when the reserves could otherwise have covered this swap.
+  const heldBackByLimit = decision !== undefined && decision.overFastPathMax && BigInt(decision.required) <= BigInt(decision.available);
   const explanation = (
     <>
       Your XMR first has to move through the bridge: {plural(unlock, "confirmation")} before Monero lets it be spent, then{" "}
@@ -64,7 +69,7 @@ export function ReserveNotice({ reserves, quote }: { reserves: SwapReserves | nu
       </div>
       {!decision ? (
         <p>
-          Swaps up to this size start after <b>{plural(fast, "Monero confirmation")}</b>, {blocksToTime(fast, blockSeconds)}. Larger swaps take{" "}
+          Swaps up to {limitBelowReserves ? limitText : "this size"} start after <b>{plural(fast, "Monero confirmation")}</b>, {blocksToTime(fast, blockSeconds)}. Larger swaps take{" "}
           <b>{plural(slow, "confirmation")}</b>, {blocksToTime(slow, blockSeconds)}. {explanation}
         </p>
       ) : decision.path === "fast" ? (
@@ -79,8 +84,10 @@ export function ReserveNotice({ reserves, quote }: { reserves: SwapReserves | nu
         <p>
           <Icon name="clock" />
           <span>
-            <b>Your swap starts after {plural(decision.confirmations, "Monero confirmation")}</b>, {formatDuration(decision.etaSeconds)}. It is larger than what we hold on
-            Solana. {explanation}
+            <b>Your swap starts after {plural(decision.confirmations, "Monero confirmation")}</b>, {formatDuration(decision.etaSeconds)}. {heldBackByLimit
+              ? `Swaps over ${limitText} wait longer even when we hold enough, because a Monero reorg could undo a large deposit after it has been paid out.`
+              : "It is larger than what we hold on Solana."}{" "}
+            {explanation}
           </span>
         </p>
       )}
