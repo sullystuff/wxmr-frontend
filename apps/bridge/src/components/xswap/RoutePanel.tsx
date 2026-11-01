@@ -38,7 +38,7 @@ export function ReserveNotice({ reserves, quote }: { reserves: SwapReserves | nu
   const fast = decision?.fastConfirmations ?? reserves?.fastPathConfirmations ?? 1;
   const slow = decision?.slowConfirmations ?? reserves?.slowPathConfirmations ?? 20;
   const unlock = reserves?.walletUnlockConfirmations ?? 10;
-  const bridge = reserves?.bridgeDepositConfirmations ?? slow - unlock;
+  const bridge = slow - unlock;
   const blockSeconds = reserves?.moneroBlockSeconds ?? 120;
   const explanation = (
     <>
