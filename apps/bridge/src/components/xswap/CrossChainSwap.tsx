@@ -354,7 +354,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
       url.searchParams.set("swap", swap.id);
       window.history.replaceState(window.history.state, "", url);
     } catch (error) {
-      if (error instanceof SwapApiError && ["deposit_unavailable", "quote_not_found", "quote_expired"].includes(error.code)) usedQuotesRef.current.add(tried);
+      if (error instanceof SwapApiError && ["deposit_unavailable", "quote_not_found", "quote_expired", "not_found"].includes(error.code)) usedQuotesRef.current.add(tried);
       setCreateError(error instanceof Error ? error.message : "Could not create this swap. No funds have moved.");
     } finally {
       creatingRef.current = false;
