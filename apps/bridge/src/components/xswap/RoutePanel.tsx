@@ -42,6 +42,9 @@ export function ReserveNotice({ reserves, quote }: { reserves: SwapReserves | nu
   const blockSeconds = reserves?.moneroBlockSeconds ?? 120;
   const limit = BigInt(decision?.fastPathMax ?? reserves?.fastPathMax ?? "0");
   const limitText = `${formatUnits(limit.toString(), 12)} XMR`;
+  // Before an amount is entered, larger swaps can be either figure.
+  const creditCap = BigInt(reserves?.bridgeFastCreditMax ?? "0");
+  const overCap = reserves?.slowPathConfirmationsOverCap ?? slow;
   const limitBelowReserves = limit > BigInt(0) && limit < BigInt(decision?.available ?? reserves?.availableForSwaps ?? "0");
   // The limit only explains the wait when the reserves could otherwise have covered this swap.
   const heldBackByLimit = decision !== undefined && decision.overFastPathMax && BigInt(decision.required) <= BigInt(decision.available);
@@ -70,7 +73,13 @@ export function ReserveNotice({ reserves, quote }: { reserves: SwapReserves | nu
       {!decision ? (
         <p>
           Swaps up to {limitBelowReserves ? limitText : "this size"} start after <b>{plural(fast, "Monero confirmation")}</b>, {blocksToTime(fast, blockSeconds)}. Larger swaps take{" "}
-          <b>{plural(slow, "confirmation")}</b>, {blocksToTime(slow, blockSeconds)}. {explanation}
+          <b>{plural(slow, "confirmation")}</b>, {blocksToTime(slow, blockSeconds)}
+          {creditCap > BigInt(0) && overCap !== slow && (
+            <>
+              , or <b>{plural(overCap, "confirmation")}</b> over {formatUnits(creditCap.toString(), 12)} XMR
+            </>
+          )}
+          . {explanation}
         </p>
       ) : decision.path === "fast" ? (
         <p>

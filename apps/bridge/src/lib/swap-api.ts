@@ -83,6 +83,9 @@ export interface SwapReserves {
   fastPathConfirmations: number;
   fastPathMax: string;
   slowPathConfirmations: number;
+  /** The relayer's cap on early credit. "0" means no cap to mention. A larger deposit takes slowPathConfirmationsOverCap. */
+  bridgeFastCreditMax: string;
+  slowPathConfirmationsOverCap: number;
   bridgeExempt: boolean;
   walletUnlockConfirmations: number;
   bridgeDepositConfirmations: number;
@@ -143,6 +146,8 @@ export interface SwapOrder {
     tx: string | null;
     network: string;
     acceptsMore: boolean;
+    /** With part of a deposit in: when the swap starts on what has arrived, and anything later goes back instead. */
+    startsAnywayAt: number | null;
   };
   reservePath: "fast" | "slow" | null;
   reserveHeldUntil: number | null;

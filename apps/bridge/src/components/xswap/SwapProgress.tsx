@@ -162,6 +162,9 @@ export function SwapProgress({
   const confirmations = swap.deposit.confirmations ?? 0;
   const expiresAt = swap.deposit.expiresAt;
   const heldUntil = swap.reserveHeldUntil;
+  const startsAnywayAt = swap.deposit.startsAnywayAt;
+  // Confirmations are not what it is waiting for any more. The bridge has it, however long that takes.
+  const waitingOnBridge = fromIsXmr && swap.reservePath === "slow" && required !== null && confirmations >= required;
 
   return (
     <section className="xswap" aria-labelledby="xswap-status-title">
@@ -217,7 +220,17 @@ export function SwapProgress({
                     Copy address
                   </CopyAddress>
                 </div>
-                {expiresAt && (
+                {startsAnywayAt ? (
+                  <p className="muted small">
+                    {now < startsAnywayAt ? (
+                      <>
+                        Send the rest within <b>{timeLeft(startsAnywayAt, now)}</b>. After that the swap starts with what has arrived, and anything sent later is returned to your refund address, less a network fee.
+                      </>
+                    ) : (
+                      "The swap is about to start with what has arrived. Do not send more: it would be returned to your refund address, less a network fee."
+                    )}
+                  </p>
+                ) : expiresAt && (
                   <p className="muted small">
                     {now < expiresAt ? (
                       <>
@@ -263,7 +276,7 @@ export function SwapProgress({
                   <strong>
                     {swap.deposit.received ? `${formatUnits(swap.deposit.received, fromDecimals)} ${fromSymbol} received` : "Deposit received"}
                   </strong>
-                  <p className="small muted">{fromIsXmr ? "Waiting for Monero confirmations." : "Waiting for confirmations on its network."} Nothing more to do.</p>
+                  <p className="small muted">{waitingOnBridge ? "Confirmed. Waiting for the bridge to credit it." : fromIsXmr ? "Waiting for Monero confirmations." : "Waiting for confirmations on its network."} Nothing more to do.</p>
                 </div>
               </div>
             )}
@@ -333,7 +346,7 @@ export function SwapProgress({
             {swap.needsAttention && swap.status !== "failed" && (
               <div className="notice" role="status">
                 <Icon name="info" />
-                <p>This swap is taking longer than it should and an operator has been alerted. Your funds are accounted for. Your swap ID is <code className="xswap-tx">{swap.id}</code>.</p>
+                <p>This swap is taking longer than it should, and has been flagged for an operator. Your funds are accounted for. Your swap ID is <code className="xswap-tx">{swap.id}</code>.</p>
               </div>
             )}
           </div>
@@ -361,11 +374,15 @@ export function SwapProgress({
                 </div>
                 <progress value={Math.min(confirmations, required)} max={required} />
                 <p className="small muted">
-                  {swap.reservePath === "fast"
-                    ? heldUntil && now < heldUntil
-                      ? `Reserves are set aside for this swap. It starts after ${required} confirmation${required === 1 ? "" : "s"}.`
-                      : `Starts after ${required} confirmation${required === 1 ? "" : "s"}, as long as reserves still cover it when your deposit is seen.`
-                    : `Your XMR moves through the bridge first.`}
+                  {startsAnywayAt
+                    ? "Confirmations count once the whole amount has arrived, or when the swap starts with what has."
+                    : swap.reservePath === "fast"
+                      ? heldUntil && now < heldUntil
+                        ? `Reserves are held for this swap unless an older swap reaches its turn first. It starts after ${required} confirmation${required === 1 ? "" : "s"}.`
+                        : `Starts after ${required} confirmation${required === 1 ? "" : "s"}, as long as reserves still cover it when your deposit is seen.`
+                      : waitingOnBridge
+                        ? "Your XMR is on its way through the bridge. The swap starts when it has been credited, or when reserves can cover it."
+                        : "Your XMR moves through the bridge first."}
                 </p>
               </div>
             )}
