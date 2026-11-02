@@ -45,6 +45,8 @@ function TxLink({ asset, tx, label }: { asset: string; tx: string; label: string
   );
 }
 
+const ALLOCATION_USUAL_MS = 30_000;
+
 function timeLeft(expiresAt: number, now: number): string {
   const seconds = Math.max(0, Math.floor((expiresAt - now) / 1000));
   const hours = Math.floor(seconds / 3600);
@@ -224,7 +226,7 @@ export function SwapProgress({
                   <p className="muted small">
                     {now < startsAnywayAt ? (
                       <>
-                        Send the rest within <b>{timeLeft(startsAnywayAt, now)}</b>. After that, what has arrived goes ahead on its own, or is returned if it is under the minimum. Anything sent later is returned to your refund address, less a network fee. Amounts under 0.001 XMR are not returned.
+                        Send the rest within <b>{timeLeft(startsAnywayAt, now)}</b>. After that, what has arrived goes ahead on its own, or is returned if it is under the minimum. Anything sent later is returned to your refund address, less a network fee. {fromIsXmr ? "Amounts under 0.001 XMR are not returned." : "Amounts under 1 USDC are not returned."}
                       </>
                     ) : (
                       "What has arrived is about to go ahead on its own. Do not send more: it would be returned to your refund address, less a network fee."
@@ -250,7 +252,7 @@ export function SwapProgress({
                 <span className="spinner" />
                 <div>
                   <strong>Opening your deposit address</strong>
-                  <p>This usually takes a few seconds.</p>
+                  <p>{now - swap.createdAt > ALLOCATION_USUAL_MS ? "This usually takes a few seconds, but the service is busy, and it can take several minutes. Nothing has been sent, and there is nothing to send until an address appears here. If it cannot be opened, this page will say so." : "This usually takes a few seconds."}</p>
                 </div>
               </div>
             )}

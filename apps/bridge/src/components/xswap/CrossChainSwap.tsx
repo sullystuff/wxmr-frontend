@@ -29,6 +29,9 @@ import {
 } from "@/lib/swap-api";
 
 const QUOTE_REFRESH_MS = 15_000;
+const ASSETS_RETRY_MS = 15_000;
+/** Only these are about the amount. Anything else, such as being busy, is not fixed by changing it. */
+const AMOUNT_ERRORS = ["below_minimum", "above_maximum", "price_impact"];
 const QUOTE_DEBOUNCE_MS = 450;
 const RESERVES_REFRESH_MS = 30_000;
 const ADDRESS_DEBOUNCE_MS = 350;
@@ -147,7 +150,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
   const [quote, setQuote] = useState<SwapQuote | null>(null);
   const [quotedKey, setQuotedKey] = useState<string | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
-  const [quoteError, setQuoteError] = useState<{ message: string; minAmount?: string } | null>(null);
+  const [quoteError, setQuoteError] = useState<{ message: string; code?: string; minAmount?: string } | null>(null);
   const [clock, setClock] = useState(0);
   const [pageVisible, setPageVisible] = useState(true);
   const [reviewOpen, setReviewOpen] = useState(false);
@@ -179,16 +182,25 @@ export function CrossChainSwap({ active }: { active: boolean }) {
   useEffect(() => {
     if (!active) return;
     const controller = new AbortController();
-    swapApi
-      .assets(controller.signal)
-      .then((list) => {
-        setAssets(list);
-        setAssetsError("");
-      })
-      .catch((error: unknown) => {
-        if (!controller.signal.aborted) setAssetsError(error instanceof Error ? error.message : "The swap service cannot be reached right now.");
-      });
-    return () => controller.abort();
+    let timer: number;
+    const load = () =>
+      swapApi
+        .assets(controller.signal)
+        .then((list) => {
+          setAssets(list);
+          setAssetsError("");
+        })
+        .catch((error: unknown) => {
+          if (controller.signal.aborted) return;
+          setAssetsError(error instanceof Error ? error.message : "The swap service cannot be reached right now.");
+          // Without the list the form cannot be used at all, so this keeps trying.
+          timer = window.setTimeout(load, ASSETS_RETRY_MS);
+        });
+    void load();
+    return () => {
+      controller.abort();
+      window.clearTimeout(timer);
+    };
   }, [active]);
 
   useEffect(() => {
@@ -246,7 +258,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
         if (controller.signal.aborted) return;
         setQuote(null);
         if (error instanceof SwapApiError) {
-          setQuoteError({ message: error.message, minAmount: error.details.minAmount });
+          setQuoteError({ message: error.message, code: error.code, minAmount: error.details.minAmount });
           if (error.status === 429) next = 30_000;
         } else {
           setQuoteError({ message: "Could not get a price. Trying again shortly." });
@@ -314,7 +326,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
     ? amountInvalid
       ? "Check the amount"
       : "Enter an amount"
-    : quoteError
+    : quoteError && AMOUNT_ERRORS.includes(quoteError.code ?? "")
       ? "Change the amount"
       : !shownQuote
         ? "Finding a price…"
