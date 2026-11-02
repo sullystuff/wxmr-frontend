@@ -31,7 +31,7 @@ import {
 const QUOTE_REFRESH_MS = 15_000;
 const ASSETS_RETRY_MS = 15_000;
 /** Only these are about the amount. Anything else, such as being busy, is not fixed by changing it. */
-const AMOUNT_ERRORS = ["below_minimum", "above_maximum", "price_impact"];
+const AMOUNT_ERRORS = ["below_minimum", "above_maximum", "price_impact", "invalid_request"];
 const QUOTE_DEBOUNCE_MS = 450;
 const RESERVES_REFRESH_MS = 30_000;
 const ADDRESS_DEBOUNCE_MS = 350;
