@@ -9,6 +9,8 @@ import {
   SwapApiError,
   XMR_ASSET_ID,
   USDC_SOL_ASSET_ID,
+  chainflipPageNote,
+  chainflipStatusLinks,
   explorerTxUrl,
   formatUnits,
   refundNotice,
@@ -167,6 +169,8 @@ export function SwapProgress({
   const startsAnywayAt = swap.deposit.startsAnywayAt;
   // Confirmations are not what it is waiting for any more. The bridge has it, however long that takes.
   const waitingOnBridge = fromIsXmr && swap.reservePath === "slow" && required !== null && confirmations >= required;
+  const chainflipLinks = chainflipStatusLinks(swap);
+  const chainflipNote = chainflipLinks.length > 0 ? chainflipPageNote(swap.kind) : null;
 
   return (
     <section className="xswap" aria-labelledby="xswap-status-title">
@@ -434,7 +438,19 @@ export function SwapProgress({
                   <CopyAddress address={swap.id} label="Swap ID" className="break-all" />
                 </dd>
               </div>
+              {chainflipLinks.map((link) => (
+                <div key={link.href}>
+                  <dt>Chainflip</dt>
+                  <dd>
+                    <a className="text-link small" href={link.href} target="_blank" rel="noopener noreferrer">
+                      {link.label}
+                      <Icon name="external" />
+                    </a>
+                  </dd>
+                </div>
+              ))}
             </dl>
+            {chainflipNote && <p className="small muted xswap-chainflip-note">{chainflipNote}</p>}
 
             {swap.events.length > 0 && (
               <details className="xswap-fees">

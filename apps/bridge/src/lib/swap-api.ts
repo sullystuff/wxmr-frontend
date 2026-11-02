@@ -153,6 +153,8 @@ export interface SwapOrder {
   reserveHeldUntil: number | null;
   payout: { amount: string | null; tx: string | null; txKey: string | null };
   refund: { amount: string | null; asset: OrderAsset | null; tx: string | null; txKey: string | null; reason: string | null };
+  /** Missing from a backend older than this field: the swap still works, with no link to Chainflip. */
+  chainflip?: { channelId: string | null; swapId: string | null; outChannelId: string | null; outSwapId: string | null };
   timeline: TimelineStep[];
   events: { at: number; status: string; message: string }[];
   createdAt: number;
@@ -285,6 +287,37 @@ export function explorerTxUrl(assetId: string, tx: string): string | null {
   const chain = assetId.split(".")[1] ?? "";
   const base = EXPLORERS[chain];
   return base ? `${base}${tx}` : null;
+}
+
+const CHAINFLIP_EXPLORER = "https://scan.chainflip.io";
+
+function chainflipPage(swapId: string | null, channelId: string | null): string | null {
+  if (swapId && /^\d+$/.test(swapId)) return `${CHAINFLIP_EXPLORER}/swaps/${swapId}`;
+  if (channelId && /^\d+-[A-Za-z]+-\d+$/.test(channelId)) return `${CHAINFLIP_EXPLORER}/channels/${channelId}`;
+  return null;
+}
+
+/**
+ * Chainflip's own pages for this swap: the swap once Chainflip has one, its channel until then.
+ * Built here from ids of a known shape, so a bad answer from the API can only ever open Chainflip's explorer.
+ */
+export function chainflipStatusLinks(swap: Pick<SwapOrder, "kind" | "chainflip">): { label: string; href: string }[] {
+  const ids = swap.chainflip;
+  if (!ids) return [];
+  const links: { label: string; href: string }[] = [];
+  const first = chainflipPage(ids.swapId, ids.channelId);
+  if (first) links.push({ label: "Swap status", href: first });
+  const out = chainflipPage(ids.outSwapId, ids.outChannelId);
+  // Out of XMR this channel is the swap itself. Into XMR, a second channel is only ever the way back.
+  if (out) links.push({ label: swap.kind === "to_xmr" ? "Refund status" : "Swap status", href: out });
+  return links;
+}
+
+/** Chainflip's page names this service's wallet on routes through it, which looks wrong unless someone says why. */
+export function chainflipPageNote(kind: SwapOrder["kind"]): string | null {
+  if (kind === "to_xmr") return "On Chainflip's page the destination is this service's Solana wallet: your USDC goes there on its way to XMR.";
+  if (kind === "from_xmr") return "On Chainflip's page the refund address is this service's Solana wallet: the USDC is sent from there. If Chainflip returns it, you get XMR back at your refund address.";
+  return null;
 }
 
 // ---- progress the browser should remember ------------------------------------

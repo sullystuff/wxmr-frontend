@@ -941,6 +941,10 @@
   overflow-wrap: anywhere;
   text-align: right;
 }
+.xswap-chainflip-note {
+  margin-top: 8px;
+  line-height: 1.45;
+}
 .xswap-events {
   display: grid;
   gap: 6px;

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { explorerTxUrl, formatDuration, formatUnits, formatUsd, parseUnits, refundNotice, routeUsesChainflip, unitsToInput } from "../src/lib/swap-api";
+import { chainflipPageNote, chainflipStatusLinks, explorerTxUrl, formatDuration, formatUnits, formatUsd, parseUnits, refundNotice, routeUsesChainflip, unitsToInput } from "../src/lib/swap-api";
 
 test("parseUnits accepts what people type and refuses what cannot be exact", () => {
   assert.equal(parseUnits("0.05", 8), BigInt(5_000_000));
@@ -78,4 +78,40 @@ test("the refund notice only promises what is true for the route", () => {
   assert.doesNotMatch(fromXmr, /not swapped/);
   const noChainflip = refundNotice("USDC.Solana", "XMR.Monero");
   assert.doesNotMatch(noChainflip, /AML|Powered by/);
+});
+
+test("chainflipStatusLinks opens the channel until Chainflip has a swap, then the swap", () => {
+  const none = { channelId: null, swapId: null, outChannelId: null, outSwapId: null };
+  const channel = "15521027-Bitcoin-233730";
+  assert.deepEqual(chainflipStatusLinks({ kind: "chainflip", chainflip: none }), []);
+  assert.deepEqual(chainflipStatusLinks({ kind: "chainflip", chainflip: { ...none, channelId: channel } }), [{ label: "Swap status", href: `https://scan.chainflip.io/channels/${channel}` }]);
+  assert.deepEqual(chainflipStatusLinks({ kind: "to_xmr", chainflip: { ...none, channelId: channel, swapId: "2005261" } }), [{ label: "Swap status", href: "https://scan.chainflip.io/swaps/2005261" }]);
+  // A later deposit to a channel is its own swap, with no channel of its own to name.
+  assert.deepEqual(chainflipStatusLinks({ kind: "to_xmr", chainflip: { ...none, swapId: "2005262" } }), [{ label: "Swap status", href: "https://scan.chainflip.io/swaps/2005262" }]);
+});
+
+test("chainflipStatusLinks names the last leg out of XMR as the swap, and a second channel into XMR as the refund", () => {
+  const none = { channelId: null, swapId: null, outChannelId: null, outSwapId: null };
+  const out = "15530000-Solana-147100";
+  assert.deepEqual(chainflipStatusLinks({ kind: "from_xmr", chainflip: { ...none, outChannelId: out } }), [{ label: "Swap status", href: `https://scan.chainflip.io/channels/${out}` }]);
+  assert.deepEqual(chainflipStatusLinks({ kind: "from_xmr", chainflip: { ...none, outChannelId: out, outSwapId: "2005300" } }), [{ label: "Swap status", href: "https://scan.chainflip.io/swaps/2005300" }]);
+  assert.deepEqual(chainflipStatusLinks({ kind: "to_xmr", chainflip: { channelId: "15521027-Bitcoin-233730", swapId: "2005261", outChannelId: out, outSwapId: null } }), [
+    { label: "Swap status", href: "https://scan.chainflip.io/swaps/2005261" },
+    { label: "Refund status", href: `https://scan.chainflip.io/channels/${out}` },
+  ]);
+});
+
+test("chainflipStatusLinks offers nothing rather than a page it cannot vouch for", () => {
+  const none = { channelId: null, swapId: null, outChannelId: null, outSwapId: null };
+  assert.deepEqual(chainflipStatusLinks({ kind: "to_xmr" }), [], "a backend from before this field");
+  for (const bad of ["https://evil.example/", "javascript:alert(1)", "../../evil", "1-Bitcoin-1/../../evil", "2005261?x=1", "", "1-Bit coin-1"]) {
+    assert.deepEqual(chainflipStatusLinks({ kind: "to_xmr", chainflip: { ...none, swapId: bad, channelId: bad } }), [], bad);
+    assert.deepEqual(chainflipStatusLinks({ kind: "from_xmr", chainflip: { ...none, outSwapId: bad, outChannelId: bad } }), [], bad);
+  }
+});
+
+test("chainflipPageNote explains this service's wallet on Chainflip's page, only on routes through it", () => {
+  assert.match(chainflipPageNote("to_xmr")!, /destination is this service's Solana wallet/);
+  assert.match(chainflipPageNote("from_xmr")!, /refund address is this service's Solana wallet/);
+  assert.equal(chainflipPageNote("chainflip"), null);
 });
