@@ -62,6 +62,8 @@ export interface SwapQuote {
   boost: boolean;
   boostAvailable: boolean;
   kind: "chainflip" | "to_xmr" | "from_xmr";
+  /** Older saved quotes predate service fees. */
+  serviceFeeBps?: number;
   steps: RouteStep[];
   fees: QuoteFee[];
   etaSeconds: number;
@@ -161,6 +163,8 @@ export interface SwapOrder {
   updatedAt: number;
   error: string | null;
   needsAttention: boolean;
+  /** Original quote, including its fixed service fee; absent on older deployments. */
+  quote?: SwapQuote | null;
 }
 
 export class SwapApiError extends Error {

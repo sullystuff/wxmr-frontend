@@ -314,6 +314,27 @@
   margin-top: 5px;
   font-size: 11px;
 }
+.xswap-service-fee {
+  margin: 16px 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.xswap-service-fee > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+}
+.xswap-service-fee strong {
+  color: var(--foreground);
+}
+.xswap-service-fee p {
+  margin: 6px 0 0;
+  color: var(--muted);
+}
 .xswap-action {
   justify-content: center;
   width: 100%;

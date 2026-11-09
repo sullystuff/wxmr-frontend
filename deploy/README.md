@@ -123,6 +123,16 @@ Allow the site's origins on that service with `CORS_ORIGINS`, including the onio
 down, only the Any chain mode is affected: the bridge tabs and the Jupiter swap keep working. The **wXMR on Solana**
 mode is the Jupiter swap described above, unchanged.
 
+Routes into or out of native XMR charge a **0.3% wXMR service fee**. The form, review and deposit page
+show the quoted percentage and estimated fee in USDC before funds are sent. The receive estimate
+already deducts it; bridge and network fees are listed separately. Chainflip-only routes have no
+wXMR service fee. The backend fixes each accepted swap's rate, so previously opened swaps keep
+their original fee.
+
+Deploy the matching backend fee update and set `SERVICE_FEE_BPS=30` in both its `api.env` and
+`worker.env` to enable the charge. The frontend reads the fee from each quote; deploying only
+the frontend does not turn on the fee.
+
 ## 1. Build and run with PM2
 
 The PM2 config lives at the repo root (`ecosystem.config.js`). From the repo root:

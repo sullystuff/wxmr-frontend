@@ -5,6 +5,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { CopyAddress } from "@wxmr/shared";
 import { Icon } from "../BridgeIcons";
 import { AssetIcon } from "./AssetIcon";
+import { ServiceFeeNotice } from "./ServiceFeeNotice";
 import {
   SwapApiError,
   XMR_ASSET_ID,
@@ -201,6 +202,7 @@ export function SwapProgress({
 
         <div className="xswap-status-grid">
           <div>
+            <ServiceFeeNotice quote={swap.quote} />
             {showAddress && (
               <div className="xswap-deposit">
                 <div className="xswap-deposit-amount">

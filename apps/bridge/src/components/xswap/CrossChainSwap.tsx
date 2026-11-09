@@ -9,6 +9,7 @@ import { AssetIcon, ChainGlyph } from "./AssetIcon";
 import { AssetPicker } from "./AssetPicker";
 import { ReserveNotice, RoutePanel } from "./RoutePanel";
 import { SwapProgress } from "./SwapProgress";
+import { ServiceFeeNotice } from "./ServiceFeeNotice";
 import {
   SwapApiError,
   XMR_ASSET_ID,
@@ -522,6 +523,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
             </div>
           </fieldset>
 
+          <ServiceFeeNotice quote={shownQuote} />
           <button type="button" className="primary-button xswap-action" disabled={!canReview} onClick={() => setReviewOpen(true)}>
             {actionLabel}
             {canReview && <Icon name="arrow" />}
@@ -639,6 +641,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
               </dd>
             </div>
           </dl>
+          <ServiceFeeNotice quote={shownQuote} />
           <p className="field-label">Refund to</p>
           <p className="review-destination" title={refund.trim()}>
             {refund.trim()}

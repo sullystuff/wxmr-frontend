@@ -4,7 +4,7 @@ import { Keypair, PublicKey, TransactionInstruction, TransactionMessage, Version
 import { createJupiterSwapClient, JupiterApiError, JupiterSimulationError } from "../src/lib/jupiter-swap-client";
 import { formatSwapAmount, parseSwapAmount, SWAP_FEE_ACCOUNT, SWAP_REFERRAL_ACCOUNT, SWAP_TOKENS } from "../src/lib/jupiter-swap";
 
-const fixture = () => ({ inputMint: SWAP_TOKENS.SOL.mint, outputMint: SWAP_TOKENS.wXMR.mint,
+const fixture = () => ({ inputMint: SWAP_TOKENS.SOL.mint as string, outputMint: SWAP_TOKENS.wXMR.mint as string,
   inAmount: "100000000", outAmount: "1000000000000", otherAmountThreshold: "995000000000",
   swapMode: "ExactIn", slippageBps: 50, priceImpactPct: "0.01", platformFee: { feeBps: 50, amount: "5000000000" },
   routePlan: [{ percent: 100 }] });
