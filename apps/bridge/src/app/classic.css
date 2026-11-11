@@ -459,10 +459,17 @@ body {
   }
 }
 
-.withdrawal-recovery { margin-top: 1rem; font-size: .875rem; }
+.withdrawal-recovery { min-width: 0; margin-top: 1rem; padding: 1rem; border: 1px solid var(--primary); border-radius: .5rem; background: rgba(255, 102, 0, .04); font-size: .875rem; }
+.withdrawal-recovery h4 { margin: 0; color: var(--primary); font-size: 1rem; }
+.withdrawal-recovery h5 { margin: 1rem 0 .75rem; font-size: .875rem; }
 .withdrawal-recovery p { margin: .75rem 0; }
+.withdrawal-recovery details { margin: .75rem 0; }
+.withdrawal-recovery summary { cursor: pointer; font-weight: 600; }
+.withdrawal-recovery ol { padding-left: 1.25rem; }
+.withdrawal-recovery li + li { margin-top: .5rem; }
 .withdrawal-recovery dd { overflow-wrap: anywhere; }
 .withdrawal-recovery textarea { display: block; width: 100%; box-sizing: border-box; margin: .5rem 0; padding: .75rem; font-family: monospace; font-size: .75rem; overflow-wrap: anywhere; background: var(--background); color: var(--foreground); border: 1px solid var(--border); border-radius: .375rem; }
 .withdrawal-recovery pre { max-width: 100%; overflow-x: auto; padding: .75rem; background: var(--background); border: 1px solid var(--border); border-radius: .375rem; }
 .withdrawal-recovery button { padding: .5rem .75rem; border: 1px solid var(--border); border-radius: .375rem; }
+.withdrawal-recovery .recovery-load { border-color: var(--primary); color: var(--primary); font-weight: 600; }
 .recovery-actions { display: flex; flex-wrap: wrap; gap: .5rem; }

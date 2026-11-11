@@ -1273,7 +1273,6 @@ export default function Home() {
                             </dd>
                           </div>
                         </dl>
-                        {withdrawal.completion && <WithdrawalRecovery completion={withdrawal.completion} />}
                         <div className="transfer-progress">
                           <span className="done">Requested</span>
                           <span
@@ -1295,6 +1294,7 @@ export default function Home() {
                           </span>
                         </div>
                       </details>
+                      {withdrawal.completion && <WithdrawalRecovery completion={withdrawal.completion} />}
                       {withdrawal.status === "pending" &&
                         withdrawal.user === publicKey?.toBase58() && (
                           <CancelWithdrawalButton
