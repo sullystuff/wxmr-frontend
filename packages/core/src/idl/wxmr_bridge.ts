@@ -574,8 +574,8 @@ export type WxmrBridge = {
     {
       "name": "completeWithdrawal",
       "docs": [
-        "Backend completes withdrawal after sending XMR - closes PDA and refunds rent to authority",
-        "Only Sending withdrawals can complete; Pending requests remain cancelable."
+        "Archive a compressed public Monero transaction piece. The final piece",
+        "completes the Sending withdrawal and refunds its rent to authority."
       ],
       "discriminator": [
         107,
@@ -617,69 +617,7 @@ export type WxmrBridge = {
         },
         {
           "name": "authority",
-          "signer": true,
-          "relations": [
-            "config"
-          ]
-        }
-      ],
-      "args": [
-        {
-          "name": "xmrTxHash",
-          "type": "string"
-        },
-        {
-          "name": "xmrTxKey",
-          "type": "string"
-        }
-      ]
-    },
-    {
-      "name": "completeWithdrawalWithRecovery",
-      "docs": [
-        "The final recovery piece is atomic with completion. Keep the original",
-        "completion instruction/event available for historical and legacy clients."
-      ],
-      "discriminator": [
-        85,
-        14,
-        41,
-        153,
-        89,
-        173,
-        21,
-        114
-      ],
-      "accounts": [
-        {
-          "name": "config",
           "writable": true,
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "withdrawal",
-          "writable": true
-        },
-        {
-          "name": "user",
-          "writable": true
-        },
-        {
-          "name": "authority",
           "signer": true,
           "relations": [
             "config"
@@ -1255,82 +1193,6 @@ export type WxmrBridge = {
               32
             ]
           }
-        }
-      ]
-    },
-    {
-      "name": "publishWithdrawalRecovery",
-      "docs": [
-        "Publish a piece of the gzip-compressed public Monero transaction. The",
-        "instruction bytes are the archive: no rent-bearing account is created.",
-        "Only the bridge authority may publish, and only while this request sends."
-      ],
-      "discriminator": [
-        178,
-        222,
-        142,
-        112,
-        185,
-        177,
-        71,
-        89
-      ],
-      "accounts": [
-        {
-          "name": "config",
-          "pda": {
-            "seeds": [
-              {
-                "kind": "const",
-                "value": [
-                  99,
-                  111,
-                  110,
-                  102,
-                  105,
-                  103
-                ]
-              }
-            ]
-          }
-        },
-        {
-          "name": "withdrawal",
-          "writable": true
-        },
-        {
-          "name": "authority",
-          "signer": true,
-          "relations": [
-            "config"
-          ]
-        }
-      ],
-      "args": [
-        {
-          "name": "xmrTxHash",
-          "type": "string"
-        },
-        {
-          "name": "recoveryHash",
-          "type": {
-            "array": [
-              "u8",
-              32
-            ]
-          }
-        },
-        {
-          "name": "total",
-          "type": "u32"
-        },
-        {
-          "name": "offset",
-          "type": "u32"
-        },
-        {
-          "name": "data",
-          "type": "bytes"
         }
       ]
     },

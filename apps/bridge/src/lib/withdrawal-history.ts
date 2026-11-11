@@ -22,8 +22,10 @@ export function recoveryPieces(tx: HistoryTransaction, withdrawal: string): Reco
   const pieces: RecoveryPiece[] = [];
   for (const ix of [...tx.transaction.message.instructions, ...tx.meta.innerInstructions?.flatMap(group => group.instructions) ?? []]) {
     if (ix.programId !== BRIDGE_PROGRAM.toBase58() || !ix.data || !ix.accounts) continue;
-    const decoded = coder.instruction.decode(ix.data, 'base58');
-    if (!decoded || !['publish_withdrawal_recovery', 'complete_withdrawal_with_recovery'].includes(decoded.name)) continue;
+    let decoded;
+    try { decoded = coder.instruction.decode(ix.data, 'base58'); }
+    catch { continue; } // Historical completions have only the original two strings.
+    if (!decoded || decoded.name !== 'complete_withdrawal') continue;
     const definition = IDL.instructions.find(item => item.name === decoded.name)!;
     const index = definition.accounts.findIndex(account => account.name === 'withdrawal');
     if (ix.accounts[index] !== withdrawal) continue;

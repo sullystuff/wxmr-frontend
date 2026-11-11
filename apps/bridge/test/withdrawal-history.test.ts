@@ -22,7 +22,7 @@ function event(name: string, data: object) {
   return 'Program data: ' + Buffer.concat([Buffer.from(IDL.events.find(item => item.name === name)!.discriminator), coder.types.encode(name, data)]).toString('base64');
 }
 function transaction(data = compressed, offset = 0, total = compressed.length, hash = digest, txid = fixture.txid, final = true): HistoryTransaction {
-  const name = final ? 'complete_withdrawal_with_recovery' : 'publish_withdrawal_recovery';
+  const name = 'complete_withdrawal';
   const definition = IDL.instructions.find(item => item.name === name)!;
   const header = coder.instruction.encode(name, { xmr_tx_hash: txid, xmr_tx_key: 'b'.repeat(64), recovery_hash: hash, offset, total, data: Buffer.alloc(0) });
   const length = Buffer.alloc(4); length.writeUInt32LE(data.length);
@@ -70,7 +70,11 @@ test('ignores failed transactions, another owner/PDA and events emitted by anoth
 
 test('legacy completion still shows its txid without claiming recovery data exists', () => {
   const tx = transaction();
-  tx.transaction.message.instructions = [];
+  const oldArgs = Buffer.alloc(4); oldArgs.writeUInt32LE(64);
+  tx.transaction.message.instructions[0].data = utils.bytes.bs58.encode(Buffer.concat([
+    Buffer.from(IDL.instructions.find(ix => ix.name === 'complete_withdrawal')!.discriminator),
+    oldArgs, Buffer.from(fixture.txid), oldArgs, Buffer.from('b'.repeat(64)),
+  ]));
   tx.meta!.logMessages!.splice(1, 1);
   const result = extractWithdrawalCompletion(tx, withdrawal.toBase58(), owner.toBase58(), 'legacy', 2000)!;
   assert.equal(result.xmrTxHash, fixture.txid);
