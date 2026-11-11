@@ -1,5 +1,5 @@
 import { Buffer } from 'buffer';
-import { BorshCoder, EventParser, type Idl } from '@coral-xyz/anchor';
+import { BorshCoder, BorshInstructionCoder, EventParser, type Idl } from '@coral-xyz/anchor';
 import { sha256 } from '@noble/hashes/sha256';
 import IDL from '@wxmr/core/idl/wxmr_bridge.json';
 import { BRIDGE_PROGRAM, decodeHistoryTransaction, type EncodedHistoryTransaction, type HistoryTransaction } from './chain-history';
@@ -8,6 +8,23 @@ import { MAX_XMR_TRANSACTION_BYTES, xmrTransactionHash } from './xmr-transaction
 
 const coder = new BorshCoder(IDL as unknown as Idl);
 const parser = new EventParser(BRIDGE_PROGRAM, coder);
+// Recovery was briefly published through separate instructions. Keep those
+// public archives readable after the program returns to complete_withdrawal.
+const recoveryArgs = [
+  { name: 'recovery_hash', type: { array: ['u8', 32] } },
+  { name: 'total', type: 'u32' }, { name: 'offset', type: 'u32' },
+  { name: 'data', type: { vec: 'u8' } },
+];
+const recoveryInstructions = [
+  ...IDL.instructions,
+  { name: 'complete_withdrawal_with_recovery', discriminator: [85, 14, 41, 153, 89, 173, 21, 114],
+    accounts: [{ name: 'config' }, { name: 'withdrawal' }, { name: 'user' }, { name: 'authority' }],
+    args: [{ name: 'xmr_tx_hash', type: 'string' }, { name: 'xmr_tx_key', type: 'string' }, ...recoveryArgs] },
+  { name: 'publish_withdrawal_recovery', discriminator: [178, 222, 142, 112, 185, 177, 71, 89],
+    accounts: [{ name: 'config' }, { name: 'withdrawal' }, { name: 'authority' }],
+    args: [{ name: 'xmr_tx_hash', type: 'string' }, ...recoveryArgs] },
+];
+const recoveryCoder = new BorshInstructionCoder({ ...IDL, instructions: recoveryInstructions } as unknown as Idl);
 type RecoveryPiece = { xmr_tx_hash: string; recovery_hash: number[]; total: number; offset: number; data: Buffer };
 export type WithdrawalCompletion = {
   withdrawalPda: string; user: string; nonce: bigint; amount: bigint; xmrAddress: string;
@@ -23,10 +40,10 @@ export function recoveryPieces(tx: HistoryTransaction, withdrawal: string): Reco
   for (const ix of [...tx.transaction.message.instructions, ...tx.meta.innerInstructions?.flatMap(group => group.instructions) ?? []]) {
     if (ix.programId !== BRIDGE_PROGRAM.toBase58() || !ix.data || !ix.accounts) continue;
     let decoded;
-    try { decoded = coder.instruction.decode(ix.data, 'base58'); }
+    try { decoded = recoveryCoder.decode(ix.data, 'base58'); }
     catch { continue; } // Historical completions have only the original two strings.
-    if (!decoded || decoded.name !== 'complete_withdrawal') continue;
-    const definition = IDL.instructions.find(item => item.name === decoded.name)!;
+    if (!decoded || !['complete_withdrawal', 'complete_withdrawal_with_recovery', 'publish_withdrawal_recovery'].includes(decoded.name)) continue;
+    const definition = recoveryInstructions.find(item => item.name === decoded.name)!;
     const index = definition.accounts.findIndex(account => account.name === 'withdrawal');
     if (ix.accounts[index] !== withdrawal) continue;
     pieces.push(decoded.data as RecoveryPiece);

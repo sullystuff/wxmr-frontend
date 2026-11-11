@@ -9,7 +9,7 @@ import { address, appendTransactionMessageInstructions, blockhash, compileTransa
 import IDL from '@wxmr/core/idl/wxmr_bridge.json';
 import fixture from './fixtures/xmr-transaction.json';
 import { BRIDGE_PROGRAM, decodeHistoryTransaction, type EncodedHistoryTransaction, type HistoryTransaction } from '../src/lib/chain-history';
-import { decompressRecovery, extractWithdrawalCompletion, readSignedXmrTransaction, readWithdrawalCompletion } from '../src/lib/withdrawal-history';
+import { decompressRecovery, extractWithdrawalCompletion, readSignedXmrTransaction, readWithdrawalCompletion, recoveryPieces } from '../src/lib/withdrawal-history';
 import { xmrTransactionHash } from '../src/lib/xmr-transaction';
 import type { rpcResult } from '../src/lib/rpc-client';
 
@@ -80,6 +80,26 @@ test('legacy completion still shows its txid without claiming recovery data exis
   assert.equal(result.xmrTxHash, fixture.txid);
   assert.equal(result.recovery, undefined);
   assert.equal(result.createdAt, 2000);
+});
+
+test('retains recovery from the previous completion and publication instructions', async () => {
+  const tx = transaction();
+  const ix = tx.transaction.message.instructions[0];
+  const bytes = Buffer.from(utils.bytes.bs58.decode(ix.data!));
+  Buffer.from([85, 14, 41, 153, 89, 173, 21, 114]).copy(bytes);
+  ix.data = utils.bytes.bs58.encode(bytes);
+  const completion = extractWithdrawalCompletion(tx, withdrawal.toBase58(), owner.toBase58(), 'older-completion', 2000)!;
+  assert.equal(await readSignedXmrTransaction(completion), fixture.hex);
+
+  const hashEnd = 8 + 4 + fixture.txid.length;
+  const keyEnd = hashEnd + 4 + 64;
+  ix.data = utils.bytes.bs58.encode(Buffer.concat([
+    Buffer.from([178, 222, 142, 112, 185, 177, 71, 89]),
+    bytes.subarray(8, hashEnd), bytes.subarray(keyEnd),
+  ]));
+  const [piece] = recoveryPieces(tx, withdrawal.toBase58());
+  assert.equal(piece.xmr_tx_hash, fixture.txid);
+  assert.deepEqual(Buffer.from(piece.data), compressed);
 });
 
 test('looks up the saved withdrawal PDA and loads inline recovery without further RPC', async () => {
