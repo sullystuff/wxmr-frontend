@@ -37,6 +37,14 @@ export function WithdrawalRecovery({ completion }: { completion: WithdrawalCompl
       {hex && <>
         <label>Signed Monero transaction (hex)<textarea readOnly value={hex} rows={5} spellCheck={false} /></label>
         <div className="recovery-actions"><button type="button" onClick={() => void copy()}>{copied ? 'Copied' : 'Copy transaction'}</button><button type="button" onClick={download}>Download broadcast request</button></div>
+        <p><strong>Broadcast with xmrchain.net</strong></p>
+        <ol>
+          <li>Click <strong>Copy transaction</strong> above.</li>
+          <li>Open the <a href="https://xmrchain.net/rawtx" target="_blank" rel="noopener noreferrer">xmrchain.net transaction pusher</a>.</li>
+          <li>Paste the complete signed hex into the transaction box and click <strong>push</strong>. The <strong>check</strong> option does not support raw transaction hex.</li>
+          <li>Wait for the transaction to appear on the network, then let your wallet synchronize.</li>
+        </ol>
+        <p>This sends the signed transaction to xmrchain.net for broadcast.</p>
         <p>Download the request above, then submit it to your own running Monero daemon:</p>
         <pre><code>{`curl -H 'Content-Type: application/json' --data-binary @monero-transaction.json http://127.0.0.1:18081/send_raw_transaction`}</code></pre>
         <p>Replace the URL if your daemon uses another address. A successful response has status “OK”. Rebroadcasting the same signed transaction does not create a second payment. If it is already confirmed, no rebroadcast is needed.</p>
