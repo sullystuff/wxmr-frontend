@@ -1,8 +1,8 @@
 /**
  * Program IDL in camelCase format in order to be used in JS/TS.
  *
- * Generated from the IDL account published on-chain by the bridge program
- * (EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8).
+ * Note that this is only a type helper and is not the actual IDL. The original
+ * IDL can be found at `target/idl/wxmr_bridge.json`.
  */
 export type WxmrBridge = {
   "address": "EzBkC8P5wxab9kwrtV5hRdynHAfB5w3UPcPXNgMseVA8",
@@ -635,6 +635,90 @@ export type WxmrBridge = {
       ]
     },
     {
+      "name": "completeWithdrawalWithRecovery",
+      "docs": [
+        "The final recovery piece is atomic with completion. Keep the original",
+        "completion instruction/event available for historical and legacy clients."
+      ],
+      "discriminator": [
+        85,
+        14,
+        41,
+        153,
+        89,
+        173,
+        21,
+        114
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "withdrawal",
+          "writable": true
+        },
+        {
+          "name": "user",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "xmrTxHash",
+          "type": "string"
+        },
+        {
+          "name": "xmrTxKey",
+          "type": "string"
+        },
+        {
+          "name": "recoveryHash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "total",
+          "type": "u32"
+        },
+        {
+          "name": "offset",
+          "type": "u32"
+        },
+        {
+          "name": "data",
+          "type": "bytes"
+        }
+      ]
+    },
+    {
       "name": "createAuditRecord",
       "docs": [
         "Initialize the AMM pool (authority only)",
@@ -1171,6 +1255,82 @@ export type WxmrBridge = {
               32
             ]
           }
+        }
+      ]
+    },
+    {
+      "name": "publishWithdrawalRecovery",
+      "docs": [
+        "Publish a piece of the gzip-compressed public Monero transaction. The",
+        "instruction bytes are the archive: no rent-bearing account is created.",
+        "Only the bridge authority may publish, and only while this request sends."
+      ],
+      "discriminator": [
+        178,
+        222,
+        142,
+        112,
+        185,
+        177,
+        71,
+        89
+      ],
+      "accounts": [
+        {
+          "name": "config",
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  99,
+                  111,
+                  110,
+                  102,
+                  105,
+                  103
+                ]
+              }
+            ]
+          }
+        },
+        {
+          "name": "withdrawal",
+          "writable": true
+        },
+        {
+          "name": "authority",
+          "signer": true,
+          "relations": [
+            "config"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "xmrTxHash",
+          "type": "string"
+        },
+        {
+          "name": "recoveryHash",
+          "type": {
+            "array": [
+              "u8",
+              32
+            ]
+          }
+        },
+        {
+          "name": "total",
+          "type": "u32"
+        },
+        {
+          "name": "offset",
+          "type": "u32"
+        },
+        {
+          "name": "data",
+          "type": "bytes"
         }
       ]
     },
@@ -2100,6 +2260,19 @@ export type WxmrBridge = {
       ]
     },
     {
+      "name": "withdrawRecoveryPublishedEvent",
+      "discriminator": [
+        1,
+        12,
+        134,
+        117,
+        201,
+        171,
+        65,
+        220
+      ]
+    },
+    {
       "name": "withdrawRequestedEvent",
       "discriminator": [
         21,
@@ -2675,6 +2848,26 @@ export type WxmrBridge = {
           {
             "name": "xmrTxKey",
             "type": "string"
+          }
+        ]
+      }
+    },
+    {
+      "name": "withdrawRecoveryPublishedEvent",
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "withdrawalPda",
+            "type": "pubkey"
+          },
+          {
+            "name": "nonce",
+            "type": "u64"
+          },
+          {
+            "name": "createdAt",
+            "type": "i64"
           }
         ]
       }

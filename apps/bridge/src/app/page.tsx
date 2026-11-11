@@ -8,6 +8,7 @@ import {
   WithdrawalInfo,
   BridgeConfig,
 } from "@/hooks/useWxmrBridge";
+import { WithdrawalRecovery } from "@/components/WithdrawalRecovery";
 import { CancelWithdrawalButton } from "@/components/CancelWithdrawalButton";
 import { QRCodeSVG } from "qrcode.react";
 import { CopyAddress } from "@wxmr/shared";
@@ -249,12 +250,15 @@ export default function Home() {
     cancelWithdrawal,
     discoverMyWithdrawals,
     fetchPageSnapshot,
+    showMoreSavedWithdrawals,
     claimPendingMint,
   } = useWxmrBridge();
 
   const [activeTab, setActiveTab] = useState<TransferTab>("deposit");
   const [depositAccount, setDepositAccount] =
     useState<DepositAccountInfo | null>(null);
+  const [withdrawalHistoryError, setWithdrawalHistoryError] = useState<string | null>(null);
+  const [hasMoreSavedWithdrawals, setHasMoreSavedWithdrawals] = useState(false);
   const [withdrawals, setWithdrawals] = useState<WithdrawalInfo[]>([]);
   const [bridgeConfig, setBridgeConfig] = useState<BridgeConfig | null>(null);
   const [circulatingSupply, setCirculatingSupply] = useState<bigint>(BigInt(0));
@@ -361,6 +365,8 @@ export default function Home() {
       setWxmrBalance(snapshot.wxmrBalance);
       setPendingBalance(snapshot.pendingBalance);
       setDepositAccount(snapshot.depositAccount);
+      setHasMoreSavedWithdrawals(snapshot.hasMoreSavedWithdrawals);
+      setWithdrawalHistoryError(snapshot.withdrawalHistoryError);
       setWithdrawals(
         snapshot.withdrawals.sort((a, b) => b.createdAt - a.createdAt),
       );
@@ -384,6 +390,8 @@ export default function Home() {
     setPendingBalance(BigInt(0));
     setDepositAccount(null);
     setWithdrawals([]);
+    setHasMoreSavedWithdrawals(false);
+    setWithdrawalHistoryError(null);
     setHistoryCursor(undefined);
     setHistoryThrough(null);
     setHistoryLoading(false);
@@ -1196,10 +1204,11 @@ export default function Home() {
                   <span>{formatXmr(depositAccount.totalDeposited)} XMR</span>
                 </div>
               )}
+              {withdrawalHistoryError && <p role="alert">{withdrawalHistoryError}</p>}
               {withdrawals.length === 0 ? (
                 <div className="activity-empty compact">
                   <Icon name="clock" />
-                  <h3>No pending withdrawals in the records loaded.</h3>
+                  <h3>No withdrawals in the records loaded.</h3>
                   <p>
                     Use “Find wallet withdrawals” to search earlier activity.
                   </p>
@@ -1264,6 +1273,7 @@ export default function Home() {
                             </dd>
                           </div>
                         </dl>
+                        {withdrawal.completion && <WithdrawalRecovery completion={withdrawal.completion} />}
                         <div className="transfer-progress">
                           <span className="done">Requested</span>
                           <span
@@ -1302,6 +1312,8 @@ export default function Home() {
                   ))}
                 </div>
               )}
+              {hasMoreSavedWithdrawals && <button type="button" disabled={refreshingData}
+                onClick={() => { showMoreSavedWithdrawals(); void loadData(); }}>Show more saved withdrawals</button>}
               <p className="activity-scope">
                 This view tracks requests saved in this browser and wallet
                 history you load. It is not a complete transaction statement.

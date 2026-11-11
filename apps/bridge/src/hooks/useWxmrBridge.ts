@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useMemo } from 'react';
+import { useCallback, useMemo, useRef } from 'react';
 import { useConnection, useWallet } from '@solana/wallet-adapter-react';
 import { PublicKey, ComputeBudgetProgram, SystemProgram } from '@solana/web3.js';
 import { Program, AnchorProvider, BN } from '@coral-xyz/anchor';
@@ -17,7 +17,8 @@ import {
 import IDL from '@wxmr/core/idl/wxmr_bridge.json';
 import type { WxmrBridge } from '@wxmr/core/idl/wxmr_bridge';
 import { XMR_MINT } from '@wxmr/shared';
-import { knownWithdrawals, rememberWithdrawals, markWithdrawalPending, markWithdrawalsResolved } from '@/lib/withdrawal-storage';
+import { knownWithdrawals, pendingWithdrawals, rememberWithdrawals, markWithdrawalPending, markWithdrawalsResolved } from '@/lib/withdrawal-storage';
+import { readWithdrawalCompletion, isWithdrawalReverted, type WithdrawalCompletion } from '@/lib/withdrawal-history';
 import { readHistoryPage } from '@/lib/chain-history';
 import { buildCancelWithdrawalTransaction } from '@wxmr/core/bridge';
 
@@ -63,6 +64,7 @@ export interface WithdrawalInfo {
   xmrAddress: string;
   status: 'pending' | 'sending' | 'completed' | 'reverted';
   createdAt: number;
+  completion?: WithdrawalCompletion;
 }
 
 export interface BridgeConfig {
@@ -79,11 +81,15 @@ export interface BridgePageSnapshot {
   pendingBalance: bigint;
   depositAccount: DepositAccountInfo | null;
   withdrawals: WithdrawalInfo[];
+  hasMoreSavedWithdrawals: boolean;
+  withdrawalHistoryError: string | null;
 }
 
 export function useWxmrBridge() {
   const { connection } = useConnection();
   const wallet = useWallet();
+  const savedHistory = useRef({ owner: '', limit: 10 });
+  const showMoreSavedWithdrawals = useCallback(() => { savedHistory.current.limit += 10; }, []);
   const { publicKey, signTransaction, signAllTransactions } = wallet;
 
   const program = useMemo(() => {
@@ -221,6 +227,8 @@ export function useWxmrBridge() {
       pendingBalance: BigInt(0),
       depositAccount: null,
       withdrawals: [],
+      hasMoreSavedWithdrawals: false,
+      withdrawalHistoryError: null,
     };
 
     try {
@@ -240,7 +248,12 @@ export function useWxmrBridge() {
 
       const baseAccountCount = accountKeys.length;
       if (wallet.publicKey) {
-        for (const address of knownWithdrawals(PROGRAM_ID.toBase58(), wallet.publicKey.toBase58())) {
+        const owner = wallet.publicKey.toBase58();
+        if (savedHistory.current.owner !== owner) savedHistory.current = { owner, limit: 10 };
+        const known = knownWithdrawals(PROGRAM_ID.toBase58(), wallet.publicKey.toBase58());
+        const pending = pendingWithdrawals(PROGRAM_ID.toBase58(), wallet.publicKey.toBase58());
+        snapshot.hasMoreSavedWithdrawals = known.length > savedHistory.current.limit;
+        for (const address of new Set([...pending, ...known.slice(0, savedHistory.current.limit)])) {
           try { accountKeys.push(new PublicKey(address)); } catch { /* Ignore invalid browser storage. */ }
         }
       }
@@ -254,13 +267,21 @@ export function useWxmrBridge() {
       for (let i = baseAccountCount; i < infos.length; i++) {
         const info = infos[i];
         if (!info || !info.owner.equals(PROGRAM_ID)) {
-          resolvedWithdrawals.push(accountKeys[i].toBase58());
+          try {
+            const completion = await readWithdrawalCompletion(accountKeys[i].toBase58(), wallet.publicKey!.toBase58());
+            if (completion) snapshot.withdrawals.push({ ...completion, completion });
+            if (completion || isWithdrawalReverted(accountKeys[i].toBase58(), wallet.publicKey!.toBase58())) {
+              resolvedWithdrawals.push(accountKeys[i].toBase58());
+            }
+          } catch (error) {
+            snapshot.withdrawalHistoryError = error instanceof Error ? error.message : 'Unable to load completed withdrawals. Retry or select another Solana RPC.';
+          }
           continue;
         }
         const withdrawal = decodeWithdrawal(accountKeys[i], info.data);
         if (withdrawal) {
           snapshot.withdrawals.push(withdrawal);
-          if (withdrawal.status !== 'pending') resolvedWithdrawals.push(withdrawal.withdrawalPda);
+          if (withdrawal.status === 'completed' || withdrawal.status === 'reverted') resolvedWithdrawals.push(withdrawal.withdrawalPda);
         }
       }
       if (wallet.publicKey && resolvedWithdrawals.length) {
@@ -502,6 +523,7 @@ export function useWxmrBridge() {
     fetchWithdrawal,
     discoverMyWithdrawals,
     fetchPageSnapshot,
+    showMoreSavedWithdrawals,
     fetchBridgeConfig,
     claimPendingMint,
   };

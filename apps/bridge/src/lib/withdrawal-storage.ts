@@ -53,6 +53,10 @@ export function rememberWithdrawals(program: string, owner: string, addresses: s
 export function markWithdrawalPending(program: string, owner: string, address: string) {
   writePending(program, owner, new Set([...pendingWithdrawals(program, owner), address]));
   rememberWithdrawals(program, owner, [address]);
+  const key = `wxmr:withdrawals:${program}:${owner}`;
+  const next = [address, ...knownWithdrawals(program, owner).filter(item => item !== address)];
+  remembered.set(key, next);
+  try { localStorage.setItem(key, JSON.stringify(next)); } catch { /* Memory fallback. */ }
 }
 
 export function markWithdrawalsResolved(program: string, owner: string, addresses: string[]) {

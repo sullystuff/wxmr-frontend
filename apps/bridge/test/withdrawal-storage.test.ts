@@ -47,3 +47,9 @@ test('pending withdrawals survive cap eviction and stay tracked', () => {
   known = knownWithdrawals(program, owner);
   assert.equal(known.length, 100);
 });
+
+test('a newly created withdrawal is shown before older saved requests', () => {
+  rememberWithdrawals('new-first', 'owner', ['older']);
+  markWithdrawalPending('new-first', 'owner', 'newer');
+  assert.deepEqual(knownWithdrawals('new-first', 'owner'), ['newer', 'older']);
+});

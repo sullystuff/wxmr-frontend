@@ -213,3 +213,30 @@ HiddenServicePort 80 127.0.0.1:3001
 
 The existing bridge onion keeps pointing at `127.0.0.1:3000`. After reloading Tor, read the
 generated `.onion` hostname from `/var/lib/tor/wxmr_swap/hostname`.
+
+### Completed withdrawals and manual Monero relay
+
+The bridge saves withdrawal PDAs in localStorage before wallet signing and reads
+completion history directly from each saved PDA. Recent saved requests load first;
+**Show more saved withdrawals** expands the list without scanning unrelated wallet
+transactions. Pending and Sending requests remain protected from storage eviction.
+Completed records are derived from finalized successful bridge events, including
+the XMR txid, completion signature, and recovery metadata. A missing account alone
+does not prove completion. **Find wallet withdrawals** can discover addresses that
+were not saved in this browser.
+
+History reads use base64 and `maxSupportedTransactionVersion: 1` for legacy, v0,
+and v1 transactions. Small compressed signed Monero transactions arrive in the
+completion instruction itself and require no additional RPC reads when expanded.
+Larger transactions use authenticated publication chunks against the same PDA;
+those historical transactions are fetched only on request. The browser checks
+SHA-256, bounds gzip decompression, and verifies the Monero txid before displaying
+the hex, copy controls, and a downloadable daemon `/send_raw_transaction` request.
+It never requests a user's private Monero keys or broadcasts on their behalf.
+
+Upgrade the bridge program and backend recovery publisher before enabling new
+payouts with this frontend. Older completions still display txids but have no
+signed recovery data. The core package commits matching IDL snapshots so a clean
+frontend checkout builds without sibling backend build artifacts; refresh both
+`packages/core/src/idl/wxmr_bridge.{json,ts}` from the backend's generated IDL/types
+whenever the program interface changes.
