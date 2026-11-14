@@ -213,7 +213,7 @@ export function RoutePanel({
           <div className="xswap-route-total">
             <strong>{show(quote.to, quote.estimatedOut)}</strong>
             <span>
-              At least {show(quote.to, quote.minOut)} or a refund · {formatDuration(quote.etaSeconds)}
+              At least {show(quote.to, quote.minOut)} {quote.kind === "to_xmr" && quote.from !== "USDC.Solana" ? "or pause for your decision" : "or a refund"} · {formatDuration(quote.etaSeconds)}
             </span>
           </div>
           <ol className="xswap-steps">

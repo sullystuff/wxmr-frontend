@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { chainflipPageNote, chainflipStatusLinks, explorerTxUrl, formatDuration, formatUnits, formatUsd, parseUnits, refundNotice, routeUsesChainflip, unitsToInput } from "../src/lib/swap-api";
+import { chainflipPageNote, chainflipStatusLinks, explorerTxUrl, formatDuration, formatUnits, formatUsd, parseUnits, readDecisionToken, refundNotice, routeUsesChainflip, saveDecisionToken, swapApi, unitsToInput } from "../src/lib/swap-api";
 
 test("parseUnits accepts what people type and refuses what cannot be exact", () => {
   assert.equal(parseUnits("0.05", 8), BigInt(5_000_000));
@@ -68,7 +68,10 @@ test("only USDC on Solana against XMR skips Chainflip", () => {
 });
 
 test("the refund notice only promises what is true for the route", () => {
-  assert.match(refundNotice("BTC.Bitcoin", "XMR.Monero"), /Powered by Chainflip.*not swapped.*refunded to your refund address/);
+  const intoXmr = refundNotice("BTC.Bitcoin", "XMR.Monero");
+  assert.match(intoXmr, /converted to USDC/);
+  assert.match(intoXmr, /hold the USDC and ask you to choose/);
+  assert.match(intoXmr, /Converting back may return less/);
   assert.match(refundNotice("BTC.Bitcoin", "USDC.Ethereum"), /AML check/);
   // Out of XMR the deposit is sold before Chainflip ever screens anything.
   const fromXmr = refundNotice("XMR.Monero", "BTC.Bitcoin");
@@ -78,6 +81,62 @@ test("the refund notice only promises what is true for the route", () => {
   assert.doesNotMatch(fromXmr, /not swapped/);
   const noChainflip = refundNotice("USDC.Solana", "XMR.Monero");
   assert.doesNotMatch(noChainflip, /AML|Powered by/);
+});
+
+test("decision requests carry private authorization in a header and confirm only the reviewed quote", async (t) => {
+  const calls: { url: string; init?: RequestInit }[] = [];
+  t.mock.method(globalThis, "fetch", async (url: string, init?: RequestInit) => {
+    calls.push({ url, init });
+    return new Response(JSON.stringify(url.endsWith("decision-quotes") ? { quote: { id: "quoted" } } : { requestId: "queued" }));
+  });
+  const token = "a".repeat(64);
+  await swapApi.decisionQuote("swap-id", token, "receive_usdc", "solana-wallet");
+  await swapApi.decide("swap-id", token, "quoted");
+  assert.deepEqual(JSON.parse(calls[0]!.init!.body as string), { action: "receive_usdc", address: "solana-wallet" });
+  assert.deepEqual(JSON.parse(calls[1]!.init!.body as string), { quoteId: "quoted" });
+  for (const call of calls) {
+    assert.equal(new Headers(call.init!.headers).get("authorization"), `Bearer ${token}`);
+    assert.equal(call.url.includes(token), false);
+  }
+});
+
+test("create retries retain the private token through a lost response", async (t) => {
+  const bodies: { decisionToken: string }[] = [];
+  t.mock.method(globalThis, "fetch", async (_url: string, init?: RequestInit) => {
+    const body = JSON.parse(init!.body as string) as { decisionToken: string };
+    bodies.push(body);
+    if (bodies.length === 1) throw new Error("lost response");
+    return new Response(JSON.stringify({ swap: { id: "created", decisionToken: body.decisionToken } }));
+  });
+  const params = { quoteId: "retryable-quote", destinationAddress: "xmr-wallet", refundAddress: "btc-wallet" };
+  await assert.rejects(swapApi.create(params));
+  const swap = await swapApi.create(params);
+  assert.match(bodies[0]!.decisionToken, /^[0-9a-f]{64}$/);
+  assert.equal(bodies[1]!.decisionToken, bodies[0]!.decisionToken);
+  assert.equal(swap.decisionToken, bodies[0]!.decisionToken);
+});
+
+test("private recovery links restore controls separately from the public status URL", () => {
+  const id = "b".repeat(32);
+  const token = "c".repeat(64);
+  const saved = new Map<string, string>();
+  const descriptors = ["window", "localStorage"].map((key) => [key, Object.getOwnPropertyDescriptor(globalThis, key)] as const);
+  let replaced = "";
+  Object.defineProperty(globalThis, "window", { configurable: true, value: { location: { hash: `#decision=${token}`, href: `https://wxmr.io/?swap=${id}#decision=${token}` }, history: { state: null, replaceState: (_state: unknown, _title: string, url: string) => { replaced = url; } } } });
+  Object.defineProperty(globalThis, "localStorage", { configurable: true, value: { setItem: (key: string, value: string) => saved.set(key, value), getItem: (key: string) => saved.get(key) ?? null } });
+  try {
+    assert.equal(readDecisionToken(id), token);
+    assert.equal(new URL(replaced).hash, "");
+    assert.equal(new URL(replaced).searchParams.get("swap"), id);
+    assert.equal(saved.get(`wxmr:swap-decision:${id}`), token);
+    saveDecisionToken("invalid", token);
+    assert.equal(saved.size, 1);
+  } finally {
+    for (const [key, descriptor] of descriptors) {
+      if (descriptor) Object.defineProperty(globalThis, key, descriptor);
+      else Reflect.deleteProperty(globalThis, key);
+    }
+  }
 });
 
 test("chainflipStatusLinks opens the channel until Chainflip has a swap, then the swap", () => {

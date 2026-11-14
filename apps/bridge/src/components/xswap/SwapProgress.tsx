@@ -6,6 +6,7 @@ import { CopyAddress } from "@wxmr/shared";
 import { Icon } from "../BridgeIcons";
 import { AssetIcon } from "./AssetIcon";
 import { ServiceFeeNotice } from "./ServiceFeeNotice";
+import { SwapDecision } from "./SwapDecision";
 import {
   SwapApiError,
   XMR_ASSET_ID,
@@ -15,6 +16,7 @@ import {
   explorerTxUrl,
   formatUnits,
   refundNotice,
+  readDecisionToken,
   routeUsesChainflip,
   swapApi,
   unitsToInput,
@@ -27,6 +29,7 @@ const TERMINAL: SwapStatus[] = ["completed", "refunded", "failed"];
 const STATUS_HEADINGS: Record<SwapStatus, string> = {
   allocating: "Opening your deposit address",
   awaiting_deposit: "Waiting for your deposit",
+  awaiting_decision: "Awaiting your decision",
   confirming: "Deposit on its way",
   swapping: "Swapping",
   sending: "Sending",
@@ -72,14 +75,29 @@ export function SwapProgress({
   id,
   active,
   onStartAnother,
+  decisionToken,
 }: {
   id: string;
   active: boolean;
   onStartAnother: () => void;
+  decisionToken?: string | null;
 }) {
   const [swap, setSwap] = useState<SwapOrder | null>(null);
   const [error, setError] = useState("");
   const [now, setNow] = useState(0);
+  const [savedToken, setSavedToken] = useState<string | null>(null);
+  const [recoveryLink, setRecoveryLink] = useState("");
+
+  useEffect(() => {
+    const token = decisionToken ?? readDecisionToken(id);
+    setSavedToken(token);
+    if (token) {
+      const url = new URL(window.location.href);
+      url.searchParams.set("swap", id);
+      url.hash = new URLSearchParams({ decision: token }).toString();
+      setRecoveryLink(url.toString());
+    } else setRecoveryLink("");
+  }, [id, decisionToken]);
 
   useEffect(() => {
     if (!active) return;
@@ -203,6 +221,13 @@ export function SwapProgress({
         <div className="xswap-status-grid">
           <div>
             <ServiceFeeNotice quote={swap.quote} />
+            {swap.decision && <SwapDecision key={swap.decision.id} swap={swap} token={savedToken} now={now} />}
+            {recoveryLink && swap.kind === "to_xmr" && swap.from !== USDC_SOL_ASSET_ID && !TERMINAL.includes(swap.status) && (
+              <div className="notice xswap-private-recovery">
+                <div><strong>Save your private recovery link</strong><p className="small">Keep this link private. It lets you choose what happens to held USDC if the XMR price moves beyond your limit. The public status link does not include these controls.</p><CopyAddress address={recoveryLink} label="Private recovery link">Copy private recovery link</CopyAddress><details className="small"><summary>Show private link to save manually</summary><code className="break-all">{recoveryLink}</code></details></div>
+              </div>
+            )}
+            {showAddress && swap.conversionDisclosure && <p className="notice small">{swap.conversionDisclosure}</p>}
             {showAddress && (
               <div className="xswap-deposit">
                 <div className="xswap-deposit-amount">
@@ -318,8 +343,8 @@ export function SwapProgress({
                 <div>
                   <strong>
                     {swap.status === "refunded"
-                      ? `${swap.refund.amount ? `${formatUnits(swap.refund.amount, refundDecimals)} ${refundSymbol} ` : ""}refunded to your refund address`
-                      : "Your funds are on their way back to your refund address"}
+                      ? `${swap.refund.amount ? `${formatUnits(swap.refund.amount, refundDecimals)} ${refundSymbol} ` : ""}sent to your chosen return address`
+                      : "Your funds are on their way to your chosen return address"}
                   </strong>
                   {swap.refund.reason && <p className="small">{swap.refund.reason}</p>}
                   {swap.refund.tx && <TxLink asset={swap.refund.asset?.id ?? swap.from} tx={swap.refund.tx} label="View refund transaction" />}
@@ -403,7 +428,7 @@ export function SwapProgress({
                 </dd>
               </div>
               <div>
-                <dt>Or refunded below</dt>
+                <dt>{swap.kind === "to_xmr" && swap.from !== USDC_SOL_ASSET_ID ? "Pause and ask you below" : "Or refunded below"}</dt>
                 <dd>
                   {formatUnits(swap.minOut, toDecimals)} {toSymbol}
                 </dd>
@@ -431,7 +456,7 @@ export function SwapProgress({
               <div>
                 <dt>Refund</dt>
                 <dd>
-                  <CopyAddress address={swap.refundAddress} label="Refund address" className="break-all" />
+                  <CopyAddress address={swap.refund.address ?? swap.refundAddress} label="Return address" className="break-all" />
                 </dd>
               </div>
               <div>

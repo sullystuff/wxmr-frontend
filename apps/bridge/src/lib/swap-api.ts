@@ -102,6 +102,7 @@ export interface SwapReserves {
 export type SwapStatus =
   | "allocating"
   | "awaiting_deposit"
+  | "awaiting_decision"
   | "confirming"
   | "swapping"
   | "sending"
@@ -139,6 +140,11 @@ export interface SwapOrder {
   minOut: string;
   destinationAddress: string;
   refundAddress: string;
+  /** Returned only when creating the swap. Never present in public status responses. */
+  decisionToken?: string;
+  conversionDisclosure?: string | null;
+  decision?: { id: string; amount: string; asset: OrderAsset; message: string; reason: string | null; actions: DecisionAction[] } | null;
+  acceptedDecision?: DecisionQuote | null;
   deposit: {
     address: string | null;
     expiresAt: number | null;
@@ -154,7 +160,7 @@ export interface SwapOrder {
   reservePath: "fast" | "slow" | null;
   reserveHeldUntil: number | null;
   payout: { amount: string | null; tx: string | null; txKey: string | null };
-  refund: { amount: string | null; asset: OrderAsset | null; tx: string | null; txKey: string | null; reason: string | null };
+  refund: { amount: string | null; asset: OrderAsset | null; address?: string; tx: string | null; txKey: string | null; reason: string | null };
   /** Missing from a backend older than this field: the swap still works, with no link to Chainflip. */
   chainflip?: { channelId: string | null; swapId: string | null; outChannelId: string | null; outSwapId: string | null };
   timeline: TimelineStep[];
@@ -165,6 +171,46 @@ export interface SwapOrder {
   needsAttention: boolean;
   /** Original quote, including its fixed service fee; absent on older deployments. */
   quote?: SwapQuote | null;
+}
+
+export type DecisionAction = "continue_xmr" | "return_source" | "receive_usdc";
+export interface DecisionQuote {
+  id: string;
+  orderId: string;
+  decisionId: string;
+  action: DecisionAction;
+  createdAt: number;
+  expiresAt: number;
+  amountIn: string;
+  asset: string;
+  estimatedOut: string;
+  minOut: string;
+  destinationAddress: string;
+  slippageBps: number;
+  fees: QuoteFee[];
+  warnings: string[];
+}
+
+/** Kept separately from public recent-swap links. A private recovery link carries it in the fragment. */
+export function saveDecisionToken(id: string, token: string): void {
+  if (!/^[0-9a-f]{32}$/.test(id) || !/^[0-9a-f]{64}$/.test(token)) return;
+  try { localStorage.setItem(`wxmr:swap-decision:${id}`, token); } catch { /* The current page still retains it. */ }
+}
+
+export function readDecisionToken(id: string): string | null {
+  if (typeof window === "undefined") return null;
+  const fromLink = new URLSearchParams(window.location.hash.slice(1)).get("decision");
+  if (fromLink && /^[0-9a-f]{64}$/.test(fromLink)) {
+    saveDecisionToken(id, fromLink);
+    const url = new URL(window.location.href);
+    url.hash = "";
+    window.history.replaceState(window.history.state, "", url);
+    return fromLink;
+  }
+  try {
+    const token = localStorage.getItem(`wxmr:swap-decision:${id}`);
+    return token && /^[0-9a-f]{64}$/.test(token) ? token : null;
+  } catch { return null; }
 }
 
 export class SwapApiError extends Error {
@@ -201,6 +247,16 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body;
 }
 
+/** Retained through lost responses; knowing a public quote ID alone cannot retrieve private controls. */
+const creationTokens = new Map<string, string>();
+function creationToken(quoteId: string): string {
+  const saved = creationTokens.get(quoteId);
+  if (saved) return saved;
+  const token = Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  creationTokens.set(quoteId, token);
+  return token;
+}
+
 export const swapApi = {
   assets: (signal?: AbortSignal) => request<{ assets: SwapAsset[] }>("/v1/assets", { signal }).then((body) => body.assets),
   reserves: (signal?: AbortSignal) => request<SwapReserves>("/v1/reserves", { signal }),
@@ -220,9 +276,17 @@ export const swapApi = {
     request<{ swap: SwapOrder }>("/v1/swaps", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(params),
+      body: JSON.stringify({ ...params, decisionToken: creationToken(params.quoteId) }),
     }).then((body) => body.swap),
   order: (id: string, signal?: AbortSignal) => request<{ swap: SwapOrder }>(`/v1/swaps/${id}`, { signal }).then((body) => body.swap),
+  decisionQuote: (id: string, token: string, action: DecisionAction, address?: string) =>
+    request<{ quote: DecisionQuote }>(`/v1/swaps/${id}/decision-quotes`, {
+      method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ action, address }),
+    }).then((body) => body.quote),
+  decide: (id: string, token: string, quoteId: string) =>
+    request<{ requestId: string; message: string }>(`/v1/swaps/${id}/decision`, {
+      method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify({ quoteId }),
+    }),
 };
 
 // ---- amounts ----------------------------------------------------------------
@@ -363,6 +427,9 @@ export function routeUsesChainflip(from: string, to: string): boolean {
 
 /** What happens if the swap is rejected, in the terms that are true for this route. */
 export function refundNotice(from: string, to: string): string {
+  if (to === XMR_ASSET_ID && from !== USDC_SOL_ASSET_ID) {
+    return "Your deposit is converted to USDC before buying XMR. If the XMR price stays beyond your limit, we hold the USDC and ask you to choose: accept a fresh XMR quote, convert back at the current price with additional fees, or receive USDC on Solana. Converting back may return less than you deposited. A failed Chainflip AML check returns the original asset directly.";
+  }
   if (!routeUsesChainflip(from, to)) {
     return "This route runs on Jupiter and the wXMR bridge, without Chainflip. If it cannot finish, your funds go back to your refund address, less network and bridge fees.";
   }

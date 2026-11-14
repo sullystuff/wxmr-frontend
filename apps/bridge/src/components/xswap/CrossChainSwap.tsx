@@ -13,6 +13,7 @@ import { ServiceFeeNotice } from "./ServiceFeeNotice";
 import {
   SwapApiError,
   XMR_ASSET_ID,
+  USDC_SOL_ASSET_ID,
   formatDuration,
   formatUnits,
   formatUsd,
@@ -20,6 +21,7 @@ import {
   readRecentSwaps,
   refundNotice,
   rememberSwap,
+  saveDecisionToken,
   routeUsesChainflip,
   swapApi,
   unitsToInput,
@@ -158,6 +160,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState("");
   const [swapId, setSwapId] = useState<string | null>(null);
+  const [decisionToken, setDecisionToken] = useState<string | null>(null);
   const [recent, setRecent] = useState<RecentSwap[]>([]);
   const [scanning, setScanning] = useState<"refund" | "destination" | null>(null);
   const creatingRef = useRef(false);
@@ -358,6 +361,10 @@ export function CrossChainSwap({ active }: { active: boolean }) {
       }
       tried = fresh.id;
       const swap = await swapApi.create({ quoteId: fresh.id, destinationAddress: destination.trim(), refundAddress: refund.trim() });
+      if (swap.decisionToken) {
+        saveDecisionToken(swap.id, swap.decisionToken);
+        setDecisionToken(swap.decisionToken);
+      }
       const entry = { id: swap.id, from: swap.from, to: swap.to, amountIn: swap.amountIn, createdAt: swap.createdAt };
       rememberSwap(entry);
       setRecent(readRecentSwaps());
@@ -381,6 +388,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
   };
 
   const leaveSwap = () => {
+    setDecisionToken(null);
     setSwapId(null);
     setAmount("");
     setQuote(null);
@@ -391,6 +399,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
   };
 
   const openSwap = (id: string) => {
+    setDecisionToken(null);
     setSwapId(id);
     const url = new URL(window.location.href);
     url.searchParams.set("swap", id);
@@ -398,7 +407,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
   };
 
   if (swapId) {
-    return <SwapProgress id={swapId} active={active} onStartAnother={leaveSwap} />;
+    return <SwapProgress id={swapId} active={active} onStartAnother={leaveSwap} decisionToken={decisionToken} />;
   }
 
   const walletAddress = wallet.publicKey?.toBase58();
@@ -497,7 +506,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
               <AddressField
                 id="xswap-refund"
                 label="Refund address"
-                help={`Your funds come back here as ${fromAsset?.symbol ?? "your deposit"} if the swap cannot finish${routeUsesChainflip(from, to) ? ", including a failed AML check" : ""}.`}
+                help={toIsXmr && from !== USDC_SOL_ASSET_ID ? `For a failed Chainflip deposit, or if you later choose to convert held USDC back to ${fromAsset?.symbol ?? "your deposit asset"}. The conversion uses the current price and adds fees.` : `Your funds come back here as ${fromAsset?.symbol ?? "your deposit"} if the swap cannot finish${routeUsesChainflip(from, to) ? ", including a failed AML check" : ""}.`}
                 chain={fromAsset?.chain}
                 chainName={fromAsset?.chainName}
                 value={refund}
@@ -590,7 +599,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
             </button>
           </div>
           <p className="muted small">
-            How far below the estimate your swap may fill. If it cannot, your funds are refunded rather than swapped at a worse price. Auto uses Chainflip&apos;s
+            How far below the estimate your swap may fill. {toIsXmr && from !== USDC_SOL_ASSET_ID ? "If your deposit was converted to USDC and XMR stays below this limit, we hold the USDC and ask you how to proceed." : "If it cannot, your funds are refunded."} Auto uses Chainflip&apos;s
             recommendation for this pair and size.
           </p>
           <div className="xswap-slippage" role="group" aria-label="Price protection">
@@ -629,7 +638,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
               <dd>{formatDuration(shownQuote.etaSeconds)}</dd>
             </div>
             <div>
-              <dt>Or a refund, if below</dt>
+              <dt>{toIsXmr && from !== USDC_SOL_ASSET_ID ? "Pause and ask you below" : "Or a refund, if below"}</dt>
               <dd>
                 {formatUnits(shownQuote.minOut, toAsset.decimals)} {toAsset.symbol}
               </dd>
@@ -653,7 +662,7 @@ export function CrossChainSwap({ active }: { active: boolean }) {
           {shownQuote.reserve && <ReserveNotice reserves={reserves} quote={shownQuote} />}
           <p className="xswap-aml">
             <Icon name="shield" />
-            <span>{refundNotice(from, to)} Addresses cannot be changed after this.</span>
+            <span>{refundNotice(from, to)} Your original destination and refund addresses are fixed. You can provide a Solana address later if you choose USDC.</span>
           </p>
           {createError && (
             <p className="field-error" role="alert">

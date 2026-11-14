@@ -984,6 +984,35 @@
   padding-top: 14px;
   border-top: 1px solid var(--border);
 }
+.xswap-decision,
+.xswap-decision-review {
+  display: grid;
+  gap: 12px;
+  padding: 18px;
+  margin-bottom: 18px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+}
+.xswap-decision-options {
+  display: grid;
+  gap: 10px;
+}
+.xswap-decision-options input {
+  width: 100%;
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+}
+.xswap-decision-review {
+  margin-bottom: 0;
+}
+.xswap-private-recovery {
+  margin-bottom: 18px;
+}
 .xswap-another {
   display: inline-flex;
   align-items: center;
